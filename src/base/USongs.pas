@@ -58,6 +58,7 @@ uses
   PseudoThread,
   {$ENDIF}
   UPath,
+  USongSearch,
   UPlaylist,
   USong,
   UIni,
@@ -1042,9 +1043,10 @@ end;
 
 function TCatSongs.SetFilter(FilterStr: UTF8String; Filter: TSongFilter): cardinal;
 var
-  I, J:      integer;
+  I:        integer;
   TmpString: UTF8String;
-  WordArray: array of UTF8String;
+  Tree:     PSearchNode;
+  YearMode: boolean;
 begin
     if Assigned(PlayListMan) then
     begin
@@ -1052,65 +1054,50 @@ begin
         PlayListMan.RestoreSongOrder;
     end;
 
-  FilterStr := Trim(LowerCase(TransliterateToASCII(FilterStr)));
+  // NICHT vorher kleinschreiben: AND und OR gelten nur in Grossschreibung,
+  // sonst waere nach einem Titel mit "and" nicht mehr zu suchen. Jedes
+  // einzelne Wort wird beim Bau des Baums normalisiert.
+  FilterStr := Trim(FilterStr);
 
   if (FilterStr <> '') then
   begin
     Result := 0;
-
-    // initialize word array
-    SetLength(WordArray, 1);
-
-    // Copy words to SearchStr
-    I := Pos(' ', FilterStr);
-    while (I <> 0) do
-    begin
-      WordArray[High(WordArray)] := Copy(FilterStr, 1, I-1);
-      SetLength(WordArray, Length(WordArray) + 1);
-
-      FilterStr := TrimLeft(Copy(FilterStr, I+1, Length(FilterStr)-I));
-      I := Pos(' ', FilterStr);
-    end;
-
-    // Copy last word
-    WordArray[High(WordArray)] := FilterStr;
-
-    for I := 0 to High(Song) do
-    begin
-      if not Song[i].Main then
+    YearMode := (Filter = fltYear);
+    Tree := BuildSearchTree(FilterStr);
+    try
+      for I := 0 to High(Song) do
       begin
-        case Filter of
-          fltAll:
-            TmpString := Song[I].ArtistASCII + ' ' + Song[i].TitleASCII + ' ' + Song[i].LanguageASCII + ' ' + Song[i].EditionASCII + ' ' + Song[i].GenreASCII + ' ' + IntToStr(Song[i].Year) + ' ' + Song[i].CreatorASCII + ' ' + Song[i].TagsASCII; //+ ' ' + Song[i].Folder;
-          fltTitle:
-            TmpString := Song[I].TitleASCII;
-          fltArtist:
-            TmpString := Song[I].ArtistASCII;
-          fltLanguage:
-            TmpString := Song[I].LanguageASCII;
-          fltEdition:
-            TmpString := Song[I].EditionASCII;
-          fltGenre:
-            TmpString := Song[I].GenreASCII;
-          fltYear:
-            TmpString := IntToStr(Song[I].Year);
-          fltCreator:
-            TmpString := Song[I].CreatorASCII;
-          fltTags:
-            TmpString := Song[i].TagsASCII;
-        end;
-        Song[i].Visible := true;
-        // Look for every searched word
-        for J := 0 to High(WordArray) do
+        if not Song[i].Main then
         begin
-          Song[i].Visible := Song[i].Visible and
-                             UTF8ContainsStr(TmpString, WordArray[J])
-        end;
-        if Song[i].Visible then
-          Inc(Result);
-      end
-      else
-        Song[i].Visible := false;
+          case Filter of
+            fltAll:
+              TmpString := Song[I].ArtistASCII + ' ' + Song[i].TitleASCII + ' ' + Song[i].LanguageASCII + ' ' + Song[i].EditionASCII + ' ' + Song[i].GenreASCII + ' ' + IntToStr(Song[i].Year) + ' ' + Song[i].CreatorASCII + ' ' + Song[i].TagsASCII; //+ ' ' + Song[i].Folder;
+            fltTitle:
+              TmpString := Song[I].TitleASCII;
+            fltArtist:
+              TmpString := Song[I].ArtistASCII;
+            fltLanguage:
+              TmpString := Song[I].LanguageASCII;
+            fltEdition:
+              TmpString := Song[I].EditionASCII;
+            fltGenre:
+              TmpString := Song[I].GenreASCII;
+            fltYear:
+              TmpString := IntToStr(Song[I].Year);
+            fltCreator:
+              TmpString := Song[I].CreatorASCII;
+            fltTags:
+              TmpString := Song[i].TagsASCII;
+          end;
+          Song[i].Visible := EvalSearchNode(Tree, TmpString, Song[I].Year, YearMode);
+          if Song[i].Visible then
+            Inc(Result);
+        end
+        else
+          Song[i].Visible := false;
+      end;
+    finally
+      FreeSearchNode(Tree);
     end;
     CatNumShow := -2;
   end
