@@ -1,0 +1,5 @@
+# Bauartefakte des Testprogramms
+build/
+testsongsearch
+*.o
+*.ppu
