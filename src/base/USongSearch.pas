@@ -41,9 +41,17 @@ function EvalSearchNode(Node: PSearchNode; const Haystack: UTF8String;
                         Year: integer): boolean;
 function ParseYearRange(const S: UTF8String; out FromYear, ToYear: integer): boolean;
 
-// Sammelt die verschiedenen Werte mehrwertiger Felder (Sprache, Genre,
-// Schlagworte) und legt sie alphabetisch in Dest ab.
-procedure CollectDistinctValues(Source, Dest: TStrings);
+// Sammelt die verschiedenen Werte eines Feldes, alphabetisch.
+//
+// SplitCommas nur fuer die mehrwertigen Felder (Sprache, Genre, Schlagworte).
+// Eine Edition wie "Best of 80s, Vol. 2" darf NICHT zerlegt werden - daraus
+// wuerden sonst zwei Werte, die es gar nicht gibt.
+procedure CollectDistinctValues(Source, Dest: TStrings; SplitCommas: boolean);
+
+// Naechster Wert, der mit Prefix beginnt - von Start aus in Richtung Schritt
+// (+1 vorwaerts, -1 rueckwaerts), umlaufend. -1, wenn keiner passt.
+function FindNextMatch(Values: TStrings; const Prefix: UTF8String;
+                       Start, Schritt: integer): integer;
 
 implementation
 
@@ -326,7 +334,7 @@ end;
  * fast gleiche Eintraege in der Liste waeren nur laestig. Welche
  * Schreibweise gewinnt, entscheidet die alphabetische Sortierung.
  *)
-procedure CollectDistinctValues(Source, Dest: TStrings);
+procedure CollectDistinctValues(Source, Dest: TStrings; SplitCommas: boolean);
 var
   I, J: integer;
   Teile: TStringList;
@@ -346,13 +354,16 @@ begin
       // Selbst zerlegen statt CommaText: Das wuerde Anfuehrungszeichen und
       // Leerzeichen nach eigenen Regeln deuten, und ein Genre wie
       // "Rock 'n' Roll" ginge dabei kaputt.
-      J := Pos(',', Wert);
-      while (J > 0) do
+      if SplitCommas then
       begin
-        if (Trim(Copy(Wert, 1, J - 1)) <> '') then
-          Teile.Add(Trim(Copy(Wert, 1, J - 1)));
-        Wert := Copy(Wert, J + 1, Length(Wert) - J);
         J := Pos(',', Wert);
+        while (J > 0) do
+        begin
+          if (Trim(Copy(Wert, 1, J - 1)) <> '') then
+            Teile.Add(Trim(Copy(Wert, 1, J - 1)));
+          Wert := Copy(Wert, J + 1, Length(Wert) - J);
+          J := Pos(',', Wert);
+        end;
       end;
       if (Trim(Wert) <> '') then
         Teile.Add(Trim(Wert));
@@ -361,6 +372,52 @@ begin
     Dest.Assign(Teile);
   finally
     Teile.Free;
+  end;
+end;
+
+(*
+ * Naechster Wert, der mit Prefix beginnt.
+ *
+ * Verglichen wird auf derselben Grundlage wie die Suche selbst:
+ * kleingeschrieben und nach ASCII umgeschrieben. So findet ein getipptes "u"
+ * auch "Ueber" und "Über" - haette man roh verglichen, faenden sich Werte mit
+ * Umlaut nie.
+ *
+ * Umlaufend, aber jeder Wert wird hoechstens einmal geprueft; ohne Treffer
+ * kommt -1 zurueck, damit der Aufrufer die Eingabe unveraendert lassen kann.
+ *)
+function FindNextMatch(Values: TStrings; const Prefix: UTF8String;
+                       Start, Schritt: integer): integer;
+var
+  I, Index, Anzahl: integer;
+  Gesucht, Kandidat: UTF8String;
+begin
+  Result := -1;
+  // nil ausdruecklich abfangen: Values kommt vom Aufrufer, und ein
+  // Zugriff auf Count wuerde hier abstuerzen statt nur nichts zu finden.
+  if not Assigned(Values) then
+    Exit;
+  Anzahl := Values.Count;
+  if (Anzahl = 0) or (Schritt = 0) then
+    Exit;
+
+  Gesucht := LowerCase(TransliterateToASCII(Trim(Prefix)));
+  if (Gesucht = '') then
+  begin
+    // Ohne Vorgabe einfach der naechste Wert.
+    Result := ((Start + Schritt) mod Anzahl + Anzahl) mod Anzahl;
+    Exit;
+  end;
+
+  for I := 1 to Anzahl do
+  begin
+    Index := ((Start + I * Schritt) mod Anzahl + Anzahl) mod Anzahl;
+    Kandidat := LowerCase(TransliterateToASCII(Values[Index]));
+    if (Copy(Kandidat, 1, Length(Gesucht)) = Gesucht) then
+    begin
+      Result := Index;
+      Exit;
+    end;
   end;
 end;
 

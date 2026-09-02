@@ -71,7 +71,7 @@ end;
 
 var
   A, B, I: integer;
-  Quelle, Ziel: TStringList;
+  Quelle, Ziel, Werte: TStringList;
   Sortiert: boolean;
 
 begin
@@ -203,7 +203,7 @@ begin
     Quelle.Add('');              // Lied ohne Angabe
     Quelle.Add('  Blues  ');     // mit Randleerzeichen
     Quelle.Add('Soul,,Funk');    // leerer Teil dazwischen
-    CollectDistinctValues(Quelle, Ziel);
+    CollectDistinctValues(Quelle, Ziel, true);
 
     Check('mehrwertiges Feld wird zerlegt',
           (Ziel.IndexOf('Rock') >= 0) or (Ziel.IndexOf('rock') >= 0));
@@ -223,19 +223,73 @@ begin
     Check('alphabetisch sortiert', Sortiert, Ziel.CommaText);
 
     Quelle.Clear;
-    CollectDistinctValues(Quelle, Ziel);
+    CollectDistinctValues(Quelle, Ziel, true);
     Check('leere Eingabe ergibt leere Liste', Ziel.Count = 0);
+
+    // Nicht jedes Feld ist mehrwertig. Eine Edition wie
+    // "Best of 80s, Vol. 2" darf nicht zu zwei Werten zerfallen.
+    Quelle.Clear;
+    Quelle.Add('Best of 80s, Vol. 2');
+    Quelle.Add('Single');
+    CollectDistinctValues(Quelle, Ziel, false);
+    Check('ohne Trennung bleibt der Wert ganz',
+          Ziel.IndexOf('Best of 80s, Vol. 2') >= 0, Ziel.CommaText);
+    Check('und es sind genau zwei', Ziel.Count = 2, IntToStr(Ziel.Count));
+    CollectDistinctValues(Quelle, Ziel, true);
+    Check('mit Trennung waeren es drei', Ziel.Count = 3, Ziel.CommaText);
 
     // Ein Genre mit Apostroph darf nicht an CommaText-Regeln zerbrechen.
     Quelle.Clear;
     Quelle.Add('Rock ''n'' Roll,Country');
-    CollectDistinctValues(Quelle, Ziel);
+    CollectDistinctValues(Quelle, Ziel, true);
     Check('Apostroph bleibt erhalten',
           Ziel.IndexOf('Rock ''n'' Roll') >= 0, Ziel.CommaText);
     Check('und der zweite Wert auch', Ziel.IndexOf('Country') >= 0);
   finally
     Quelle.Free;
     Ziel.Free;
+  end;
+
+  WriteLn('Naechsten passenden Wert finden');
+  Werte := TStringList.Create;
+  try
+    Werte.Add('Party');      // 0
+    Werte.Add('Pop');        // 1
+    Werte.Add('Punk');       // 2
+    Werte.Add('Rock');       // 3
+    Werte.Add('Über');       // 4
+
+    // Ohne Vorgabe einfach der naechste - so blaettert man durch alles.
+    Check('ohne Praefix vorwaerts', FindNextMatch(Werte, '', 0, 1) = 1);
+    Check('ohne Praefix rueckwaerts', FindNextMatch(Werte, '', 0, -1) = 4,
+          IntToStr(FindNextMatch(Werte, '', 0, -1)));
+    Check('laeuft um', FindNextMatch(Werte, '', 4, 1) = 0);
+
+    // Der gewuenschte Fall: "p" tippen, Runter -> erster Wert mit p.
+    Check('Praefix findet den ersten Treffer',
+          FindNextMatch(Werte, 'p', -1, 1) = 0, IntToStr(FindNextMatch(Werte, 'p', -1, 1)));
+    Check('weiter blaettern findet den naechsten',
+          FindNextMatch(Werte, 'p', 0, 1) = 1);
+    Check('und den uebernaechsten', FindNextMatch(Werte, 'p', 1, 1) = 2);
+    Check('dann wieder von vorn', FindNextMatch(Werte, 'p', 2, 1) = 0);
+    Check('rueckwaerts ebenso', FindNextMatch(Werte, 'p', 2, -1) = 1);
+
+    Check('Gross-/Kleinschreibung egal', FindNextMatch(Werte, 'P', -1, 1) = 0);
+    Check('laengerer Praefix', FindNextMatch(Werte, 'pu', -1, 1) = 2);
+    Check('ganzer Wert passt auf sich selbst',
+          FindNextMatch(Werte, 'Rock', -1, 1) = 3);
+
+    // Umlaut: getipptes "u" muss "Über" finden, sonst waeren solche Werte
+    // ueber die Tastatur nie erreichbar.
+    Check('Umlaut wird umgeschrieben', FindNextMatch(Werte, 'u', -1, 1) = 4,
+          IntToStr(FindNextMatch(Werte, 'u', -1, 1)));
+
+    Check('kein Treffer ergibt -1', FindNextMatch(Werte, 'xyz', -1, 1) = -1);
+    Check('nil-Liste stuerzt nicht ab', FindNextMatch(nil, 'p', 0, 1) = -1);
+    Werte.Clear;
+    Check('leere Liste ergibt -1', FindNextMatch(Werte, 'p', 0, 1) = -1);
+  finally
+    Werte.Free;
   end;
 
   WriteLn;

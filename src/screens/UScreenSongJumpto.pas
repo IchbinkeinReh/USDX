@@ -65,6 +65,12 @@ type
       // Lieder).
       fWerteModus: TSongFilter;
       fWerteAnzahl: integer;
+      // Was der Nutzer getippt hat, bevor das Blaettern begann. Der
+      // eingesetzte Wert ueberschreibt das Eingabefeld; ohne diese Merkung
+      // wuerde der naechste Tastendruck nach dem gefundenen Wert suchen und
+      // bliebe an ihm haengen.
+      fBlaetterPraefix: UTF8String;
+      fBlaetterWert: UTF8String;
 
       function  BlaetternMoeglich: boolean;
       procedure WerteSammeln;
@@ -355,7 +361,9 @@ end;
  *)
 function TScreenSongJumpto.BlaetternMoeglich: boolean;
 begin
-  Result := fSelectType in [fltLanguage, fltGenre, fltTags];
+  // Ueberall ausser in der Gesamtsuche: Dort ist der durchsuchte Text aus
+  // allen Feldern zusammengesetzt, einen Wertevorrat gibt es nicht.
+  Result := (fSelectType <> fltAll);
 end;
 
 procedure TScreenSongJumpto.WerteVerwerfen;
@@ -369,6 +377,7 @@ procedure TScreenSongJumpto.WerteSammeln;
 var
   I: integer;
   Roh: TStringList;
+  Mehrwertig: boolean;
 begin
   if not Assigned(fWerte) then
     fWerte := TStringList.Create;
@@ -379,6 +388,10 @@ begin
      (fWerteAnzahl = Length(CatSongs.Song)) then
     Exit;
 
+  // Nur diese drei Felder fasst USong mit Komma zusammen. Eine Edition wie
+  // "Best of 80s, Vol. 2" waere sonst ploetzlich zwei Werte.
+  Mehrwertig := fSelectType in [fltLanguage, fltGenre, fltTags];
+
   Roh := TStringList.Create;
   try
     for I := 0 to High(CatSongs.Song) do
@@ -386,14 +399,22 @@ begin
       if CatSongs.Song[I].Main then
         Continue;   // Kategorieueberschrift, kein Lied
       case fSelectType of
+        fltTitle:    Roh.Add(CatSongs.Song[I].Title);
+        fltArtist:   Roh.Add(CatSongs.Song[I].Artist);
         fltLanguage: Roh.Add(CatSongs.Song[I].Language);
+        fltEdition:  Roh.Add(CatSongs.Song[I].Edition);
         fltGenre:    Roh.Add(CatSongs.Song[I].Genre);
+        fltCreator:  Roh.Add(CatSongs.Song[I].Creator);
         fltTags:     Roh.Add(CatSongs.Song[I].Tags);
+        fltYear:
+          // 0 heisst "kein Jahr angegeben" und waere als Wert "0" irrefuehrend.
+          if (CatSongs.Song[I].Year <> 0) then
+            Roh.Add(IntToStr(CatSongs.Song[I].Year));
       end;
     end;
     // Zerlegen, entdoppeln und sortieren erledigt USongSearch - dort ist es
     // ohne Fenster und Ton pruefbar.
-    CollectDistinctValues(Roh, fWerte);
+    CollectDistinctValues(Roh, fWerte, Mehrwertig);
   finally
     Roh.Free;
   end;
@@ -403,25 +424,45 @@ begin
 end;
 
 procedure TScreenSongJumpto.WertWaehlen(Schritt: integer);
+var
+  Neu, Start: integer;
 begin
   WerteSammeln;
   if (fWerte.Count = 0) then
     Exit;
 
-  // Vom noch unbenutzten Zustand aus soll Runter beim ersten und Hoch beim
-  // letzten Wert beginnen - sonst uebersprAenge man einen davon.
+  // Steht im Feld noch der zuletzt eingesetzte Wert, blaettert der Nutzer
+  // weiter - dann gilt der urspruenglich getippte Praefix. Sonst hat er
+  // getippt oder geloescht, und die Eingabe ist der neue Praefix.
+  if (Button[0].Text[0].Text <> fBlaetterWert) then
+  begin
+    fBlaetterPraefix := Button[0].Text[0].Text;
+    fWertIndex := -1;
+  end;
+
+  // Vom unbenutzten Zustand aus soll Runter beim ersten und Hoch beim
+  // letzten Wert beginnen, statt einen davon zu ueberspringen.
   if (fWertIndex < 0) then
   begin
     if (Schritt > 0) then
-      fWertIndex := 0
+      Start := -1
     else
-      fWertIndex := fWerte.Count - 1;
+      Start := 0;
   end
   else
-    fWertIndex := (fWertIndex + Schritt + fWerte.Count) mod fWerte.Count;
+    Start := fWertIndex;
 
-  Button[0].Text[0].Text := fWerte[fWertIndex];
-  SetTextFound(CatSongs.SetFilter(Button[0].Text[0].Text, fSelectType));
+  Neu := FindNextMatch(fWerte, fBlaetterPraefix, Start, Schritt);
+  if (Neu < 0) then
+    // Nichts passt zum Getippten. Die Eingabe bleibt, wie sie ist - sie
+    // stillschweigend durch einen unpassenden Wert zu ersetzen waere
+    // schlimmer als keine Reaktion.
+    Exit;
+
+  fWertIndex := Neu;
+  fBlaetterWert := fWerte[fWertIndex];
+  Button[0].Text[0].Text := fBlaetterWert;
+  SetTextFound(CatSongs.SetFilter(fBlaetterWert, fSelectType));
   ScreenSong.NextRandomSearchIdx := CatSongs.VisibleSongs;
 end;
 
