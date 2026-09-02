@@ -90,6 +90,19 @@ type
     Length: string;
   end;
 
+  TSongs = class;
+
+  // Ein Arbeiter des parallelen Einlesens. Holt sich Dateien aus der Liste
+  // seines Besitzers, bis keine mehr da ist.
+  TSongLoadWorker = class(TThread)
+    private
+      fOwner: TSongs;
+    protected
+      procedure Execute; override;
+    public
+      constructor Create(AOwner: TSongs);
+  end;
+
   {$IFDEF USE_PSEUDO_THREAD}
   TSongs = class(TPseudoThread)
   {$ELSE}
@@ -98,6 +111,15 @@ type
   private
     fParseSongDirectory: boolean;
     fProcessing:         boolean;
+
+    // Gemeinsamer Zustand des parallelen Einlesens. Die Arbeiter holen sich
+    // ihren naechsten Index selbst (fLoadNext) und legen das Ergebnis auf
+    // ihrem eigenen Platz ab (fLoadResults) - so schreibt nie einer dorthin,
+    // wo ein anderer liest, und die Reihenfolge bleibt die der Dateiliste.
+    fLoadFiles:   TPathDynArray;
+    fLoadResults: array of TSong;
+    fLoadNext:    longint;
+    fLoadDone:    longint;
     fDiscoveringDirectories: boolean;
     fDiscoveryDirCount:  integer;
     fDiscoveryDirsScanned: integer;
@@ -107,6 +129,7 @@ type
     procedure int_LoadSongList;
     procedure DoDirChanged(Sender: TObject);
     procedure LoadSongFromFile(const FilePath: IPath);
+    procedure LoadSongFiles(const Files: TPathDynArray);
     procedure UpdateDiscoveryProgress(SongsFound: integer; Force: boolean = false);
     procedure UpdateSongLoadingProgress(Force: boolean = false);
   protected
@@ -115,6 +138,10 @@ type
     SongList: TList;            // array of songs
 
     Selected: integer;        // selected song index
+
+    // Oeffentlich, weil die Arbeiter des parallelen Einlesens sie aufrufen.
+    function  ParseSongFile(const FilePath: IPath): TSong;
+
     constructor Create();
     destructor  Destroy(); override;
 
@@ -318,13 +345,7 @@ begin
     UpdateDiscoveryProgress(fTotalSongsToLoad, true);
     UpdateSongLoadingProgress(true);
 
-    for I := 0 to High(SongFiles) do
-    begin
-      LoadSongFromFile(SongFiles[I]);
-      Inc(fSongsLoaded);
-      UpdateSongLoadingProgress;
-      PumpLoadingEvents;
-    end;
+    LoadSongFiles(SongFiles);
 
     if fTotalSongsToLoad > 0 then
       UpdateSongLoadingProgress(true);
@@ -364,6 +385,7 @@ var
   Iter: IFileIterator;
   FileInfo: TFileInfo;
   FileName: IPath;
+  Anzahl, Platz: integer;
 begin
   if Recursive then
     DirList := CollectDirectories(Dir, true, Self)
@@ -372,6 +394,14 @@ begin
     SetLength(DirList, 1);
     DirList[0] := Dir;
   end;
+
+  // Blockweise wachsen statt je Fund um eins. Beim Start faellt das kaum ins
+  // Gewicht - dort wird je Verzeichnis mit geleertem Array aufgerufen, das
+  // sind meist ein bis zwei Dateien. Beim rekursiven Aufruf aus dem Editor
+  // sammelt sich dagegen alles in einem Array, und dort waere jedes
+  // SetLength ein Umkopieren des gesamten bisherigen Inhalts.
+  Anzahl := Length(Files);
+  Platz := Anzahl;
 
   for DirIndex := 0 to High(DirList) do
   begin
@@ -383,12 +413,23 @@ begin
       if ((FileInfo.Attr and faDirectory) = 0) and Ext.Equals(FileName.GetExtension(), true) then
       begin
         Log.LogDebug('Found file ' + DirList[DirIndex].Append(FileName).ToWide, 'TSongs.FindFilesByExtension');
-        SetLength(Files, Length(Files) + 1);
-        Files[High(Files)] := DirList[DirIndex].Append(FileName);
+        if (Anzahl >= Platz) then
+        begin
+          if (Platz = 0) then
+            Platz := 16
+          else
+            Platz := Platz * 2;
+          SetLength(Files, Platz);
+        end;
+        Files[Anzahl] := DirList[DirIndex].Append(FileName);
+        Inc(Anzahl);
         PumpLoadingEvents;
       end;
     end;
   end;
+
+  // Auf die tatsaechliche Zahl kappen - der Aufrufer wertet Length aus.
+  SetLength(Files, Anzahl);
 end;
 
 function TSongs.CollectSongFiles: TPathDynArray;
@@ -454,15 +495,172 @@ procedure TSongs.LoadSongFromFile(const FilePath: IPath);
 var
   Song: TSong;
 begin
-  Song := TSong.Create(FilePath);
+  Song := ParseSongFile(FilePath);
+  if Assigned(Song) then
+    SongList.Add(Song);
+end;
 
-  if Song.Analyse(false, false, false, false, 0, Params.CheckSongs) then
-    SongList.Add(Song)
-  else
+(*
+ * Liest eine Lieddatei ein. nil, wenn sie unbrauchbar ist.
+ *
+ * Beruehrt ausser dem Protokoll (das eine eigene Sperre hat) und
+ * Ini.DefaultEncoding (nur lesend) keinen gemeinsamen Zustand - deshalb
+ * laesst sich das aus mehreren Threads zugleich aufrufen.
+ *)
+function TSongs.ParseSongFile(const FilePath: IPath): TSong;
+begin
+  Result := TSong.Create(FilePath);
+  if not Result.Analyse(false, false, false, false, 0, Params.CheckSongs) then
   begin
     Log.LogError('AnalyseFile failed for "' + FilePath.ToNative + '".');
-    FreeAndNil(Song);
+    FreeAndNil(Result);
   end;
+end;
+
+constructor TSongLoadWorker.Create(AOwner: TSongs);
+begin
+  fOwner := AOwner;
+  FreeOnTerminate := false;   // der Besitzer wartet und raeumt selbst auf
+  inherited Create(false);    // sofort loslaufen
+end;
+
+procedure TSongLoadWorker.Execute;
+var
+  Index: integer;
+  Song: TSong;
+begin
+  while not Terminated do
+  begin
+    // Jeder Arbeiter holt sich den naechsten freien Index selbst. Das
+    // verteilt ungleich grosse Dateien von allein gleichmaessig - eine feste
+    // Aufteilung liesse den Thread mit den grossen Dateien allein weiterlaufen.
+    Index := InterLockedIncrement(fOwner.fLoadNext) - 1;
+    if (Index > High(fOwner.fLoadFiles)) then
+      Break;
+
+    Song := nil;
+    try
+      Song := fOwner.ParseSongFile(fOwner.fLoadFiles[Index]);
+    except
+      // Eine Ausnahme darf diesen Thread NICHT beenden: Der Besitzer wartet
+      // darauf, dass fLoadDone die Dateizahl erreicht. Stirbt ein Arbeiter
+      // mittendrin, wartet er sonst fuer immer. Ein unbrauchbares Lied ist
+      // ein verlorenes Lied - ein haengendes Spiel waere schlimmer.
+      on E: Exception do
+      begin
+        Log.LogError('Song "' + fOwner.fLoadFiles[Index].ToNative +
+                     '" failed to load: ' + E.Message, 'TSongLoadWorker');
+        FreeAndNil(Song);
+      end;
+    end;
+    // Eigener Platz je Index - kein Sperren noetig, und die Reihenfolge der
+    // Dateiliste bleibt erhalten. Das ist wichtig, weil die spaetere
+    // Sortierung stabil ist: Bei gleichem Sortierschluessel entscheidet die
+    // Einlesereihenfolge, und die soll nicht vom Threadzufall abhaengen.
+    fOwner.fLoadResults[Index] := Song;
+    InterLockedIncrement(fOwner.fLoadDone);
+  end;
+end;
+
+(*
+ * Liest alle gefundenen Dateien ein, wenn moeglich mit mehreren Threads.
+ *
+ * Der Gewinn kommt daher, dass jede Datei geoeffnet, gelesen und geparst
+ * werden muss - das wartet ueberwiegend auf die Platte, und waehrend ein
+ * Thread wartet, kann ein anderer rechnen.
+ *
+ * Sequentiell bleibt es bei wenigen Dateien (der Aufwand fuer Threads lohnt
+ * dann nicht) und wenn nur ein Kern gemeldet wird.
+ *)
+procedure TSongs.LoadSongFiles(const Files: TPathDynArray);
+const
+  // Mehr Threads bringen nichts mehr: Ab hier begrenzt die Platte, nicht die
+  // Rechenzeit - und auf einer klassischen Festplatte schadet zu viel
+  // Parallelitaet sogar, weil der Kopf staendig springt.
+  MaxWorker = 8;
+  MinDateienFuerThreads = 32;
+var
+  I, Anzahl: integer;
+  Worker: array of TSongLoadWorker;
+  NochAktiv: boolean;
+begin
+  if (Length(Files) = 0) then
+    Exit;
+
+  Anzahl := TThread.ProcessorCount;
+  if (Anzahl > MaxWorker) then
+    Anzahl := MaxWorker;
+  {$IFDEF USE_PSEUDO_THREAD}
+  Anzahl := 1;   // hier gibt es keine echten Threads
+  {$ENDIF}
+  if (Length(Files) < MinDateienFuerThreads) then
+    Anzahl := 1;
+
+  if (Anzahl <= 1) then
+  begin
+    // Unveraenderter Weg von frueher - auch der Rueckfall, wenn Threads
+    // nicht in Frage kommen.
+    for I := 0 to High(Files) do
+    begin
+      LoadSongFromFile(Files[I]);
+      Inc(fSongsLoaded);
+      UpdateSongLoadingProgress;
+      PumpLoadingEvents;
+    end;
+    Exit;
+  end;
+
+  fLoadFiles := Files;
+  SetLength(fLoadResults, Length(Files));
+  for I := 0 to High(fLoadResults) do
+    fLoadResults[I] := nil;
+  fLoadNext := 0;
+  fLoadDone := 0;
+
+  Log.LogStatus(Format('Loading %d songs with %d threads',
+                       [Length(Files), Anzahl]), 'SongList');
+
+  SetLength(Worker, Anzahl);
+  for I := 0 to Anzahl - 1 do
+    Worker[I] := TSongLoadWorker.Create(Self);
+  try
+    // Fortschritt und Ereignisse bleiben in DIESEM Thread: SDL und der
+    // Ladebildschirm vertragen keine Zugriffe von den Arbeitern.
+    // Zweite Sicherung neben dem try/except im Arbeiter: Sollte doch einmal
+    // ein Thread verschwinden, ohne fLoadDone zu erhoehen, endet das Warten
+    // trotzdem - lieber ein paar Lieder weniger als ein Spiel, das beim
+    // Laden stehen bleibt.
+    repeat
+      fSongsLoaded := fLoadDone;
+      UpdateSongLoadingProgress;
+      PumpLoadingEvents;
+
+      NochAktiv := false;
+      for I := 0 to Anzahl - 1 do
+        if not Worker[I].Finished then
+          NochAktiv := true;
+
+      if (fLoadDone >= Length(Files)) or (not NochAktiv) then
+        Break;
+      Sleep(10);
+    until false;
+
+    for I := 0 to Anzahl - 1 do
+      Worker[I].WaitFor;
+  finally
+    for I := 0 to Anzahl - 1 do
+      Worker[I].Free;
+  end;
+
+  // Erst jetzt in die Liste - in Indexreihenfolge, also genau so, wie es
+  // sequentiell auch gewesen waere.
+  for I := 0 to High(fLoadResults) do
+    if Assigned(fLoadResults[I]) then
+      SongList.Add(fLoadResults[I]);
+
+  fSongsLoaded := Length(Files);
+  SetLength(fLoadResults, 0);
+  SetLength(fLoadFiles, 0);
 end;
 
 procedure TSongs.UpdateDiscoveryProgress(SongsFound: integer; Force: boolean = false);
