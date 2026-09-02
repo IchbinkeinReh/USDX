@@ -22,6 +22,12 @@ FLAGS="-Si -Sg- -Sc- -v0Binwe -Ciro -gl -Xs- -O2 -OoNOSTACKFRAME -dUseMidiEmu"
 mkdir -p tests/build
 
 FEHLER=0
+
+# Zuerst die statische Pruefung: Sie faengt eine Falle ab, die kein
+# Laufzeittest bemerkt, weil das Programm dabei gar nicht erst startet.
+echo "=== Namenskollisionen ==="
+python3 tests/check_namen.py || FEHLER=1
+
 for QUELLE in tests/test*.pas; do
     NAME="${QUELLE%.pas}"
     echo "=== $(basename "$NAME") ==="
