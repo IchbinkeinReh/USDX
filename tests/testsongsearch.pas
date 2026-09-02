@@ -36,7 +36,7 @@ var
 begin
   Baum := BuildSearchTree(Ausdruck);
   try
-    Result := EvalSearchNode(Baum, Text, 0, false);
+    Result := EvalSearchNode(Baum, Text, 0);
   finally
     FreeSearchNode(Baum);
   end;
@@ -49,7 +49,20 @@ var
 begin
   Baum := BuildSearchTree(Ausdruck);
   try
-    Result := EvalSearchNode(Baum, IntToStr(Jahr), Jahr, true);
+    Result := EvalSearchNode(Baum, IntToStr(Jahr), Jahr);
+  finally
+    FreeSearchNode(Baum);
+  end;
+end;
+
+// Sucht Ausdruck gegen Text und Jahr zugleich.
+function TrifftMit(const Ausdruck, Text: UTF8String; Jahr: integer): boolean;
+var
+  Baum: PSearchNode;
+begin
+  Baum := BuildSearchTree(Ausdruck);
+  try
+    Result := EvalSearchNode(Baum, Text, Jahr);
   finally
     FreeSearchNode(Baum);
   end;
@@ -139,9 +152,41 @@ begin
   Check('und trifft dazwischen nicht',
         not TrifftJahr('1990-1992 OR 1998-1999', 1995));
 
-  // Ohne Jahresmodus ist "1990-1999" ein gewoehnlicher Suchbegriff.
-  Check('Bereich gilt NUR bei der Jahressuche',
-        not Trifft('1990-1999', '1995'));
+  WriteLn('Bereiche gelten in JEDER Suche');
+  // Ein Bereich bezieht sich immer auf das Jahr - ein anderes Zahlenfeld hat
+  // ein Lied nicht. Damit laesst sich in der Titelsuche nach Titel UND
+  // Jahrgang filtern, was vorher unmoeglich war.
+  Check('Bereich greift auch ohne Jahressuche',
+        TrifftMit('1990-1999', 'abba dancing queen', 1995));
+  Check('und schliesst aus, was nicht passt',
+        not TrifftMit('1990-1999', 'abba dancing queen', 2001));
+  Check('Titel UND Jahrgang zusammen',
+        TrifftMit('dancing AND 1990-1999', 'abba dancing queen', 1995));
+  Check('Titel trifft, Jahrgang nicht',
+        not TrifftMit('dancing AND 1990-1999', 'abba dancing queen', 1979));
+
+  WriteLn('Negation mit !');
+  Check('!wort schliesst aus', not Trifft('!abba', 'abba dancing'));
+  Check('!wort laesst anderes durch', Trifft('!abba', 'queen bohemian'));
+  Check('mit UND kombiniert',
+        Trifft('queen !live', 'queen bohemian') and
+        not Trifft('queen !live', 'queen bohemian live'));
+  Check('vor einer Klammer',
+        not Trifft('!(abba OR queen)', 'abba dancing') and
+        Trifft('!(abba OR queen)', 'nirvana smells'));
+  Check('vor einem Bereich',
+        not TrifftMit('!1990-1999', 'x', 1995) and
+        TrifftMit('!1990-1999', 'x', 2001));
+  Check('doppelte Negation hebt sich auf', Trifft('!!abba', 'abba dancing'));
+  Check('mit Abstand geschrieben', not Trifft('! abba', 'abba dancing'));
+  Check('OR mit Negation',
+        Trifft('abba OR !queen', 'nirvana smells'));
+
+  WriteLn('Ausrufezeichen im Titel bleibt suchbar');
+  // "Wham!" und "Hey!" - das Zeichen steht hinten und gehoert zum Wort.
+  Check('nachgestelltes ! ist Teil des Wortes', Trifft('wham!', 'wham! last christmas'));
+  Check('und trifft nicht ohne', not Trifft('wham!', 'whamola'));
+  Check('nur "!" allein trifft alles', Trifft('!', 'irgendwas'));
 
   WriteLn;
   WriteLn(Format('%d bestanden, %d fehlgeschlagen', [Bestanden, Fehlgeschlagen]));

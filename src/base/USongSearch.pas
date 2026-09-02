@@ -23,7 +23,7 @@ uses
   UUnicodeUtils;
 
 type
-  TSearchOp = (soTerm, soAnd, soOr);
+  TSearchOp = (soTerm, soAnd, soOr, soNot);
   PSearchNode = ^TSearchNode;
   TSearchNode = record
     Op:        TSearchOp;
@@ -38,7 +38,7 @@ type
 function BuildSearchTree(const Expr: UTF8String): PSearchNode;
 procedure FreeSearchNode(Node: PSearchNode);
 function EvalSearchNode(Node: PSearchNode; const Haystack: UTF8String;
-                        Year: integer; YearMode: boolean): boolean;
+                        Year: integer): boolean;
 function ParseYearRange(const S: UTF8String; out FromYear, ToYear: integer): boolean;
 
 implementation
@@ -116,6 +116,25 @@ begin
   Result.Right := R;
 end;
 
+// Umschliesst einen Knoten mit einer Negation - oder gibt ihn unveraendert
+// zurueck, wenn nicht negiert wird.
+function NewNotNode(Node: PSearchNode; Negiert: boolean): PSearchNode;
+begin
+  if (not Negiert) or (Node = nil) then
+  begin
+    Result := Node;
+    Exit;
+  end;
+  New(Result);
+  Result.Op := soNot;
+  Result.Text := '';
+  Result.IsRange := false;
+  Result.RangeFrom := 0;
+  Result.RangeTo := 0;
+  Result.Left := Node;
+  Result.Right := nil;
+end;
+
 // Zerlegt in Woerter und Klammern. Klammern sind eigene Zeichen, damit
 // "(abba" nicht als ein Wort durchgeht.
 procedure TokenizeSearch(const Expr: UTF8String; Tokens: TStringList);
@@ -142,6 +161,14 @@ begin
           Flush;
           Tokens.Add(Expr[I]);
         end;
+      '!':
+        // Nur am Wortanfang ein Operator. Sonst waere nach einem Titel wie
+        // "Hey!" oder "Wham!" nicht mehr zu suchen - dort steht das
+        // Ausrufezeichen hinten und gehoert zum Wort.
+        if (Current = '') then
+          Tokens.Add('!')
+        else
+          Current := Current + Expr[I];
       ' ', #9:
         Flush;
       else
@@ -165,20 +192,36 @@ end;
 function ParseOrExpr(Tokens: TStringList; var Index: integer): PSearchNode; forward;
 
 function ParseFactor(Tokens: TStringList; var Index: integer): PSearchNode;
+var
+  Negiert: boolean;
+  Inner: PSearchNode;
 begin
   Result := nil;
+
+  // Mehrere '!' heben sich gegenseitig auf, statt als Fehler zu gelten.
+  Negiert := false;
+  while (Index < Tokens.Count) and (Tokens[Index] = '!') do
+  begin
+    Negiert := not Negiert;
+    Inc(Index);
+  end;
+
   if (Index >= Tokens.Count) then
+  begin
+    // "!" ohne Begriff dahinter: nichts zu negieren, also nichts tun.
     Exit;
+  end;
 
   if (Tokens[Index] = '(') then
   begin
     Inc(Index);
-    Result := ParseOrExpr(Tokens, Index);
+    Inner := ParseOrExpr(Tokens, Index);
     // Fehlende schliessende Klammer wird stillschweigend hingenommen: Wer
     // "(abba" tippt, sucht gerade noch weiter und soll nicht mit einer
     // Fehlermeldung unterbrochen werden.
     if (Index < Tokens.Count) and (Tokens[Index] = ')') then
       Inc(Index);
+    Result := NewNotNode(Inner, Negiert);
     Exit;
   end;
 
@@ -196,7 +239,7 @@ begin
     Exit;
   end;
 
-  Result := NewTermNode(Tokens[Index]);
+  Result := NewNotNode(NewTermNode(Tokens[Index]), Negiert);
   Inc(Index);
 end;
 
@@ -259,14 +302,15 @@ end;
 (*
  * Wertet den Ausdruck gegen ein Lied aus.
  *
- * ``YearMode`` schaltet die Bereichssuche frei. Sie gilt absichtlich nur bei
- * der Suche nach "Jahr": Im Gesamttext waere "1990-1999" ein gewoehnlicher
- * Suchbegriff, und dort steckt das Jahr nur als Zeichenkette zwischen
- * Kuenstler und Genre - eine Bereichsangabe koennte man dort nicht sinnvoll
- * von einem Titel wie "1990-1999 Greatest Hits" unterscheiden.
+ * Ein Bereich wie "1990-1999" bezieht sich IMMER auf das Jahr, unabhaengig
+ * davon, wonach gerade gesucht wird - ein anderes Zahlenfeld hat ein Lied
+ * nicht. So laesst sich in der Titelsuche "dancing AND 1990-1999" schreiben,
+ * also Titel und Jahrgang zugleich einschraenken. Der Preis: Ein Titel, der
+ * woertlich "1990-1999" enthaelt, ist ueber diese Schreibweise nicht mehr zu
+ * finden. Das ist der seltenere Fall.
  *)
 function EvalSearchNode(Node: PSearchNode; const Haystack: UTF8String;
-                        Year: integer; YearMode: boolean): boolean;
+                        Year: integer): boolean;
 begin
   if (Node = nil) then
   begin
@@ -276,14 +320,16 @@ begin
 
   case Node.Op of
     soAnd:
-      Result := EvalSearchNode(Node.Left, Haystack, Year, YearMode) and
-                EvalSearchNode(Node.Right, Haystack, Year, YearMode);
+      Result := EvalSearchNode(Node.Left, Haystack, Year) and
+                EvalSearchNode(Node.Right, Haystack, Year);
     soOr:
-      Result := EvalSearchNode(Node.Left, Haystack, Year, YearMode) or
-                EvalSearchNode(Node.Right, Haystack, Year, YearMode);
+      Result := EvalSearchNode(Node.Left, Haystack, Year) or
+                EvalSearchNode(Node.Right, Haystack, Year);
+    soNot:
+      Result := not EvalSearchNode(Node.Left, Haystack, Year);
     else
       begin
-        if (Node.IsRange and YearMode) then
+        if Node.IsRange then
           Result := (Year >= Node.RangeFrom) and (Year <= Node.RangeTo)
         else
           Result := UTF8ContainsStr(Haystack, Node.Text);

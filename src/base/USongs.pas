@@ -1046,7 +1046,6 @@ var
   I:        integer;
   TmpString: UTF8String;
   Tree:     PSearchNode;
-  YearMode: boolean;
 begin
     if Assigned(PlayListMan) then
     begin
@@ -1062,7 +1061,6 @@ begin
   if (FilterStr <> '') then
   begin
     Result := 0;
-    YearMode := (Filter = fltYear);
     Tree := BuildSearchTree(FilterStr);
     try
       for I := 0 to High(Song) do
@@ -1089,7 +1087,7 @@ begin
             fltTags:
               TmpString := Song[i].TagsASCII;
           end;
-          Song[i].Visible := EvalSearchNode(Tree, TmpString, Song[I].Year, YearMode);
+          Song[i].Visible := EvalSearchNode(Tree, TmpString, Song[I].Year);
           if Song[i].Visible then
             Inc(Result);
         end
