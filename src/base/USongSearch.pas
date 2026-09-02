@@ -41,6 +41,10 @@ function EvalSearchNode(Node: PSearchNode; const Haystack: UTF8String;
                         Year: integer): boolean;
 function ParseYearRange(const S: UTF8String; out FromYear, ToYear: integer): boolean;
 
+// Sammelt die verschiedenen Werte mehrwertiger Felder (Sprache, Genre,
+// Schlagworte) und legt sie alphabetisch in Dest ab.
+procedure CollectDistinctValues(Source, Dest: TStrings);
+
 implementation
 
 procedure FreeSearchNode(Node: PSearchNode);
@@ -309,6 +313,57 @@ end;
  * woertlich "1990-1999" enthaelt, ist ueber diese Schreibweise nicht mehr zu
  * finden. Das ist der seltenere Fall.
  *)
+(*
+ * Die verschiedenen Werte eines mehrwertigen Feldes, alphabetisch.
+ *
+ * Sprache, Genre und Schlagworte stehen je Lied als eine Zeichenkette mit
+ * Komma dazwischen ("Rock,Pop") - siehe ParseMultivaluedFilterHeaders in
+ * USong. Ohne Zerlegen bekaeme man "Rock,Pop" als einen Wert und "Rock"
+ * gar nicht.
+ *
+ * Doppelte werden ohne Ruecksicht auf Gross- und Kleinschreibung
+ * zusammengefasst: "rock" und "Rock" sind fuer die Suche dasselbe, und zwei
+ * fast gleiche Eintraege in der Liste waeren nur laestig. Welche
+ * Schreibweise gewinnt, entscheidet die alphabetische Sortierung.
+ *)
+procedure CollectDistinctValues(Source, Dest: TStrings);
+var
+  I, J: integer;
+  Teile: TStringList;
+  Wert: UTF8String;
+begin
+  Dest.Clear;
+  Teile := TStringList.Create;
+  try
+    // Sortiert und ohne Doppelte - das erledigt die Liste selbst.
+    Teile.Sorted := true;
+    Teile.CaseSensitive := false;
+    Teile.Duplicates := dupIgnore;
+
+    for I := 0 to Source.Count - 1 do
+    begin
+      Wert := Source[I];
+      // Selbst zerlegen statt CommaText: Das wuerde Anfuehrungszeichen und
+      // Leerzeichen nach eigenen Regeln deuten, und ein Genre wie
+      // "Rock 'n' Roll" ginge dabei kaputt.
+      J := Pos(',', Wert);
+      while (J > 0) do
+      begin
+        if (Trim(Copy(Wert, 1, J - 1)) <> '') then
+          Teile.Add(Trim(Copy(Wert, 1, J - 1)));
+        Wert := Copy(Wert, J + 1, Length(Wert) - J);
+        J := Pos(',', Wert);
+      end;
+      if (Trim(Wert) <> '') then
+        Teile.Add(Trim(Wert));
+    end;
+
+    Dest.Assign(Teile);
+  finally
+    Teile.Free;
+  end;
+end;
+
 function EvalSearchNode(Node: PSearchNode; const Haystack: UTF8String;
                         Year: integer): boolean;
 begin

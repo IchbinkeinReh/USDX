@@ -40,6 +40,8 @@ uses
   UMusic,
   USongs,
   UThemes,
+  USongSearch,
+  Classes,
   sdl2,
   SysUtils;
 
@@ -52,6 +54,23 @@ type
       fSelectType: TSongFilter;
       fVisSongs: integer;
 
+      // Die verschiedenen Werte des aktuellen Feldes, alphabetisch - fuer
+      // das Durchblaettern mit Hoch/Runter. Wird bei Bedarf gefuellt und
+      // beim Moduswechsel verworfen, weil sie dann nicht mehr passt.
+      fWerte: TStringList;
+      fWertIndex: integer;
+      // Wofuer die Liste gesammelt wurde. Daran wird erkannt, ob sie noch
+      // passt - verlaesslicher, als an jeder Stelle ans Verwerfen zu denken,
+      // die den Modus aendert (Pfeiltasten, geladene Suche, neu eingelesene
+      // Lieder).
+      fWerteModus: TSongFilter;
+      fWerteAnzahl: integer;
+
+      function  BlaetternMoeglich: boolean;
+      procedure WerteSammeln;
+      procedure WerteVerwerfen;
+      procedure WertWaehlen(Schritt: integer);
+
       procedure SetTextFound(Count: Cardinal);
 
       //Visible //Whether the Menu should be Drawn
@@ -59,6 +78,7 @@ type
       procedure SetVisible(Value: boolean);
     public
       constructor Create; override;
+      destructor Destroy; override;
 
       function ParseInput(PressedKey: cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean; override;
       procedure OnShow; override;
@@ -148,20 +168,21 @@ begin
 
       SDLK_DOWN:
         begin
-          {SelectNext;
-          Button[0].Text[0].Selected := (Interaction = 0);}
+          if BlaetternMoeglich then
+            WertWaehlen(1);
         end;
 
       SDLK_UP:
         begin
-          {SelectPrev;
-          Button[0].Text[0].Selected := (Interaction = 0); }
+          if BlaetternMoeglich then
+            WertWaehlen(-1);
         end;
 
       SDLK_RIGHT:
         begin
           Interaction := 1;
           InteractInc;
+          WerteVerwerfen;
           if (Length(Button[0].Text[0].Text) > 0) then
           begin
             SetTextFound(CatSongs.SetFilter(Button[0].Text[0].Text, fSelectType));
@@ -173,6 +194,7 @@ begin
         begin
           Interaction := 1;
           InteractDec;
+          WerteVerwerfen;
           if (Length(Button[0].Text[0].Text) > 0) then
           begin
             SetTextFound(CatSongs.SetFilter(Button[0].Text[0].Text, fSelectType));
@@ -312,6 +334,8 @@ end;
 procedure TScreenSongJumpto.ApplySearch(const AText: UTF8String; AFilter: TSongFilter);
 begin
   fSelectType := AFilter;
+  // Der Blaetterzeiger gehoert zum alten Modus und passt jetzt nicht mehr.
+  fWertIndex := -1;
   // Das Auswahlfeld zeigt den Modus an; ohne diesen Schritt stuenden
   // Anzeige und tatsaechlicher Modus auseinander.
   SelectsS[0].SetSelectOpt(Ord(AFilter));
@@ -319,6 +343,92 @@ begin
   Button[0].Text[0].Text := AText;
   SetTextFound(CatSongs.SetFilter(AText, fSelectType));
   ScreenSong.NextRandomSearchIdx := CatSongs.VisibleSongs;
+end;
+
+
+(*
+ * Durchblaettern der vorhandenen Werte mit Hoch/Runter.
+ *
+ * Sinnvoll nur bei Feldern mit einem ueberschaubaren, wiederkehrenden
+ * Wertevorrat: Sprache, Genre und Schlagworte. Bei Titel oder Interpret
+ * waere die Liste so lang wie die Liedersammlung selbst und damit nutzlos.
+ *)
+function TScreenSongJumpto.BlaetternMoeglich: boolean;
+begin
+  Result := fSelectType in [fltLanguage, fltGenre, fltTags];
+end;
+
+procedure TScreenSongJumpto.WerteVerwerfen;
+begin
+  if Assigned(fWerte) then
+    fWerte.Clear;
+  fWertIndex := -1;
+end;
+
+procedure TScreenSongJumpto.WerteSammeln;
+var
+  I: integer;
+  Roh: TStringList;
+begin
+  if not Assigned(fWerte) then
+    fWerte := TStringList.Create;
+
+  // Passt die vorhandene Liste noch? Sie gilt nur fuer denselben Modus und
+  // denselben Liederbestand.
+  if (fWerte.Count > 0) and (fWerteModus = fSelectType) and
+     (fWerteAnzahl = Length(CatSongs.Song)) then
+    Exit;
+
+  Roh := TStringList.Create;
+  try
+    for I := 0 to High(CatSongs.Song) do
+    begin
+      if CatSongs.Song[I].Main then
+        Continue;   // Kategorieueberschrift, kein Lied
+      case fSelectType of
+        fltLanguage: Roh.Add(CatSongs.Song[I].Language);
+        fltGenre:    Roh.Add(CatSongs.Song[I].Genre);
+        fltTags:     Roh.Add(CatSongs.Song[I].Tags);
+      end;
+    end;
+    // Zerlegen, entdoppeln und sortieren erledigt USongSearch - dort ist es
+    // ohne Fenster und Ton pruefbar.
+    CollectDistinctValues(Roh, fWerte);
+  finally
+    Roh.Free;
+  end;
+  fWerteModus := fSelectType;
+  fWerteAnzahl := Length(CatSongs.Song);
+  fWertIndex := -1;
+end;
+
+procedure TScreenSongJumpto.WertWaehlen(Schritt: integer);
+begin
+  WerteSammeln;
+  if (fWerte.Count = 0) then
+    Exit;
+
+  // Vom noch unbenutzten Zustand aus soll Runter beim ersten und Hoch beim
+  // letzten Wert beginnen - sonst uebersprAenge man einen davon.
+  if (fWertIndex < 0) then
+  begin
+    if (Schritt > 0) then
+      fWertIndex := 0
+    else
+      fWertIndex := fWerte.Count - 1;
+  end
+  else
+    fWertIndex := (fWertIndex + Schritt + fWerte.Count) mod fWerte.Count;
+
+  Button[0].Text[0].Text := fWerte[fWertIndex];
+  SetTextFound(CatSongs.SetFilter(Button[0].Text[0].Text, fSelectType));
+  ScreenSong.NextRandomSearchIdx := CatSongs.VisibleSongs;
+end;
+
+destructor TScreenSongJumpto.Destroy;
+begin
+  fWerte.Free;
+  inherited;
 end;
 
 end.

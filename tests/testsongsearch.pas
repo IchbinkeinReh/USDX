@@ -10,6 +10,7 @@ program testsongsearch;
 
 uses
   SysUtils,
+  Classes,
   USongSearch;
 
 var
@@ -69,7 +70,9 @@ begin
 end;
 
 var
-  A, B: integer;
+  A, B, I: integer;
+  Quelle, Ziel: TStringList;
+  Sortiert: boolean;
 
 begin
   Bestanden := 0;
@@ -187,6 +190,53 @@ begin
   Check('nachgestelltes ! ist Teil des Wortes', Trifft('wham!', 'wham! last christmas'));
   Check('und trifft nicht ohne', not Trifft('wham!', 'whamola'));
   Check('nur "!" allein trifft alles', Trifft('!', 'irgendwas'));
+
+  WriteLn('Verschiedene Werte mehrwertiger Felder');
+  Quelle := TStringList.Create;
+  Ziel := TStringList.Create;
+  try
+    // So stehen Sprache, Genre und Schlagworte am Lied: mit Komma verkettet.
+    Quelle.Add('Rock,Pop');
+    Quelle.Add('Pop');
+    Quelle.Add('Jazz');
+    Quelle.Add('rock');          // andere Schreibweise
+    Quelle.Add('');              // Lied ohne Angabe
+    Quelle.Add('  Blues  ');     // mit Randleerzeichen
+    Quelle.Add('Soul,,Funk');    // leerer Teil dazwischen
+    CollectDistinctValues(Quelle, Ziel);
+
+    Check('mehrwertiges Feld wird zerlegt',
+          (Ziel.IndexOf('Rock') >= 0) or (Ziel.IndexOf('rock') >= 0));
+    Check('jeder Teil einzeln', Ziel.IndexOf('Pop') >= 0);
+    Check('Randleerzeichen weg', Ziel.IndexOf('Blues') >= 0, Ziel.CommaText);
+    Check('leere Angabe ergibt keinen Eintrag', Ziel.IndexOf('') < 0);
+    Check('leerer Teil zwischen Kommas auch nicht',
+          (Ziel.IndexOf('Soul') >= 0) and (Ziel.IndexOf('Funk') >= 0));
+    Check('Gross-/Kleinschreibung wird zusammengefasst', Ziel.Count = 6,
+          IntToStr(Ziel.Count) + ': ' + Ziel.CommaText);
+
+    // Alphabetisch - ausdruecklich gefordert.
+    Sortiert := true;
+    for I := 1 to Ziel.Count - 1 do
+      if (CompareText(Ziel[I - 1], Ziel[I]) > 0) then
+        Sortiert := false;
+    Check('alphabetisch sortiert', Sortiert, Ziel.CommaText);
+
+    Quelle.Clear;
+    CollectDistinctValues(Quelle, Ziel);
+    Check('leere Eingabe ergibt leere Liste', Ziel.Count = 0);
+
+    // Ein Genre mit Apostroph darf nicht an CommaText-Regeln zerbrechen.
+    Quelle.Clear;
+    Quelle.Add('Rock ''n'' Roll,Country');
+    CollectDistinctValues(Quelle, Ziel);
+    Check('Apostroph bleibt erhalten',
+          Ziel.IndexOf('Rock ''n'' Roll') >= 0, Ziel.CommaText);
+    Check('und der zweite Wert auch', Ziel.IndexOf('Country') >= 0);
+  finally
+    Quelle.Free;
+    Ziel.Free;
+  end;
 
   WriteLn;
   WriteLn(Format('%d bestanden, %d fehlgeschlagen', [Bestanden, Fehlgeschlagen]));

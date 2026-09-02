@@ -20,6 +20,7 @@ DATEIEN = [
     "src/base/USongSearch.pas",
     "src/base/USongFilter.pas",
     "src/screens/UScreenSongSearchLoad.pas",
+    "src/screens/UScreenSongJumpto.pas",
 ]
 
 CONST_BLOCK = re.compile(r"^\s*const\s*$", re.I)
