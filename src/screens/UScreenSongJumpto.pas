@@ -64,6 +64,15 @@ type
       procedure OnShow; override;
       function Draw: boolean; override;
 
+      // Der gerade aktive Suchzustand - fuer das Speichern und Laden von
+      // Suchen. Der Begriff steht im Textfeld des Knopfes, der Modus im
+      // Auswahlfeld; beides zusammen ist die Suche.
+      function GetSearchText: UTF8String;
+      function GetSearchFilter: TSongFilter;
+
+      // Setzt beides und fuehrt die Suche aus. Wird vom Ladefenster benutzt.
+      procedure ApplySearch(const AText: UTF8String; AFilter: TSongFilter);
+
       property Visible: boolean read fVisible write SetVisible;
   end;
 
@@ -287,6 +296,29 @@ begin
 
     ScreenSong.ChangeMusic;
   end;
+end;
+
+
+function TScreenSongJumpto.GetSearchText: UTF8String;
+begin
+  Result := Button[0].Text[0].Text;
+end;
+
+function TScreenSongJumpto.GetSearchFilter: TSongFilter;
+begin
+  Result := fSelectType;
+end;
+
+procedure TScreenSongJumpto.ApplySearch(const AText: UTF8String; AFilter: TSongFilter);
+begin
+  fSelectType := AFilter;
+  // Das Auswahlfeld zeigt den Modus an; ohne diesen Schritt stuenden
+  // Anzeige und tatsaechlicher Modus auseinander.
+  SelectsS[0].SetSelectOpt(Ord(AFilter));
+
+  Button[0].Text[0].Text := AText;
+  SetTextFound(CatSongs.SetFilter(AText, fSelectType));
+  ScreenSong.NextRandomSearchIdx := CatSongs.VisibleSongs;
 end;
 
 end.

@@ -701,6 +701,11 @@ begin
   begin
     Result := ScreenSongJumpto.ParseInput(PressedKey, CharCode, PressedDown);
     Exit;
+  end
+  else if (ScreenSongSearchLoad.Visible) then
+  begin
+    Result := ScreenSongSearchLoad.ParseInput(PressedKey, CharCode, PressedDown);
+    Exit;
   end;
 
   if (PressedDown) then
@@ -937,6 +942,29 @@ begin
           begin
             ScreenSongJumpto.Visible := true;
           end;
+          Exit;
+        end;
+
+      SDLK_L: // Gespeicherte Suchen zeigen
+        begin
+          if (Songs.SongList.Count > 0) and (FreeListMode) then
+            ScreenSongSearchLoad.Visible := true;
+          Exit;
+        end;
+
+      SDLK_K: // Aktuelle Suche merken
+        begin
+          // Der Suchzustand liegt im Sprungfenster und bleibt auch nach
+          // dessen Schliessen gueltig - die Liste ist ja weiterhin
+          // gefiltert. Deshalb laesst sich von hier aus speichern.
+          if (Trim(ScreenSongJumpto.GetSearchText) = '') then
+            ScreenPopupInfo.ShowPopup(Language.Translate('SEARCH_SAVE_EMPTY'))
+          else if ScreenSongSearchLoad.SpeichereAktuelle(
+                    ScreenSongJumpto.GetSearchText,
+                    ScreenSongJumpto.GetSearchFilter) then
+            ScreenPopupInfo.ShowPopup(Language.Translate('SEARCH_SAVED'))
+          else
+            ScreenPopupInfo.ShowPopup(Language.Translate('SEARCH_SAVE_KNOWN'));
           Exit;
         end;
 
@@ -3122,6 +3150,10 @@ begin
   else if (ScreenSongJumpto.Visible) then
   begin
     ScreenSongJumpto.Draw;
+  end
+  else if (ScreenSongSearchLoad.Visible) then
+  begin
+    ScreenSongSearchLoad.Draw;
   end;
 end;
 

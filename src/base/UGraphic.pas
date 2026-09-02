@@ -77,6 +77,7 @@ uses
   USkins,
   UScreenSongMenu,
   UScreenSongJumpto,
+  UScreenSongSearchLoad,
   {Party Screens}
   UScreenPartyNewRound,
   UScreenPartyScore,
@@ -188,6 +189,7 @@ var
   ScreenStatDetail:       TScreenStatDetail;
 
   //popup mod
+  ScreenSongSearchLoad: TScreenSongSearchLoad;
   ScreenPopupCheck: TScreenPopupCheck;
   ScreenPopupError: TScreenPopupError;
   ScreenPopupInfo:  TScreenPopupInfo;
@@ -1041,6 +1043,7 @@ begin
   //Log.BenchmarkEnd(3); Log.LogBenchmark('====> Screen Sing with Modi support', 3); Log.BenchmarkStart(3);
   ScreenSongJumpto :=         TScreenSongJumpto.Create;
   SetLoadingTitle('Loading ScreenPopupCheck & ScreenPopupError & ScreenPopupHelp');
+  ScreenSongSearchLoad := TScreenSongSearchLoad.Create;
   ScreenPopupCheck := TScreenPopupCheck.Create;
   ScreenPopupError := TScreenPopupError.Create;
   ScreenPopupHelp  := TScreenPopupHelp.Create;
@@ -1105,6 +1108,7 @@ begin
   //ScreenSingModi.Free;
   FreeAndNil(ScreenSongMenu);
   FreeAndNil(ScreenSongJumpto);
+  FreeAndNil(ScreenSongSearchLoad);
   FreeAndNil(ScreenPopupCheck);
   FreeAndNil(ScreenPopupError);
   FreeAndNil(ScreenPopupInfo);

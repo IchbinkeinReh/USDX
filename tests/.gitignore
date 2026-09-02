@@ -1,5 +1,8 @@
-# Bauartefakte des Testprogramms
+# Bauartefakte der Testprogramme
 build/
-testsongsearch
 *.o
 *.ppu
+# Die uebersetzten Testprogramme selbst (Quellen heissen test*.pas)
+test*
+!test*.pas
+!*.sh
