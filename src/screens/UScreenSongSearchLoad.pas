@@ -42,7 +42,7 @@ type
 
       procedure SetVisible(Value: boolean);
       procedure FuelleListe;
-      function  Dateiname: IPath;
+      function  DateiPfad: IPath;
     public
       constructor Create; override;
       destructor Destroy; override;
@@ -78,7 +78,13 @@ uses
   UIni;
 
 const
-  DATEINAME = 'searches.txt';
+  // ACHTUNG beim Umbenennen: Pascal unterscheidet keine Gross- und
+  // Kleinschreibung. Diese Konstante hiess erst DATEINAME - genau wie die
+  // Methode Dateiname. Damit loeste der Name in der Methode auf die Methode
+  // selbst auf, und weil Append sowohl Zeichenkette als auch IPath annimmt,
+  // compilierte die Endlosschleife anstandslos. Sichtbar wurde sie erst als
+  // Stack Overflow beim ersten Tastendruck.
+  SUCHEN_DATEI = 'searches.txt';
 
 constructor TScreenSongSearchLoad.Create;
 var
@@ -105,12 +111,12 @@ begin
   inherited;
 end;
 
-function TScreenSongSearchLoad.Dateiname: IPath;
+function TScreenSongSearchLoad.DateiPfad: IPath;
 begin
   // Derselbe Ort, an dem auch die Einstellungen liegen (siehe UIni):
   // beschreibbar und je Benutzer getrennt. UPathUtils.UserPath ist dafuer
   // nicht zu gebrauchen - das ist eine lokale Variable, kein Global.
-  Result := Platform.GetGameUserPath.Append(DATEINAME);
+  Result := Platform.GetGameUserPath.Append(SUCHEN_DATEI);
 end;
 
 procedure TScreenSongSearchLoad.Laden;
@@ -119,12 +125,12 @@ var
   Stream: TBinaryFileStream;
 begin
   fStore.Clear;
-  if not Dateiname.IsFile then
+  if not DateiPfad.IsFile then
     Exit;
   Lines := TStringList.Create;
   try
     try
-      Stream := TBinaryFileStream.Create(Dateiname, fmOpenRead);
+      Stream := TBinaryFileStream.Create(DateiPfad, fmOpenRead);
       try
         Lines.LoadFromStream(Stream);
       finally
@@ -152,7 +158,7 @@ begin
   try
     fStore.SaveToStrings(Lines);
     try
-      Stream := TBinaryFileStream.Create(Dateiname, fmCreate);
+      Stream := TBinaryFileStream.Create(DateiPfad, fmCreate);
       try
         Lines.SaveToStream(Stream);
       finally
