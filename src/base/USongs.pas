@@ -59,23 +59,30 @@ uses
   {$ENDIF}
   UPath,
   USongSearch,
+  USongFilter,
   UPlaylist,
   USong,
   UIni,
   UCatCovers;
 
 type
-  TSongFilter = (
-    fltAll,
-    fltTitle,
-    fltArtist,
-    fltLanguage,
-    fltEdition,
-    fltGenre,
-    fltYear,
-    fltCreator,
-    fltTags
-  );
+  // Liegt in USongFilter, siehe dort. Typ und Werte werden hier
+  // weitergereicht, damit jeder, der bisher nur USongs eingebunden hat,
+  // unveraendert weiterarbeitet.
+  TSongFilter = USongFilter.TSongFilter;
+
+const
+  fltAll      = USongFilter.fltAll;
+  fltTitle    = USongFilter.fltTitle;
+  fltArtist   = USongFilter.fltArtist;
+  fltLanguage = USongFilter.fltLanguage;
+  fltEdition  = USongFilter.fltEdition;
+  fltGenre    = USongFilter.fltGenre;
+  fltYear     = USongFilter.fltYear;
+  fltCreator  = USongFilter.fltCreator;
+  fltTags     = USongFilter.fltTags;
+
+type
 
   TScore = record
     Name:   UTF8String;
