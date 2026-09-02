@@ -36,10 +36,10 @@ Currently, the following installation channels are offered:
 - If installed via the flatpak package, the primary song folder is `~/.var/app/eu.usdx.UltraStarDeluxe/.ultrastardx/songs/` and the config.ini is located in `~/.var/app/eu.usdx.UltraStarDeluxe/.ultrastardx/` by default. To configure additional song directories, they first need to be made accessible to the flatpak app using the command: `flatpak override eu.usdx.UltraStarDeluxe --filesystem=/your/new/songfolder` - Afterwards, the directory can be added to the config.ini file as usual.
 
 ### 4. Further documentation
-The [wiki](https://github.com/UltraStar-Deluxe/USDX/wiki) contains more information on:
-* [Command-line parameters](https://github.com/UltraStar-Deluxe/USDX/wiki/Command-Line-Parameters)
-* [Controls](https://github.com/UltraStar-Deluxe/USDX/wiki/Controls)
-* [Customization](https://github.com/UltraStar-Deluxe/USDX/wiki/Customization)
+The [documentation](https://usdx.eu/docs/) contains more information on:
+* [Command-line parameters](https://usdx.eu/docs/command-line-parameters/)
+* [Controls](https://usdx.eu/docs/controls/)
+* [Customization](https://usdx.eu/docs/customization/)
 
 ### 5. Compiling
 There are two main ways to compile the game:
