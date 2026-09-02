@@ -245,8 +245,12 @@ jobs:
           SHA=$(git rev-parse --short HEAD)
           VNAME=$(cat VERSION | sed "s/+dev$/+dev-$SHA/")
           echo "versionName=$VNAME" >> $GITHUB_ENV
-          # Im Tag kein "+": In Dateinamen und URLs ist das nur laestig.
-          echo "tagName=v$(echo "$VNAME" | tr '+' '-')" >> $GITHUB_ENV
+          # Eigenes Schema mit Praefix "build-": Upstream vergibt Tags der
+          # Form v2026.8.1. Waeren unsere gleich aufgebaut, wuerde beim
+          # Zusammenfuehren ein fremdes Tag zum Ausgangspunkt des Changelogs -
+          # genau das ist am 02.09.2026 passiert, als die Upstream-Tags
+          # hereinkamen. Kein "+" im Namen, das ist in URLs nur laestig.
+          echo "tagName=build-$(echo "$VNAME" | tr '+' '-')" >> $GITHUB_ENV
           # Entwicklungsstaende als Vorabversion kennzeichnen. Steht in der
           # Datei VERSION spaeter einmal kein "dev" mehr, wird daraus von
           # selbst eine richtige Release.
@@ -258,24 +262,36 @@ jobs:
 
       - name: Build changelog
         run: |
-          # Ausdruecklich nur Tags im Muster "v*", also die von diesem
-          # Arbeitsablauf erzeugten. Ohne --match nimmt git das naechstbeste
-          # Tag - in diesem Verzeichnis etwa ein altes namens "Test", und der
-          # Changelog waere schlicht falsch.
-          PREV=$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || true)
+          # Ausgangspunkt in drei Stufen.
+          #
+          # 1. Das letzte Tag AUS DIESEM ABLAUF. Nur "build-*" - ein
+          #    allgemeineres Muster wuerde auch fremde Tags treffen, und
+          #    beim Zusammenfuehren mit upstream war der Changelog genau
+          #    deshalb falsch.
+          PREV=$(git describe --tags --abbrev=0 --match 'build-*' HEAD^ 2>/dev/null || true)
+          HERKUNFT="vorheriger Bau"
 
-          # Beim allerersten Lauf gibt es kein solches Tag. Die gesamte
-          # Geschichte sind hier ueber 1800 Commits - unlesbar, und GitHub
-          # kappt den Text ohnehin bei 125000 Zeichen. Deshalb gedeckelt.
+          # 2. Gibt es noch keinen, die letzte offizielle Release. Das
+          #    ueberbrueckt den ersten Lauf nach dieser Umstellung und liefert
+          #    "alles seit der letzten Version" statt einer willkuerlichen
+          #    Zahl von Commits.
+          if [ -z "$PREV" ]; then
+            PREV=$(git describe --tags --abbrev=0 --match 'v[0-9]*' HEAD^ 2>/dev/null || true)
+            HERKUNFT="letzte Version"
+          fi
+
+          # 3. Gar kein Tag: Die gesamte Geschichte sind hier ueber 1800
+          #    Commits - unlesbar, und GitHub kappt den Text bei 125000
+          #    Zeichen. Deshalb gedeckelt.
           MAXCOMMITS=100
           if [ -n "$PREV" ]; then
             RANGE="$PREV..HEAD"
             LIMIT=""
-            echo "Changelog seit $PREV"
+            echo "Changelog seit $PREV ($HERKUNFT)"
           else
             RANGE="HEAD"
             LIMIT="-n $MAXCOMMITS"
-            echo "Keine vorherige Release gefunden - die letzten $MAXCOMMITS Commits"
+            echo "Kein Tag gefunden - die letzten $MAXCOMMITS Commits"
           fi
 
           {
