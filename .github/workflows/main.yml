@@ -5,9 +5,6 @@ on:
     branches:
       - master
   pull_request:
-  # Run every day at 5:40.
-  schedule:
-    - cron:  '40 5 * * *'
 jobs:
   build_windows:
     name: Build for Windows
@@ -223,3 +220,121 @@ jobs:
           name: UltraStarDeluxe-linux-${{ env.versionName }}
           path: UltraStarDeluxe-linux-${{ env.versionName }}.AppImage
           if-no-files-found: error
+
+  release:
+    name: Create Release
+    # Nur fuer master, nicht fuer Pull Requests: Ein Release aus einem
+    # fremden PR-Zweig waere weder gewollt noch mit Schreibrechten moeglich.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: [build_windows, build_mac, build_linux]
+    runs-on: ubuntu-22.04
+    permissions:
+      # Zum Anlegen der Release noetig; der Standard ist nur Lesen.
+      contents: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          # Die gesamte Geschichte und alle Tags - ohne das findet
+          # "git describe" die vorherige Release nicht und der Changelog
+          # waere leer.
+          fetch-depth: 0
+
+      - name: Determine version
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          VNAME=$(cat VERSION | sed "s/+dev$/+dev-$SHA/")
+          echo "versionName=$VNAME" >> $GITHUB_ENV
+          # Im Tag kein "+": In Dateinamen und URLs ist das nur laestig.
+          echo "tagName=v$(echo "$VNAME" | tr '+' '-')" >> $GITHUB_ENV
+          # Entwicklungsstaende als Vorabversion kennzeichnen. Steht in der
+          # Datei VERSION spaeter einmal kein "dev" mehr, wird daraus von
+          # selbst eine richtige Release.
+          if echo "$VNAME" | grep -q dev; then
+            echo "preRelease=--prerelease" >> $GITHUB_ENV
+          else
+            echo "preRelease=" >> $GITHUB_ENV
+          fi
+
+      - name: Build changelog
+        run: |
+          # Ausdruecklich nur Tags im Muster "v*", also die von diesem
+          # Arbeitsablauf erzeugten. Ohne --match nimmt git das naechstbeste
+          # Tag - in diesem Verzeichnis etwa ein altes namens "Test", und der
+          # Changelog waere schlicht falsch.
+          PREV=$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || true)
+
+          # Beim allerersten Lauf gibt es kein solches Tag. Die gesamte
+          # Geschichte sind hier ueber 1800 Commits - unlesbar, und GitHub
+          # kappt den Text ohnehin bei 125000 Zeichen. Deshalb gedeckelt.
+          MAXCOMMITS=100
+          if [ -n "$PREV" ]; then
+            RANGE="$PREV..HEAD"
+            LIMIT=""
+            echo "Changelog seit $PREV"
+          else
+            RANGE="HEAD"
+            LIMIT="-n $MAXCOMMITS"
+            echo "Keine vorherige Release gefunden - die letzten $MAXCOMMITS Commits"
+          fi
+
+          {
+            echo "## Änderungen"
+            echo
+            # Zusammenfassungszeilen als Liste, mit kurzem Commit davor.
+            # Merge-Commits bleiben draussen: Sie wiederholen nur, was in den
+            # zusammengefuehrten Commits ohnehin steht.
+            git log --no-merges --reverse $LIMIT --pretty=format:'- %s (%h)' "$RANGE"
+            echo
+            echo
+            if [ -z "$PREV" ]; then
+              echo "_Erste automatische Release - gezeigt sind die letzten $MAXCOMMITS Commits._"
+              echo
+            fi
+            if [ -n "$PREV" ]; then
+              echo "**Vollständiger Vergleich:** ${{ github.server_url }}/${{ github.repository }}/compare/$PREV...${{ env.tagName }}"
+            fi
+          } > CHANGELOG_RELEASE.md
+
+          echo "--- erzeugter Changelog ---"
+          cat CHANGELOG_RELEASE.md
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v6
+        with:
+          path: artifacts
+
+      - name: Package artifacts
+        run: |
+          mkdir -p release
+          cd artifacts
+          for DIR in */; do
+            NAME="${DIR%/}"
+            # Ein Artefakt kann eine einzelne Datei sein (Installer, DMG,
+            # AppImage) oder ein ganzer Ordner (Windows portable). Ordner
+            # muessen gepackt werden - an eine Release laesst sich nur eine
+            # Datei haengen.
+            COUNT=$(find "$NAME" -type f | wc -l)
+            if [ "$COUNT" -eq 1 ]; then
+              cp "$(find "$NAME" -type f)" ../release/
+            else
+              (cd "$NAME" && zip -qr "../../release/$NAME.zip" .)
+            fi
+          done
+          cd ..
+          echo "--- was an die Release geht ---"
+          ls -lh release/
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Ueber die gh-CLI statt einer fremden Action: Sie ist auf dem
+          # Runner vorhanden, und eine Action weniger ist eine
+          # Abhaengigkeit weniger, der man bei jedem Lauf vertrauen muss.
+          gh release create "${{ env.tagName }}" \
+            --title "UltraStar Deluxe ${{ env.versionName }}" \
+            --notes-file CHANGELOG_RELEASE.md \
+            --target "${{ github.sha }}" \
+            ${{ env.preRelease }} \
+            release/*
