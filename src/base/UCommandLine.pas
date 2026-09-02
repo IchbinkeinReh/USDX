@@ -61,6 +61,8 @@ type
       Benchmark:  boolean;
       NoLog:      boolean;
       CheckSongs: boolean;
+      // --web: Weboberflaeche mitstarten, siehe UWebServer.
+      Web:        boolean;
       ScreenMode: TScreenMode;
       Joypad:     boolean;
       Split:      TSplitMode;
@@ -145,6 +147,7 @@ procedure TCMDParams.ResetVariables;
 begin
   Debug       := false;
   Benchmark   := False;
+  Web         := False;
   NoLog       := false;
   CheckSongs  := false;
   ScreenMode  := scmDefault;
@@ -197,6 +200,8 @@ begin
         Benchmark   := True
       else if (Command = 'nolog') then
         NoLog       := True
+      else if (Command = 'web') then
+        Web         := True
       else if (Command = 'fullscreen') then
         ScreenMode  := scmFullscreen
       else if (Command = 'window') then

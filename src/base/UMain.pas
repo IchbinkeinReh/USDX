@@ -89,6 +89,9 @@ uses
   UBeatTimer,
   UPlatform,
   URenderer,
+  USongs,
+  UWebBridge,
+  UWebServer,
   USkins,
   UThemes,
   UParty,
@@ -103,6 +106,64 @@ uses
   UTime,
   UWebcam;
   //UVideoAcinerella;
+
+var
+  // Nur gesetzt, wenn mit --web gestartet. Die Bruecke haelt die Abschrift
+  // der Liederliste und die Befehlsschlange, der Server bedient das Netz.
+  WebBridge: TWebBridge = nil;
+  WebServer: TWebServerThread = nil;
+
+// Fuehrt aus, was die Weboberflaeche angefordert hat - im Spielthread, wo
+// der Zugriff auf die Bildschirme sicher ist.
+procedure HandleWebCommands;
+var
+  Cmd: TWebCommand;
+begin
+  if not Assigned(WebBridge) then
+    Exit;
+  while WebBridge.NextCommand(Cmd) do
+  begin
+    case Cmd.Kind of
+      wckStart:
+        if Assigned(ScreenSong) and (Cmd.SongIndex >= 0) and
+           (Cmd.SongIndex <= High(CatSongs.Song)) then
+        begin
+          // Bewusst nur auswaehlen, nicht sofort singen: Zum Starten
+          // gehoeren Spielerzahl und Namen, das laesst sich aus der Ferne
+          // nicht sinnvoll entscheiden. Der Song steht danach bereit.
+          ScreenSong.Interaction := Cmd.SongIndex;
+          ScreenSong.FixSelected;
+        end;
+    end;
+  end;
+end;
+
+// Uebergibt der Weboberflaeche eine frische Abschrift der Liederliste.
+procedure PublishSongsToWeb;
+var
+  I, Anzahl: integer;
+  Liste: TWebSongArray;
+begin
+  if not Assigned(WebBridge) or not Assigned(CatSongs) then
+    Exit;
+  SetLength(Liste, Length(CatSongs.Song));
+  Anzahl := 0;
+  for I := 0 to High(CatSongs.Song) do
+  begin
+    if CatSongs.Song[I].Main then
+      Continue;   // Kategorieueberschrift, kein Lied
+    Liste[Anzahl].Index    := I;
+    Liste[Anzahl].Artist   := CatSongs.Song[I].Artist;
+    Liste[Anzahl].Title    := CatSongs.Song[I].Title;
+    Liste[Anzahl].Edition  := CatSongs.Song[I].Edition;
+    Liste[Anzahl].Genre    := CatSongs.Song[I].Genre;
+    Liste[Anzahl].Language := CatSongs.Song[I].Language;
+    Liste[Anzahl].Year     := CatSongs.Song[I].Year;
+    Inc(Anzahl);
+  end;
+  SetLength(Liste, Anzahl);
+  WebBridge.PublishSongs(Liste);
+end;
 
 procedure Main;
 var
@@ -246,8 +307,24 @@ begin
     //------------------------------
     // Start Mainloop
     //------------------------------
+    if Params.Web then
+    begin
+      Log.LogStatus('Web Interface', 'Initialization');
+      WebBridge := TWebBridge.Create;
+      PublishSongsToWeb;
+      WebServer := TWebServerThread.Create(WebBridge, WEB_DEFAULT_PORT);
+    end;
+
     Log.LogStatus('Main Loop', 'Initialization');
     MainLoop;
+
+    if Assigned(WebServer) then
+    begin
+      WebServer.Stop;
+      WebServer.WaitFor;
+      FreeAndNil(WebServer);
+    end;
+    FreeAndNil(WebBridge);
 
   {$IFNDEF Debug}
   finally
@@ -320,6 +397,10 @@ begin
 
       // keyboard/mouse/joystick events
       CheckEvents;
+
+      // Anforderungen der Weboberflaeche - hier, weil in diesem Thread der
+      // Zugriff auf die Bildschirme erlaubt ist.
+      HandleWebCommands;
 
       // display
       Done := not Display.Draw;
