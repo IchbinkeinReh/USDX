@@ -299,10 +299,16 @@ jobs:
           echo "--- erzeugter Changelog ---"
           cat CHANGELOG_RELEASE.md
 
-      - name: Download all artifacts
+      - name: Download build artifacts
         uses: actions/download-artifact@v6
         with:
           path: artifacts
+          # NUR unsere Bau-Ergebnisse. Ohne Muster laedt der Schritt auch
+          # "*.dockerbuild" mit - eine Build-Provenance, die
+          # docker/build-push-action im Linux-Job nebenbei anlegt. Die ist
+          # kein gewoehnliches Archiv, das Herunterladen scheitert daran nach
+          # fuenf Versuchen, und an die Release gehoert sie ohnehin nicht.
+          pattern: UltraStarDeluxe-*
 
       - name: Package artifacts
         run: |
