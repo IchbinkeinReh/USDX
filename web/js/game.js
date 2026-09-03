@@ -11,7 +11,7 @@
 // Aufbau laesst das deshalb gar nicht erst zu, statt hinterher Punkte zu
 // verteilen, die niemand nachvollziehen kann.
 
-import { parseSong } from './song.js';
+import { parseSong, secondsUntilLine, lineAt } from './song.js';
 import { detectFrequency, freqToMidi } from './pitch.js';
 import { Scorer } from './score.js';
 import { Renderer } from './render.js';
@@ -224,15 +224,7 @@ export class Game {
   }
 
   zeileBei(trackIndex, beat) {
-    const spur = this.song.track(trackIndex);
-    let treffer = null;
-    for (const zeile of spur.lines) {
-      if (beat >= zeile.startBeat) treffer = zeile;
-      else break;
-    }
-    // Vor der ersten Zeile die erste zeigen: Sonst ist die Bahn im Vorspann
-    // leer und man weiss nicht, wo man einsetzen muss.
-    return treffer || spur.lines[0] || null;
+    return lineAt(this.song.track(trackIndex), beat);
   }
 
   schleife() {
@@ -255,8 +247,12 @@ export class Game {
       for (const [note, z] of s.scorer.state)
         anteile.set(note, z.tries > 0 ? z.hits / z.tries : 0);
 
+      const zeile = this.zeileBei(s.trackIndex, beat);
       return {
-        line: this.zeileBei(s.trackIndex, beat),
+        line: zeile,
+        // Wie lange noch bis zum Einsatz. Die Anzeige entscheidet selbst, ab
+        // wann sie das zeigt.
+        startIn: secondsUntilLine(this.song, zeile, zeit),
         sungMidi: s.sungMidi,
         anteile,
         name: s.scorer.name,

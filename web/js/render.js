@@ -10,7 +10,27 @@
 // Im Duett bekommt jede Stimme ihre eigene Bahn, uebereinander. Beide teilen
 // sich dieselbe Zeitachse, damit man sieht, wann man dran ist.
 
+import { noteProgress } from './song.js';
+
 const BALKEN_RUND = 6;
+
+// Wie lange vor dem Einsatz der Indikator erscheint, und in wie vielen
+// Stufen. Stufen statt eines glatten Balkens, weil man daran ablesen kann,
+// WANN genau es losgeht - ein gleitender Balken sagt nur "bald".
+export const VORLAUF_SEK = 3.0;
+export const VORLAUF_STUFEN = 6;
+
+// Wie viele Stufen noch leuchten. 0 heisst: nichts anzeigen - entweder ist
+// der Einsatz noch weit weg oder er ist da.
+export function vorlaufStufen(sekunden) {
+  if (!(sekunden > 0) || sekunden > VORLAUF_SEK) return 0;
+  return Math.ceil((sekunden / VORLAUF_SEK) * VORLAUF_STUFEN);
+}
+
+// Farben des Liedtextes.
+const TEXT_GESUNGEN = '#8b93a4';   // liegt hinter uns
+const TEXT_AKTIV    = '#ffd978';   // gerade zu hoeren
+const TEXT_KOMMT    = '#e8e8ea';   // steht noch bevor
 
 // Je Bahn eine Farbe, damit im Duett klar ist, wer wo singt.
 const FARBEN = [
@@ -162,6 +182,7 @@ export class Renderer {
     ctx.stroke();
 
     this.text(line, beat, w, h);
+    this.vorlauf(bahn.startIn, w, h);
     ctx.restore();
   }
 
@@ -172,7 +193,13 @@ export class Renderer {
     ctx.fill();
   }
 
-  // Der Liedtext, die gerade faellige Silbe hervorgehoben.
+  // Der Liedtext.
+  //
+  // Die gerade zu hoerende Silbe wird nicht nur hervorgehoben, sondern
+  // WAEHREND des Singens von links nach rechts eingefaerbt - derselbe Effekt
+  // wie lfxSlide in ULyrics.pas: Die Silbe wird bei ihrem Fortschritt geteilt,
+  // links "schon gesungen", rechts "kommt noch". Ohne das springt die Farbe
+  // silbenweise und man sieht nicht, wo im Wort man gerade ist.
   text(line, beat, w, h) {
     const ctx = this.ctx;
     const groesse = Math.max(15, Math.min(26, h * 0.09));
@@ -187,19 +214,69 @@ export class Renderer {
     // Auf bewegtem Bild wandert staendig Helligkeit unter den Text. Ein
     // Rand macht ihn unabhaengig davon lesbar; ohne ihn verschwinden einzelne
     // Silben genau dann, wenn man sie braucht.
-    if (this.hintergrund) {
+    const mitRand = this.hintergrund;
+    if (mitRand) {
       ctx.lineWidth = Math.max(3, groesse * 0.16);
       ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
       ctx.lineJoin = 'round';
     }
 
     line.notes.forEach((note, i) => {
+      const breite = breiten[i];
       const aktiv = beat >= note.start && beat < note.start + note.length;
-      if (this.hintergrund) ctx.strokeText(note.text, cx, cy);
-      ctx.fillStyle = aktiv ? '#ffd978'
-                    : (beat >= note.start ? '#c3c9d6' : '#ffffff');
-      ctx.fillText(note.text, cx, cy);
-      cx += breiten[i];
+
+      if (mitRand) ctx.strokeText(note.text, cx, cy);
+
+      if (aktiv) {
+        // Erst ganz in der Farbe "kommt noch", dann den bereits gesungenen
+        // Teil beschnitten darueber. Zwei Zeichnungen, ein Beschnitt.
+        ctx.fillStyle = TEXT_KOMMT;
+        ctx.fillText(note.text, cx, cy);
+
+        const anteil = noteProgress(note, beat);
+        if (anteil > 0) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(cx, cy - groesse * 1.2, breite * anteil, groesse * 1.6);
+          ctx.clip();
+          ctx.fillStyle = TEXT_AKTIV;
+          ctx.fillText(note.text, cx, cy);
+          ctx.restore();
+        }
+      } else {
+        ctx.fillStyle = beat >= note.start ? TEXT_GESUNGEN : TEXT_KOMMT;
+        ctx.fillText(note.text, cx, cy);
+      }
+
+      cx += breite;
     });
+  }
+
+  // Zeigt an, wann die Zeile losgeht.
+  //
+  // Das hat USDX so nicht - dort sieht man die kommende Zeile vorab, mehr
+  // nicht. Auf einem Handybildschirm ist dafuer kein Platz, und ohne
+  // irgendein Zeichen setzt man regelmaessig zu frueh oder zu spaet ein.
+  vorlauf(sekunden, w, h) {
+    const offen = vorlaufStufen(sekunden);
+    if (offen === 0) return;
+
+    const ctx = this.ctx;
+    const breite = Math.min(w * 0.4, 240);
+    const stufe = breite / VORLAUF_STUFEN;
+    const x0 = (w - breite) / 2;
+    const y = h * 0.80;
+    const dick = Math.max(5, h * 0.022);
+
+    for (let i = 0; i < VORLAUF_STUFEN; i++) {
+      // Die Stufen gehen von rechts nach links aus. Die letzte, die
+      // erlischt, steht damit direkt vor dem Einsatz.
+      const anStelle = i < offen;
+      ctx.fillStyle = anStelle ? 'rgba(127, 209, 255, 0.85)'
+                               : 'rgba(127, 209, 255, 0.15)';
+      ctx.beginPath();
+      ctx.roundRect(x0 + i * stufe + 2, y, stufe - 4, dick, dick / 2);
+      ctx.fill();
+    }
   }
 }

@@ -1,9 +1,11 @@
 // Prueft den Kern der Weboberflaeche ohne Browser: Parser, Tonhoehe, Wertung.
 // Zeichnen und Mikrofon bleiben aussen vor - dafuer braucht es einen Browser.
 
-import { parseSong, NOTE_FREESTYLE, NOTE_GOLDEN } from '../js/song.js';
+import { parseSong, noteProgress, secondsUntilLine, lineAt,
+         NOTE_FREESTYLE, NOTE_GOLDEN } from '../js/song.js';
 import { detectFrequency, freqToMidi, sameTone, toneDistance, rms } from '../js/pitch.js';
 import { Scorer, MAX_SCORE } from '../js/score.js';
+import { vorlaufStufen, VORLAUF_SEK, VORLAUF_STUFEN } from '../js/render.js';
 
 let bestanden = 0, fehlgeschlagen = 0;
 
@@ -103,6 +105,85 @@ check('in der Pause gibt es nichts zu treffen', w4.feed(s.beatToTime(1000), 60) 
 check('Freestyle wird nicht gewertet', w4.feed(s.beatToTime(17), 60) === null);
 
 console.log();
+console.log('Silbenfortschritt');
+{
+  const n = { start: 10, length: 4 };
+  check('vor der Silbe null', noteProgress(n, 9) === 0);
+  check('am Anfang null', noteProgress(n, 10) === 0);
+  check('in der Mitte die Haelfte', noteProgress(n, 12) === 0.5,
+        String(noteProgress(n, 12)));
+  check('am Ende eins', noteProgress(n, 14) === 1);
+  check('danach bleibt es eins', noteProgress(n, 99) === 1);
+  // Freestyle-Noten haben Laenge 0 - ohne Abfangen kaeme hier Unendlich
+  // heraus und der Text wuerde entweder ganz oder gar nicht eingefaerbt.
+  check('Laenge null ergibt null statt Unendlich',
+        noteProgress({ start: 0, length: 0 }, 5) === 0);
+  check('ohne Note null', noteProgress(null, 5) === 0);
+}
+
+console.log('Vorlauf einer Zeile');
+{
+  // 120 BPM in der Datei sind intern 480; ein Schlag ist damit 0,125 s.
+  const z = parseSong(`#TITLE:x
+#BPM:120
+#GAP:0
+- 0
+: 16 4 60 spaet
+E`);
+  const zeile = z.lines[0];
+  check('vor der Zeile bleibt Zeit',
+        Math.abs(secondsUntilLine(z, zeile, 0) - 2) < 1e-9,
+        String(secondsUntilLine(z, zeile, 0)));
+  check('genau beim Einsatz null',
+        Math.abs(secondsUntilLine(z, zeile, 2)) < 1e-9);
+  check('danach negativ', secondsUntilLine(z, zeile, 3) < 0);
+  check('ohne Zeile kein Wert', secondsUntilLine(z, null, 0) === null);
+  check('leere Zeile ergibt keinen Wert',
+        secondsUntilLine(z, { notes: [] }, 0) === null);
+}
+
+console.log('Welche Zeile gilt gerade');
+{
+  const z = parseSong(`#TITLE:x
+#BPM:120
+#GAP:0
+- 0
+: 0 4 60 eins
+- 20
+: 24 4 62 zwei
+E`);
+  const [a, b] = z.lines;
+  check('vor allem die erste Zeile', lineAt(z.tracks[0], -5) === a);
+  check('waehrend der ersten die erste', lineAt(z.tracks[0], 2) === a);
+  // Der Kern: Ist die Zeile ausgesungen, wird weitergeschaltet - auch wenn
+  // die naechste erst spaeter einsetzt. Sonst bliebe der alte Text stehen
+  // und der Vorlauf zaehlte auf einen Einsatz herunter, der vorbei ist.
+  check('nach der ersten schon die zweite', lineAt(z.tracks[0], 6) === b,
+        'blieb auf der ersten stehen');
+  check('waehrend der zweiten die zweite', lineAt(z.tracks[0], 25) === b);
+  check('nach der letzten bleibt die letzte', lineAt(z.tracks[0], 999) === b);
+  check('ohne Zeilen kein Absturz', lineAt({ lines: [] }, 0) === null);
+  check('ohne Spur kein Absturz', lineAt(null, 0) === null);
+
+  // Und daraus folgt, was der Indikator zeigt: nach der ersten Zeile zaehlt
+  // er auf die zweite herunter, nicht auf etwas Vergangenes.
+  const rest = secondsUntilLine(z, lineAt(z.tracks[0], 6), z.beatToTime(6));
+  check('der Vorlauf zeigt in die Zukunft', rest > 0, String(rest));
+}
+
+console.log('Vorlaufanzeige');
+check('weit vor dem Einsatz nichts', vorlaufStufen(VORLAUF_SEK + 0.1) === 0);
+check('genau am Rand alle Stufen', vorlaufStufen(VORLAUF_SEK) === VORLAUF_STUFEN);
+check('kurz davor eine Stufe', vorlaufStufen(0.01) === 1);
+// Bei genau null ist der Einsatz da - dann darf nichts mehr stehenbleiben,
+// sonst sieht es aus, als haette man noch Zeit.
+check('beim Einsatz nichts mehr', vorlaufStufen(0) === 0);
+check('danach nichts mehr', vorlaufStufen(-1) === 0);
+check('ohne Wert nichts', vorlaufStufen(null) === 0);
+check('Stufen nehmen gleichmaessig ab',
+      vorlaufStufen(VORLAUF_SEK / 2) === VORLAUF_STUFEN / 2,
+      String(vorlaufStufen(VORLAUF_SEK / 2)));
+
 console.log('Video und Hintergrund');
 const v = parseSong(`#TITLE:Mit Bild
 #ARTIST:Wer

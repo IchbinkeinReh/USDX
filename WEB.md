@@ -112,6 +112,36 @@ Die Tonhöhenerkennung ist dieselbe Idee wie im Spiel (NSDF/McLeod). Wichtig
 ist dabei die Spitzenauswahl: Nimmt man schlicht das globale Maximum, landen
 220, 440 und 880 Hz alle bei 110 Hz. Ein Test hält genau diesen Fehler fest.
 
+### Liedtext
+
+Die gerade zu hörende Silbe wird nicht nur hervorgehoben, sondern **während
+des Singens von links nach rechts eingefärbt** — derselbe Effekt wie
+`lfxSlide` in `ULyrics.pas`: Die Silbe wird bei ihrem Fortschritt geteilt,
+links „schon gesungen", rechts „kommt noch". Der Fortschritt ist die Formel
+von dort, `(Beat - Start) / Länge`, begrenzt auf 0…1. Ohne das springt die
+Farbe silbenweise und man sieht nicht, wo im Wort man gerade ist.
+
+Freestyle-Noten haben Länge 0 — ungeprüft käme dabei Unendlich heraus und die
+Silbe wäre entweder ganz oder gar nicht gefärbt. `noteProgress` fängt das ab,
+ein Test hält es fest.
+
+### Wann die Zeile losgeht
+
+Vor dem Einsatz erscheinen sechs Stufen, die über drei Sekunden von rechts
+nach links erlöschen; die letzte verschwindet genau beim Einsatz.
+
+**Das hat USDX so nicht.** Dort sieht man die kommende Zeile vorab am unteren
+Rand, mehr nicht. Auf einem Handybildschirm ist dafür kein Platz, und ohne
+irgendein Zeichen setzt man regelmäßig zu früh oder zu spät ein. Stufen statt
+eines gleitenden Balkens, weil man daran ablesen kann, *wann genau* es
+losgeht — ein gleitender Balken sagt nur „bald".
+
+Dazu gehört, welche Zeile überhaupt gilt: Ist eine Zeile ausgesungen, wird
+sofort auf die nächste umgeschaltet, auch wenn deren Einsatz noch bevorsteht.
+Nähme man schlicht „die letzte, die begonnen hat", bliebe der ausgesungene
+Text stehen und der Vorlauf zählte auf einen Einsatz herunter, der längst
+vorbei ist.
+
 ### Video und Hintergrundbild
 
 Dieselbe Reihenfolge wie im Spiel (`UScreenSingController`): Ist ein Video da,

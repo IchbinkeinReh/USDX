@@ -110,6 +110,49 @@ function parseNumber(text) {
   return Number.isFinite(value) ? value : 0;
 }
 
+// Wie weit ist eine Silbe gesungen? 0 vor ihr, 1 danach.
+//
+// Genau die Formel aus ULyrics.pas: Progress := (Beat - CurWord.Start) /
+// CurWord.Length, begrenzt auf 0..1. Danach richtet sich, wo der Text
+// zwischen "schon gesungen" und "kommt noch" geteilt wird.
+export function noteProgress(note, beat) {
+  if (!note || !(note.length > 0)) return 0;
+  const p = (beat - note.start) / note.length;
+  if (p <= 0) return 0;
+  if (p >= 1) return 1;
+  return p;
+}
+
+// Welche Zeile gehoert zu diesem Schlag?
+//
+// Nicht einfach "die letzte, die begonnen hat": Ist eine Zeile
+// ausgesungen, wird auf die naechste umgeschaltet, auch wenn deren Einsatz
+// noch bevorsteht. Sonst bliebe der ausgesungene Text stehen und der
+// Vorlauf zaehlte auf einen Einsatz herunter, der laengst vorbei ist.
+export function lineAt(track, beat) {
+  const lines = track && track.lines ? track.lines : [];
+  if (lines.length === 0) return null;
+
+  let index = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (beat >= lines[i].startBeat) index = i;
+    else break;
+  }
+
+  const letzte = lines[index].notes[lines[index].notes.length - 1];
+  if (letzte && beat >= letzte.start + letzte.length && index + 1 < lines.length)
+    return lines[index + 1];
+
+  return lines[index];
+}
+
+// Sekunden, bis die erste Note dieser Zeile faellig ist.
+// Negativ, wenn die Zeile schon laeuft. null, wenn es nichts zu warten gibt.
+export function secondsUntilLine(song, line, seconds) {
+  if (!song || !line || !line.notes || line.notes.length === 0) return null;
+  return song.beatToTime(line.notes[0].start) - seconds;
+}
+
 // Liest die Nummer aus einem Spurwechsel. "P1" und "P 1" sind beide erlaubt.
 function parsePlayerNumber(line) {
   const m = line.match(/^P\s*(\d+)/);
