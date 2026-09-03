@@ -80,7 +80,7 @@ export class Renderer {
     this.ctx = canvas.getContext('2d');
   }
 
-  // bahnen: [{ line, sungMidi, anteile, name, score }]
+  // bahnen: [{ line, bars, anteile, name, score }]
   // beat:   aktueller Schlag, gilt fuer alle Bahnen
   // hintergrund: liegt Video oder Bild dahinter? Dann bleibt der Canvas
   //   durchsichtig, sonst verdeckte er beides.
@@ -195,27 +195,32 @@ export class Renderer {
       }
     }
 
-    if (bahn.sungMidi >= 0) {
-      const px = x(beat);
-      // Auf die Oktave der Zeile holen, sonst zeichnet man ausserhalb.
-      let p = bahn.sungMidi - 60;
-      while (p - mitte > 6) p -= 12;
-      while (mitte - p > 6) p += 12;
-      ctx.strokeStyle = farbe.stimme;
-      ctx.lineWidth = 4;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(px - 14, y(p));
-      ctx.lineTo(px + 14, y(p));
-      ctx.stroke();
-    }
+    // Was gesungen wurde, als Balken auf der erkannten Tonhoehe - wie im
+    // Spiel (SingDrawPlayerLine). Es gibt sie nur dort, wo im Lied auch
+    // Noten stehen; dafuer sorgt schon der Scorer, der nichts festhaelt,
+    // solange keine wertbare Note laeuft.
+    //
+    // Eine Linie, die die Spielstelle anzeigt, gibt es bewusst nicht mehr:
+    // Der letzte Balken steht ohnehin genau dort, und zwar mitsamt der
+    // Auskunft, ob es gesessen hat.
+    if (bahn.bars) {
+      for (const bar of bahn.bars) {
+        // Nur, was in diese Zeile faellt.
+        if (bar.endBeat <= von || bar.startBeat >= bis) continue;
 
-    ctx.strokeStyle = '#ffffff44';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(x(beat), 0);
-    ctx.lineTo(x(beat), h);
-    ctx.stroke();
+        const bx = x(bar.startBeat);
+        const bw = Math.max(3, x(bar.endBeat) - bx);
+        // Danebengesungen wird flacher gezeichnet - im Spiel 65 Prozent.
+        // Das unterscheidet Treffer und Fehlgriff ohne zweite Farbe.
+        const dick = tonHoehe * (bar.hit ? 1 : 0.65);
+        const by = y(bar.tone - 60) - dick / 2;
+
+        ctx.fillStyle = bar.hit ? farbe.treffer : farbe.stimme;
+        ctx.globalAlpha = bar.hit ? 1 : 0.7;
+        this.balken(bx, by, bw, dick, Math.min(BALKEN_RUND, dick / 2));
+        ctx.globalAlpha = 1;
+      }
+    }
 
     // Der Anzeiger faehrt auf den Textanfang zu - deshalb erst den Text
     // zeichnen und dessen linken Rand als Ziel nehmen.

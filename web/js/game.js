@@ -249,7 +249,7 @@ export class Game {
 
       return {
         line: this.zeileBei(s.trackIndex, beat),
-        sungMidi: s.sungMidi,
+        bars: s.scorer.bars,
         anteile,
         name: s.scorer.name,
         // Ohne Mikrofon keine Punktzahl, auch keine 0: Eine 0 hiesse

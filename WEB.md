@@ -126,6 +126,39 @@ Freestyle-Noten haben Länge 0 — ungeprüft käme dabei Unendlich heraus und d
 Silbe wäre entweder ganz oder gar nicht gefärbt. `noteProgress` fängt das ab,
 ein Test hält es fest.
 
+### Was gesungen wurde
+
+Statt einer Linie, die die Spielstelle anzeigt, stehen Balken auf der
+erkannten Tonhöhe — wie `SingDrawPlayerLine` in `src/base/UDraw.pas`. Der
+letzte Balken steht ohnehin genau an der Spielstelle, und zwar mitsamt der
+Auskunft, ob es gesessen hat; eine zusätzliche Linie sagt nichts weiter.
+
+**Balken gibt es nur dort, wo im Lied auch Noten stehen.** In USDX ist das
+die Bedingung `ToneValid and NoteAvailable` in `UNote.pas`; hier hält der
+Scorer schlicht nichts fest, solange keine wertbare Note läuft. In Pausen und
+auf Freestyle-Noten bleibt es also leer.
+
+Drei Regeln, die man beim Nachbauen verliert:
+
+- Der gesungene Ton wird in die **Oktave der Zielnote** geholt (solange der
+  Abstand größer als eine halbe Oktave ist, um zwölf verschieben). Ohne das
+  läge der Balken meterweit über oder unter der Note, obwohl richtig gesungen
+  wurde — wer tief singt, träfe optisch nie.
+- Bei einem Treffer **rastet der Balken auf der Zielnote ein**
+  (`ActualTone := Tone`). Sonst sähe ein Treffer aus wie ein knapper
+  Fehlgriff, nur weil die Messung ein Achtel daneben lag.
+- Ein Fehlgriff wird **flacher** gezeichnet, im Spiel 65 %. Das unterscheidet
+  Treffer und Fehlgriff ohne zweite Farbe.
+
+Aufeinanderfolgende Schläge mit demselben Ton verlängern den Balken, statt
+einen zweiten danebenzusetzen — gerechnet wird in ganzen Schlägen wie im
+Spiel, sonst entstünden bei jedem Bild Splitter.
+
+Die Trefferentscheidung ist dieselbe wie bei der Wertung, damit Bild und
+Punktzahl sich nicht widersprechen. Sie ist strenger als in USDX: Dort gibt
+es ein Toleranzband (`Range = 2 - Schwierigkeit`), hier muss der Halbton
+stimmen.
+
 ### Wann die Zeile losgeht
 
 Vor dem Einsatz fährt ein Balken von links auf den Anfang des Liedtextes zu

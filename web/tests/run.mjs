@@ -4,7 +4,7 @@
 import { parseSong, noteProgress, secondsUntilLine, lineAt,
          NOTE_FREESTYLE, NOTE_GOLDEN } from '../js/song.js';
 import { detectFrequency, freqToMidi, sameTone, toneDistance, rms } from '../js/pitch.js';
-import { Scorer, MAX_SCORE } from '../js/score.js';
+import { Scorer, MAX_SCORE, inOktave } from '../js/score.js';
 import { lyricHelper, HELFER_MIN_VORLAUF, HELFER_GRENZE } from '../js/render.js';
 
 let bestanden = 0, fehlgeschlagen = 0;
@@ -169,6 +169,80 @@ E`);
   // er auf die zweite herunter, nicht auf etwas Vergangenes.
   const rest = secondsUntilLine(z, lineAt(z.tracks[0], 6), z.beatToTime(6));
   check('der Vorlauf zeigt in die Zukunft', rest > 0, String(rest));
+}
+
+console.log('Gesungene Balken');
+{
+  // 120 BPM in der Datei sind intern 480, ein Schlag also 0,125 s.
+  const b = parseSong(`#TITLE:x
+#BPM:120
+#GAP:0
+: 0 8 0 la
+: 8 4 0 pause
+F 12 4 0 frei
+E`);
+  // Note mit pitch 0 entspricht MIDI 60.
+
+  // Die Oktavverschiebung: eine Oktave zu tief ist derselbe Ton.
+  check('eine Oktave tiefer wird herangeholt', inOktave(48, 60) === 60);
+  check('eine Oktave hoeher ebenso', inOktave(72, 60) === 60);
+  check('knapp daneben bleibt knapp daneben', inOktave(62, 60) === 62);
+  check('genau eine halbe Oktave bleibt stehen', inOktave(66, 60) === 66);
+
+  const w = new Scorer(b);
+  check('anfangs keine Balken', w.bars.length === 0);
+
+  // In einer Pause darf nichts entstehen - der Kern der Anforderung.
+  w.feed(b.beatToTime(100), 60);
+  check('ohne Note entsteht kein Balken', w.bars.length === 0);
+
+  // Freestyle zaehlt nicht und darf deshalb auch keinen Balken erzeugen.
+  w.feed(b.beatToTime(13), 60);
+  check('bei Freestyle entsteht kein Balken', w.bars.length === 0);
+
+  // Ohne erkannten Ton ebenfalls nichts.
+  w.feed(b.beatToTime(1), -1);
+  check('ohne erkannten Ton kein Balken', w.bars.length === 0);
+
+  // Jetzt richtig gesungen.
+  w.feed(b.beatToTime(1), 60);
+  check('auf einer Note entsteht ein Balken', w.bars.length === 1);
+  check('er sitzt auf dem richtigen Schlag',
+        w.bars[0].startBeat === 1 && w.bars[0].endBeat === 2,
+        JSON.stringify(w.bars[0]));
+  check('und ist als Treffer vermerkt', w.bars[0].hit === true);
+
+  // Anschliessender Schlag mit gleichem Ton verlaengert, statt einen zweiten
+  // Balken danebenzusetzen.
+  w.feed(b.beatToTime(2), 60);
+  check('naechster Schlag verlaengert den Balken',
+        w.bars.length === 1 && w.bars[0].endBeat === 3,
+        JSON.stringify(w.bars));
+
+  // Eine Oktave tiefer ist derselbe Ton - USDX wertet die Tonstufe.
+  w.feed(b.beatToTime(3), 48);
+  check('eine Oktave tiefer verlaengert weiter',
+        w.bars.length === 1 && w.bars[0].endBeat === 4,
+        JSON.stringify(w.bars));
+  check('und rastet auf der Zielnote ein', w.bars[0].tone === 60,
+        String(w.bars[0].tone));
+
+  // Danebengesungen: eigener Balken, nicht als Treffer, auf der gemessenen
+  // Hoehe statt auf der Note.
+  const w2 = new Scorer(b);
+  w2.feed(b.beatToTime(1), 62);
+  check('Fehlgriff gibt einen eigenen Balken', w2.bars.length === 1);
+  check('nicht als Treffer vermerkt', w2.bars[0].hit === false);
+  check('und auf der gesungenen Hoehe', w2.bars[0].tone === 62,
+        String(w2.bars[0].tone));
+
+  // Wechsel von daneben auf getroffen trennt die Balken.
+  w2.feed(b.beatToTime(2), 60);
+  check('Wechsel trennt die Balken', w2.bars.length === 2,
+        JSON.stringify(w2.bars));
+
+  // Und die Wertung bleibt davon unberuehrt.
+  check('Balken aendern die Punkte nicht', w2.score >= 0);
 }
 
 console.log('Zeilenanzeiger');
