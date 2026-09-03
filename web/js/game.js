@@ -34,6 +34,9 @@ export class Game {
     this.laeuft = false;
     this.hatVideo = false;
     this.hatBild = false;
+    // Wird gerufen, wenn das Lied durch ist - die Oberflaeche verlaesst
+    // darauf das Vollbild.
+    this.onEnde = null;
   }
 
   // Video und Hintergrundbild vorbereiten.
@@ -271,11 +274,13 @@ export class Game {
     if (this.audio.ended) {
       this.laeuft = false;
       if (this.el.video) this.el.video.pause();
-      this.el.hinweis.textContent = 'Fertig - ' + this.saenger
+      const ergebnis = 'Fertig - ' + this.saenger
         .map((s) => s.analyser
           ? `${s.scorer.name}: ${s.scorer.score}`
           : `${s.scorer.name}: nicht gewertet`)
         .join(', ');
+      this.el.hinweis.textContent = ergebnis;
+      if (this.onEnde) this.onEnde(ergebnis);
       return;
     }
     requestAnimationFrame(() => this.schleife());

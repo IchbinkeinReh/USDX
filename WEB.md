@@ -272,6 +272,35 @@ Der Relativmodus (`#RELATIVE`) zählt den Versatz **je Stimme**
 die zweite Stimme mit jeder Zeile der ersten weiter weg; ein Test hält beide
 Fälle fest.
 
+### Zwei Schritte
+
+Erst das Lied wählen, dann singen. Dazwischen liegt die Zuordnung der
+Mikrofone — die braucht Ruhe und Platz, und auf der Bühne ist beides weg.
+
+Auf dem **Handy** wird beim Wechsel Vollbild angefordert und, wenn möglich,
+das Querformat festgehalten; am Ende des Liedes wird beides wieder gelöst.
+Im Hochformat bleiben je Notenzeile ein paar Zentimeter, auf denen weder
+Noten noch Text zu erkennen sind.
+
+Beides muss **aus der Klickbehandlung heraus** angefordert werden — später
+fehlt die Nutzergeste und der Browser lehnt ab. Und beides ist abgesichert,
+nichts davon ist Voraussetzung: Klappt es nicht, wird trotzdem gesungen, nur
+eben im Fenster. Lässt sich das Drehen nicht festhalten, erscheint stattdessen
+ein Hinweis, das Gerät quer zu halten.
+
+Was wo geht:
+
+| | Vollbild | Querformat festhalten |
+| --- | --- | --- |
+| Chrome/Firefox auf Android | ja | ja |
+| Safari auf dem iPhone | nein — nur für Videos | nein — API fehlt |
+| Rechner | ja, wird aber nicht erzwungen | — |
+
+Erkannt wird das Gerät **nicht an der Browserkennung** — die lügen seit
+jeher — sondern an grobem Zeiger (Finger statt Maus) und kleiner
+Bildschirmseite. Tablets sind bewusst ausgenommen (`HANDY_BREITE = 540`):
+Dort ist genug Platz, und ein erzwungenes Vollbild stört mehr, als es hilft.
+
 ### Grenzen
 
 - Videoformate, die der Browser nicht kennt (`.avi`, `.mpg`, `.divx`), fallen

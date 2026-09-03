@@ -7,6 +7,7 @@ import { detectFrequency, freqToMidi, sameTone, toneDistance, rms } from '../js/
 import { Scorer, MAX_SCORE, inOktave } from '../js/score.js';
 import { lyricHelper, helferBahn,
          HELFER_MIN_VORLAUF, HELFER_GRENZE } from '../js/render.js';
+import { istHandy, HANDY_BREITE } from '../js/vollbild.js';
 
 let bestanden = 0, fehlgeschlagen = 0;
 
@@ -176,6 +177,42 @@ E`);
   // er auf die zweite herunter, nicht auf etwas Vergangenes.
   const rest = secondsUntilLine(z, lineAt(z.tracks[0], 6), z.beatToTime(6));
   check('der Vorlauf zeigt in die Zukunft', rest > 0, String(rest));
+}
+
+console.log('Handy erkennen');
+{
+  // Bewusst nicht an der Browserkennung festgemacht - die luegen seit jeher.
+  // Gefragt wird nach grobem Zeiger und kleinem Bildschirm.
+  const bau = (grob, breite, hoehe) => ({
+    matchMedia: (q) => ({ matches: q.includes('coarse') ? grob : false }),
+    screen: { width: breite, height: hoehe },
+  });
+
+  check('Handy hochkant', istHandy(bau(true, 390, 844)) === true);
+  check('Handy quer', istHandy(bau(true, 844, 390)) === true);
+  // Tablets sind bewusst nicht gemeint: Dort ist genug Platz, und ein
+  // erzwungenes Vollbild samt festgehaltenem Querformat stoert nur.
+  check('kleines Tablet quer', istHandy(bau(true, 1024, 768)) === false);
+  check('kleines Tablet hochkant', istHandy(bau(true, 768, 1024)) === false);
+  check('grosses Tablet', istHandy(bau(true, 1366, 1024)) === false);
+  // Aufklappbares Geraet zugeklappt - noch Handy.
+  check('schmales Klappgeraet', istHandy(bau(true, 400, 900)) === true);
+  // Ein Rechner mit Maus soll nie ins Vollbild gezwungen werden, auch wenn
+  // das Fenster klein ist.
+  check('Rechner mit Maus', istHandy(bau(false, 1920, 1080)) === false);
+  check('kleines Fenster mit Maus', istHandy(bau(false, 400, 800)) === false);
+  // Beruehrbildschirm am Rechner: grosser Schirm, also nein.
+  check('Beruehrbildschirm am Rechner', istHandy(bau(true, 1920, 1080)) === false);
+
+  // Kennt der Browser matchMedia nicht, wird auf maxTouchPoints
+  // zurueckgegriffen statt abzustuerzen.
+  check('ohne matchMedia kein Absturz',
+        istHandy({ navigator: { maxTouchPoints: 5 }, screen: { width: 390, height: 844 } }) === true);
+  check('ohne alles kein Absturz', istHandy({}) === false);
+  check('genau an der Grenze noch Handy',
+        istHandy(bau(true, HANDY_BREITE, 1200)) === true);
+  check('einen Punkt darueber nicht mehr',
+        istHandy(bau(true, HANDY_BREITE + 1, 1200)) === false);
 }
 
 console.log('Gesungene Balken');

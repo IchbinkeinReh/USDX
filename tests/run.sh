@@ -44,9 +44,16 @@ for QUELLE in tests/test*.pas; do
     # shellcheck disable=SC2086
     fpc $FLAGS -Fu"$UNITS" -Fisrc -FUtests/build -o"$NAME" "$QUELLE" \
         > "tests/build/$(basename "$NAME").log" 2>&1 || {
-            echo "  Bau fehlgeschlagen:"
+            # "FEHL" im Text, damit der Fehlschlag auch dann auffaellt,
+            # wenn jemand die Ausgabe nach Testergebnissen filtert. Vorher
+            # blieb hier eine alte Binaerdatei liegen und der Lauf sah
+            # unauffaellig aus.
+            echo "  FEHL Bau fehlgeschlagen:"
             grep -iE "error|fatal" "tests/build/$(basename "$NAME").log" | head -5
             FEHLER=1
+            # Alte Binaerdatei entfernen: Sonst laesst sie sich spaeter von
+            # Hand starten und meldet Erfolg fuer Code, den es nicht mehr gibt.
+            rm -f "$NAME"
             continue
         }
     "./$NAME" || FEHLER=1

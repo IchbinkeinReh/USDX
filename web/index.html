@@ -2,59 +2,91 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>UltraStar Deluxe – Web</title>
 <style>
   *{box-sizing:border-box}
-  body{margin:0;background:#0d0f14;color:#e8e8ea;font-family:system-ui,sans-serif}
+  body{margin:0;background:#0d0f14;color:#e8e8ea;font-family:system-ui,sans-serif;
+       overscroll-behavior:none}
+  .aus{display:none !important}
+
+  /* ---------- Schritt 1: Liedauswahl ---------- */
   header{display:flex;gap:10px;align-items:center;padding:10px 14px;background:#171a22}
   input,select{font-size:16px;padding:9px;border-radius:8px;border:1px solid #333a48;
         background:#0d0f14;color:#e8e8ea}
-  input{flex:1}
-  button{font-size:15px;padding:9px 16px;border-radius:8px;border:0;
+  input{flex:1;min-width:0}
+  button{font-size:15px;padding:10px 18px;border-radius:8px;border:0;
          background:#3d6ae0;color:#fff;cursor:pointer}
   button:disabled{background:#333a48;cursor:default}
-  #liste{max-height:34vh;overflow:auto;border-bottom:1px solid #222733}
-  #liste div{padding:10px 14px;border-bottom:1px solid #1b1f29;cursor:pointer}
+  button.still{background:#2a3140}
+  #liste div{padding:12px 14px;border-bottom:1px solid #1b1f29;cursor:pointer}
   #liste div:active{background:#232936}
   .a{font-weight:600}.t{color:#98a0b0;font-size:14px}
   .duett{color:#ffb27f;font-size:12px;margin-left:6px}
-  #buehne{padding:14px}
-  /* Video, Bild und Noten liegen uebereinander. Der Canvas ist durchsichtig
-     und zeichnet nur darauf - deshalb bekommt der Rahmen den Hintergrund,
-     nicht der Canvas selbst. */
-  #bild_flaeche{position:relative;width:100%;height:46vh;border-radius:12px;
-                overflow:hidden;background:#11131a}
-  #bild_flaeche > *{position:absolute;inset:0;width:100%;height:100%}
-  #hintergrund,#video{object-fit:cover;display:none;background:#11131a}
-  canvas{display:block}
-  #kopf{display:flex;justify-content:space-between;align-items:baseline;margin:10px 2px}
-  #punkte{font-size:26px;font-weight:700;color:#ffd978}
-  #hinweis{color:#98a0b0;font-size:14px;min-height:20px;margin:0 2px}
-  #besetzung{background:#171a22;border-radius:12px;padding:12px 14px;margin:10px 0;
-             display:none}
-  #besetzung h3{margin:0 0 10px;font-size:15px;font-weight:600}
+
+  #vorbereitung{padding:14px}
+  #gewaehlt{font-size:19px;font-weight:600;margin-bottom:4px}
+  #gewaehlt_info{color:#98a0b0;font-size:14px;margin-bottom:14px}
   .stimme{display:flex;gap:10px;align-items:center;margin-bottom:8px}
   .stimme label{min-width:90px;font-weight:600}
-  .stimme select{flex:1}
-  .warnung{color:#ff9b8a;font-size:14px;min-height:18px}
+  .stimme select{flex:1;min-width:0}
+  .warnung{color:#ff9b8a;font-size:14px;min-height:18px;margin:6px 0}
+  .knopfreihe{display:flex;gap:10px;margin-top:14px}
+  #singen{flex:1;font-size:17px;padding:14px}
+
+  /* ---------- Schritt 2: Singen ---------- */
+  #buehne{position:fixed;inset:0;background:#0d0f14;display:flex;flex-direction:column}
+  #buehne_kopf{display:flex;justify-content:space-between;align-items:center;
+               gap:10px;padding:8px 12px;background:#171a22}
+  #titel{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #punkte{font-size:22px;font-weight:700;color:#ffd978;white-space:nowrap}
+  #zurueck{padding:7px 12px;font-size:14px;background:#2a3140}
+  #bild_flaeche{position:relative;flex:1;min-height:0;overflow:hidden;background:#11131a}
+  #bild_flaeche > *{position:absolute;inset:0;width:100%;height:100%}
+  #hintergrund,#video{object-fit:contain;display:none;background:#11131a}
+  canvas{display:block}
+  #hinweis{color:#98a0b0;font-size:13px;padding:6px 12px;min-height:24px;
+           background:#171a22}
+
+  /* Im Vollbild zaehlt jeder Millimeter fuer die Noten. */
+  #buehne:fullscreen #buehne_kopf{padding:4px 10px}
+  #buehne:fullscreen #hinweis{display:none}
+
+  /* Laesst sich das Drehen nicht erzwingen, wird wenigstens gesagt, woran es
+     liegt - im Hochformat ist die Notenzeile kaum zu erkennen. */
+  #drehen{display:none;color:#ffb27f;font-size:13px;padding:6px 12px;
+          background:#171a22}
 </style>
 </head>
 <body>
-<header>
-  <input id="suche" placeholder="Suchen – abba OR queen, !live, 1990-1999">
-  <button id="start" disabled>Singen</button>
-</header>
-<div id="liste"></div>
-<div id="buehne">
-  <div id="kopf"><div id="titel">Kein Lied gewählt</div><div id="punkte">0</div></div>
 
-  <div id="besetzung">
-    <h3>Wer singt welche Stimme?</h3>
+<!-- ============ Schritt 1: Lied waehlen ============ -->
+<div id="auswahl">
+  <header>
+    <input id="suche" placeholder="Suchen – abba OR queen, !live, 1990-1999">
+  </header>
+  <div id="liste"></div>
+
+  <div id="vorbereitung" class="aus">
+    <div id="gewaehlt"></div>
+    <div id="gewaehlt_info"></div>
     <div id="stimmen"></div>
     <div class="warnung" id="warnung"></div>
+    <div class="knopfreihe">
+      <button id="singen">Singen</button>
+      <button id="anderes" class="still">Anderes Lied</button>
+    </div>
   </div>
+</div>
 
+<!-- ============ Schritt 2: Singen ============ -->
+<div id="buehne" class="aus">
+  <div id="buehne_kopf">
+    <button id="zurueck">Zurück</button>
+    <div id="titel"></div>
+    <div id="punkte">0</div>
+  </div>
+  <div id="drehen">Quer halten – im Hochformat ist die Notenzeile kaum zu erkennen.</div>
   <div id="bild_flaeche">
     <img id="hintergrund" alt="">
     <video id="video" muted playsinline preload="auto"></video>
@@ -62,51 +94,54 @@
   </div>
   <p id="hinweis"></p>
 </div>
+
 <script type="module">
 import { Game } from './js/game.js';
+import { istHandy, vollbildAn, vollbildAus, imVollbild } from './js/vollbild.js';
 
+const $ = (id) => document.getElementById(id);
 const el = {
-  titel: document.getElementById('titel'),
-  punkte: document.getElementById('punkte'),
-  hinweis: document.getElementById('hinweis'),
-  video: document.getElementById('video'),
-  bild: document.getElementById('hintergrund'),
+  titel: $('titel'), punkte: $('punkte'), hinweis: $('hinweis'),
+  video: $('video'), bild: $('hintergrund'),
 };
-const canvas = document.getElementById('buehnebild');
-// Auf die tatsaechliche Groesse setzen, sonst wird das Bild weichgezeichnet.
-function passeAn() {
-  canvas.width = canvas.clientWidth * devicePixelRatio;
-  canvas.height = canvas.clientHeight * devicePixelRatio;
-}
-addEventListener('resize', passeAn); passeAn();
-
+const auswahl = $('auswahl'), buehne = $('buehne');
+const canvas = $('buehnebild');
 const spiel = new Game(canvas, el);
-const suche = document.getElementById('suche');
-const liste = document.getElementById('liste');
-const start = document.getElementById('start');
-const besetzung = document.getElementById('besetzung');
-const stimmen = document.getElementById('stimmen');
-const warnung = document.getElementById('warnung');
-let t = null, mikrofone = [];
+const handy = istHandy();
+let mikrofone = [], t = null;
+
+// Canvas auf die tatsaechliche Groesse setzen, sonst wird das Bild
+// weichgezeichnet. Muss auch nach dem Drehen wieder passieren.
+function passeAn() {
+  const b = canvas.clientWidth, h = canvas.clientHeight;
+  if (b > 0 && h > 0) {
+    canvas.width = Math.round(b * devicePixelRatio);
+    canvas.height = Math.round(h * devicePixelRatio);
+  }
+}
+addEventListener('resize', passeAn);
+addEventListener('orientationchange', () => setTimeout(passeAn, 250));
 
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
 
+// ---------- Schritt 1: Lied waehlen ----------
 async function sucheLieder() {
-  const r = await fetch('/api/songs?max=100&q=' + encodeURIComponent(suche.value));
+  const r = await fetch('/api/songs?max=100&q=' + encodeURIComponent($('suche').value));
   const d = await r.json();
-  liste.innerHTML = d.map(s =>
+  $('liste').innerHTML = d.map(s =>
     `<div data-i="${s.index}"><div class="a">${esc(s.artist)}</div>` +
     `<div class="t">${esc(s.title)}${s.year ? ' · ' + s.year : ''}` +
     `${s.duet ? '<span class="duett">Duett</span>' : ''}</div></div>`).join('');
 }
-suche.addEventListener('input', () => { clearTimeout(t); t = setTimeout(sucheLieder, 250); });
+$('suche').addEventListener('input', () => {
+  clearTimeout(t); t = setTimeout(sucheLieder, 250);
+});
 
-// Baut die Auswahl "welche Stimme an welchem Mikrofon".
 function zeigeBesetzung(song) {
-  stimmen.innerHTML = '';
-  warnung.textContent = '';
+  $('stimmen').innerHTML = '';
+  $('warnung').textContent = '';
 
-  const auswahl = (i) => {
+  const feld = (i) => {
     const opts = ['<option value="">— nicht werten —</option>']
       .concat(mikrofone.map((m, k) =>
         `<option value="${esc(m.deviceId)}"${k === i ? ' selected' : ''}>` +
@@ -117,41 +152,38 @@ function zeigeBesetzung(song) {
   song.tracks.forEach((tr, i) => {
     const zeile = document.createElement('div');
     zeile.className = 'stimme';
-    zeile.innerHTML = `<label>${esc(tr.name)}</label>${auswahl(i)}`;
-    stimmen.appendChild(zeile);
+    zeile.innerHTML = `<label>${esc(tr.name)}</label>${feld(i)}`;
+    $('stimmen').appendChild(zeile);
   });
 
-  besetzung.style.display = 'block';
   if (song.isDuet && mikrofone.length < 2) {
-    warnung.textContent =
+    $('warnung').textContent =
       'Nur ein Mikrofon gefunden. Zwei Stimmen lassen sich damit nicht ' +
       'auseinanderhalten – die zweite läuft ungewertet mit.';
   }
   pruefeDoppelt();
 }
 
-// Dasselbe Mikrofon zweimal ergibt keine zwei Wertungen, sondern zweimal
-// dieselbe. Lieber vorher sagen als hinterher Punkte erklaeren.
+const DOPPELT = 'Ein Mikrofon kann nur einer Stimme zugeordnet werden.';
 function pruefeDoppelt() {
-  const gewaehlt = [...stimmen.querySelectorAll('select')]
+  const g = [...$('stimmen').querySelectorAll('select')]
     .map((s) => s.value).filter((v) => v !== '');
-  const doppelt = gewaehlt.length !== new Set(gewaehlt).size;
-  if (doppelt) {
-    warnung.textContent = 'Ein Mikrofon kann nur einer Stimme zugeordnet werden.';
-    start.disabled = true;
+  if (g.length !== new Set(g).size) {
+    $('warnung').textContent = DOPPELT;
+    $('singen').disabled = true;
   } else {
-    if (warnung.textContent === 'Ein Mikrofon kann nur einer Stimme zugeordnet werden.')
-      warnung.textContent = '';
-    start.disabled = false;
+    if ($('warnung').textContent === DOPPELT) $('warnung').textContent = '';
+    $('singen').disabled = false;
   }
 }
-stimmen.addEventListener('change', pruefeDoppelt);
+$('stimmen').addEventListener('change', pruefeDoppelt);
 
-liste.addEventListener('click', async (e) => {
+$('liste').addEventListener('click', async (e) => {
   const d = e.target.closest('div[data-i]');
   if (!d) return;
-  el.hinweis.textContent = 'Lade …';
-  besetzung.style.display = 'none';
+  $('gewaehlt').textContent = 'Lade …';
+  $('gewaehlt_info').textContent = '';
+  $('vorbereitung').classList.remove('aus');
   try {
     const song = await spiel.ladeLied(+d.dataset.i);
     // Namen der Mikrofone gibt der Browser erst nach einer Freigabe heraus.
@@ -159,33 +191,79 @@ liste.addEventListener('click', async (e) => {
       await spiel.frageFreigabe();
       mikrofone = await spiel.listeMikrofone();
     }
+    $('gewaehlt').textContent = `${song.artist} – ${song.title}`;
+    $('gewaehlt_info').textContent = song.isDuet
+      ? 'Duett – beide Stimmen zuordnen' : 'Bereit';
     zeigeBesetzung(song);
-    el.hinweis.textContent = song.isDuet
-      ? 'Duett: beide Stimmen zuordnen und starten.'
-      : 'Bereit.';
+    $('vorbereitung').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } catch (err) {
-    el.hinweis.textContent = 'Lied lässt sich nicht laden: ' + err.message;
-    start.disabled = true;
+    $('gewaehlt').textContent = 'Lied lässt sich nicht laden';
+    $('gewaehlt_info').textContent = err.message;
+    $('singen').disabled = true;
   }
 });
 
-start.addEventListener('click', async () => {
-  start.disabled = true;
-  besetzung.style.display = 'none';
-  const wahl = [...stimmen.querySelectorAll('select')].map((s) => ({
-    trackIndex: +s.dataset.track,
-    deviceId: s.value || null,
+$('anderes').addEventListener('click', () => {
+  $('vorbereitung').classList.add('aus');
+});
+
+// ---------- Schritt 2: Singen ----------
+$('singen').addEventListener('click', async () => {
+  $('singen').disabled = true;
+  const wahl = [...$('stimmen').querySelectorAll('select')].map((s) => ({
+    trackIndex: +s.dataset.track, deviceId: s.value || null,
   }));
+
+  auswahl.classList.add('aus');
+  buehne.classList.remove('aus');
+
+  // Vollbild und Querformat MUESSEN aus dieser Klickbehandlung heraus
+  // angefordert werden - spaeter fehlt die Nutzergeste und der Browser
+  // lehnt ab.
+  if (handy) {
+    const konnte = await vollbildAn(buehne);
+    if (!konnte.quer) $('drehen').style.display = 'block';
+  }
+  passeAn();
+
   try {
     await spiel.start(wahl);
   } catch (err) {
     el.hinweis.textContent = err.message;
-    besetzung.style.display = 'block';
-    start.disabled = false;
+    await zurueckZurAuswahl();
   }
 });
 
+async function zurueckZurAuswahl() {
+  spiel.stop();
+  await vollbildAus();
+  $('drehen').style.display = 'none';
+  buehne.classList.add('aus');
+  auswahl.classList.remove('aus');
+  $('singen').disabled = false;
+  el.punkte.textContent = '0';
+}
+$('zurueck').addEventListener('click', zurueckZurAuswahl);
+
+// Lied zu Ende: Vollbild verlassen, Ergebnis aber stehen lassen - wer gerade
+// gesungen hat, will erst die Punkte sehen und nicht sofort wieder die Liste.
+spiel.onEnde = async (text) => {
+  await vollbildAus();
+  $('drehen').style.display = 'none';
+  el.hinweis.textContent = text;
+};
+
+// Verlaesst jemand das Vollbild von Hand (Escape, Zurueck-Geste), darf das
+// Querformat nicht festgehalten bleiben.
+document.addEventListener('fullscreenchange', () => {
+  if (!imVollbild()) {
+    try { screen.orientation && screen.orientation.unlock(); } catch (e) {}
+  }
+  setTimeout(passeAn, 100);
+});
+
 sucheLieder();
+passeAn();
 </script>
 </body>
 </html>

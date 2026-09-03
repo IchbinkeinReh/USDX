@@ -28,6 +28,10 @@ var
   CT, Body: UTF8String;
   Status: integer;
   Pfad: UTF8String;
+  Fehlt: UTF8String;
+  Suche: TSearchRec;
+  Gefunden: boolean;
+  I: integer;
   L: TWebSongArray;
   D: TJSONData;
   Cmd: TWebCommand;
@@ -153,6 +157,31 @@ begin
           (TJSONArray(D).Count = 1) and
           (not TJSONObject(TJSONArray(D)[0]).Booleans['duet']));
   finally D.Free; end;
+
+  WriteLn;
+  WriteLn('Erlaubnisliste');
+  // Jede aufgefuehrte Datei muss auch wirklich im Ordner web/ liegen.
+  // Ein Tippfehler hier faellt sonst nirgends auf - die Datei wird einfach
+  // nicht ausgeliefert, und die Seite bleibt ohne Erklaerung leer.
+  Fehlt := '';
+  for I := Low(WEB_DATEIEN) to High(WEB_DATEIEN) do
+    if not FileExists('web/' + WEB_DATEIEN[I]) then
+      Fehlt := Fehlt + ' ' + WEB_DATEIEN[I];
+  Check('alle aufgefuehrten Dateien liegen in web/', Fehlt = '', Fehlt);
+
+  // Und umgekehrt: Jedes Modul in web/js muss aufgefuehrt sein.
+  Fehlt := '';
+  if (FindFirst('web/js/*.js', faAnyFile, Suche) = 0) then
+  begin
+    repeat
+      Gefunden := False;
+      for I := Low(WEB_DATEIEN) to High(WEB_DATEIEN) do
+        if (WEB_DATEIEN[I] = 'js/' + Suche.Name) then Gefunden := True;
+      if not Gefunden then Fehlt := Fehlt + ' ' + Suche.Name;
+    until FindNext(Suche) <> 0;
+    FindClose(Suche);
+  end;
+  Check('kein Modul in web/js fehlt in der Liste', Fehlt = '', Fehlt);
 
   WriteLn;
   WriteLn('Dateianfragen');
