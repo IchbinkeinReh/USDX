@@ -116,6 +116,49 @@ Die Tonhöhenerkennung ist dieselbe Idee wie im Spiel (NSDF/McLeod). Wichtig
 ist dabei die Spitzenauswahl: Nimmt man schlicht das globale Maximum, landen
 220, 440 und 880 Hz alle bei 110 Hz. Ein Test hält genau diesen Fehler fest.
 
+### Pegeln
+
+Die Aufbereitung des Browsers ist abgeschaltet — `echoCancellation`,
+`noiseSuppression` und `autoGainControl` verbiegen die Tonhöhe und sind fürs
+Singen unbrauchbar. Damit fehlt aber auch die Pegelregelung, und die Pegel
+gehen weit auseinander: ein Headset dicht am Mund liefert leicht das
+Zehnfache eines Laptopmikrofons quer durchs Zimmer.
+
+`pegel.js` baut sie nach — als glatter Faktor, ohne Kompression oder
+Rauschunterdrückung, also ohne den Ton zu verbiegen. Betrachtet werden die
+letzten **fünf Sekunden**; kürzer wäre zappelig (eine Atempause zöge den
+Pegel hoch), länger zu träge.
+
+Daraus zwei Werte, und beide werden gebraucht:
+
+| | |
+| --- | --- |
+| Rauschboden (20. Rangwert) | was im Raum ohnehin klingt |
+| Spitze (90. Rangwert) | wie laut gesungen wird |
+
+**Rangwerte, nicht Extremwerte.** Ein einmaliges Klopfen auf den Tisch würde
+die Spitze sonst fünf Sekunden lang verderben und die Verstärkung
+zusammenbrechen lassen.
+
+Die Verstärkung zieht die Spitze auf `ZIEL_PEGEL = 0,20` — nicht auf 1, denn
+Gesang schwankt, und wer bis an den Rand verstärkt, übersteuert bei der
+nächsten lauten Stelle. Abgeschwächt wird nie; dafür ist die Erkennung nicht
+der richtige Ort. Nach oben wird langsam nachgeführt, nach unten schneller:
+Übersteuern soll kurz bleiben.
+
+Der zweite Gewinn ist die **Schwelle**: Sie liegt jetzt beim
+2,5-fachen des gemessenen Rauschbodens statt bei einem festen Wert. Genau das
+entscheidet, ob Gesang durchkommt — die Verstärkung allein tut das nicht, das
+Verfahren ist gegen die Lautstärke unempfindlich.
+
+Der Rohpegel wird an einem **zweiten Abgriff vor der Verstärkung** gemessen.
+Am verstärkten Signal ließe sich der Faktor nicht bestimmen — man regelte
+gegen die eigene Regelung.
+
+`MIN_CLARITY` liegt jetzt bei 0,8 statt 0,9. Eine Stimme im Raum, mit Hall
+und Musik im Hintergrund, kommt selten sauberer an; USDX kennt gar keine
+solche Schranke, dort entscheidet allein die Lautstärke.
+
 ### Liedtext
 
 Die gerade zu hörende Silbe wird nicht nur hervorgehoben, sondern **während
@@ -207,8 +250,11 @@ Gerät — auf einem Handy mit dreifacher Auflösung wären eine Schriftgröße 
 24 acht CSS-Punkte und der Anzeiger ein Haarstrich von drei. Genau daran war
 er zunächst nicht zu sehen.
 
-Der Anzeiger bekommt eine **eigene Reihe** über dem Text, statt neben ihm zu
-fahren. Im Spiel fährt er bis kurz vor den Textanfang; bei mittig gesetztem,
+Der Anzeiger sitzt **auf der Höhe der ersten Textzeile** und wird **vor** dem
+Text gezeichnet: Er zeigt auf den Punkt, an dem der Text anfängt, und das
+liest sich nur, wenn beide auf einer Linie liegen. Füllt eine Zeile fast die
+ganze Breite, überlappen beide — dann steht der Text obenauf und bleibt
+lesbar. Im Spiel fährt er bis kurz vor den Textanfang; bei mittig gesetztem,
 breitem Text bleibt links davon aber kein Platz, und dann landet er außerhalb
 des Bildes — genau daran war er zunächst nicht zu sehen. Ziel bleibt der
 Textanfang, nur nie näher als ein Mindestweg. `helferBahn` rechnet das, und
@@ -290,6 +336,11 @@ Fälle fest.
 
 Erst das Lied wählen, dann singen. Dazwischen liegt die Zuordnung der
 Mikrofone — die braucht Ruhe und Platz, und auf der Bühne ist beides weg.
+
+Gestartet wird **nicht automatisch**: Auf der Bühne liegt ein „Los geht's".
+Der Browser blendet beim Wechsel ins Vollbild unten einen Hinweis ein, der
+genau über dem Liedtext liegt; er verschwindet nach ein paar Sekunden von
+selbst, und bis dahin wartet man.
 
 Auf dem **Handy** wird beim Wechsel Vollbild angefordert und, wenn möglich,
 das Querformat festgehalten; am Ende des Liedes wird beides wieder gelöst.

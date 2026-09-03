@@ -18,7 +18,12 @@ export const MAX_FREQ = 1000;
 export const MIN_RMS = 0.01;
 
 // Wie eindeutig der Fund sein muss. Darunter ist es eher Geraeusch als Ton.
-export const MIN_CLARITY = 0.9;
+//
+// 0.9 war zu streng: Eine Stimme im Raum, mit Hall und Musik im Hintergrund,
+// kommt selten so sauber an. USDX kennt gar keine solche Schranke - dort
+// entscheidet allein die Lautstaerke. 0.8 laesst echten Gesang durch; gegen
+// Rauschen schuetzt weiter die Pegelschwelle, die jetzt mitwaechst.
+export const MIN_CLARITY = 0.8;
 
 export function rms(buffer) {
   let sum = 0;
@@ -35,10 +40,13 @@ export function rms(buffer) {
 export const PEAK_RATIO = 0.9;
 
 // Liefert die Frequenz in Hz, oder -1 wenn nichts Eindeutiges zu finden war.
-export function detectFrequency(buffer, sampleRate) {
+//
+// minRms kann von aussen gesetzt werden - die Pegelregelung kennt den
+// Rauschboden des Raumes und damit eine bessere Schranke als ein fester Wert.
+export function detectFrequency(buffer, sampleRate, minRms = MIN_RMS) {
   const n = buffer.length;
   if (n < 128) return -1;
-  if (rms(buffer) < MIN_RMS) return -1;
+  if (rms(buffer) < minRms) return -1;
 
   const maxLag = Math.min(n - 1, Math.floor(sampleRate / MIN_FREQ));
   const minLag = Math.max(2, Math.floor(sampleRate / MAX_FREQ));

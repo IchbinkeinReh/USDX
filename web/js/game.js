@@ -12,7 +12,8 @@
 // verteilen, die niemand nachvollziehen kann.
 
 import { parseSong, lineAt, nextLineAt } from './song.js';
-import { detectFrequency, freqToMidi } from './pitch.js';
+import { detectFrequency, freqToMidi, rms } from './pitch.js';
+import { Pegel } from './pegel.js';
 import { Scorer } from './score.js';
 import { Renderer } from './render.js';
 
@@ -164,10 +165,31 @@ export class Game {
     if (!this.ctx)
       this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     const quelle = this.ctx.createMediaStreamSource(strom);
+
+    // Verstaerkung in die Kette, VOR der Auswertung. Genau die
+    // Pegelregelung, die oben mit autoGainControl:false abgeschaltet wurde -
+    // nur eben eine, die den Ton nicht verbiegt: ein glatter Faktor, keine
+    // Kompression, keine Rauschunterdrueckung.
+    const verstaerker = this.ctx.createGain();
+    verstaerker.gain.value = 1;
+
     const analyser = this.ctx.createAnalyser();
     analyser.fftSize = FFT_GROESSE;
-    quelle.connect(analyser);
-    return { analyser, puffer: new Float32Array(analyser.fftSize), strom };
+    // Roh mitschneiden, um den echten Pegel zu messen: Am verstaerkten
+    // Signal liesse sich der Faktor nicht mehr bestimmen, man regelte gegen
+    // die eigene Regelung.
+    const rohAnalyser = this.ctx.createAnalyser();
+    rohAnalyser.fftSize = FFT_GROESSE;
+
+    quelle.connect(rohAnalyser);
+    quelle.connect(verstaerker);
+    verstaerker.connect(analyser);
+
+    return {
+      analyser, rohAnalyser, verstaerker, strom,
+      puffer: new Float32Array(analyser.fftSize),
+      rohPuffer: new Float32Array(rohAnalyser.fftSize),
+    };
   }
 
   // besetzung: [{ trackIndex, deviceId }] - ein Eintrag je mitsingender Stimme.
@@ -193,12 +215,16 @@ export class Game {
         analyser: null,
         puffer: null,
         sungMidi: -1,
+        pegel: new Pegel(),
       };
       if (b.deviceId !== null && b.deviceId !== undefined) {
         try {
           const m = await this.oeffneMikrofon(b.deviceId);
           eintrag.analyser = m.analyser;
           eintrag.puffer = m.puffer;
+          eintrag.rohAnalyser = m.rohAnalyser;
+          eintrag.rohPuffer = m.rohPuffer;
+          eintrag.verstaerker = m.verstaerker;
           eintrag.strom = m.strom;
         } catch (e) {
           // Ohne Mikrofon laesst sich mitlesen - besser als gar nicht zu
@@ -240,8 +266,23 @@ export class Game {
     const bahnen = this.saenger.map((s) => {
       s.sungMidi = -1;
       if (s.analyser) {
+        // Erst den rohen Pegel messen und die Regelung nachfuehren ...
+        s.rohAnalyser.getFloatTimeDomainData(s.rohPuffer);
+        const roh = rms(s.rohPuffer);
+        s.pegel.fuettern(roh, zeit);
+        const faktor = s.pegel.berechneFaktor();
+        if (s.verstaerker) {
+          // Sanft nachziehen statt springen - ein harter Sprung im
+          // Verstaerkungsfaktor knackt hoerbar in der Kette.
+          s.verstaerker.gain.setTargetAtTime(faktor, this.ctx.currentTime, 0.1);
+        }
+
+        // ... dann das verstaerkte Signal auswerten. Die Schwelle kommt
+        // ebenfalls aus der Regelung: Sie kennt den Rauschboden des Raumes
+        // und damit besser als ein fester Wert, was Gesang ist.
         s.analyser.getFloatTimeDomainData(s.puffer);
-        const f = detectFrequency(s.puffer, this.ctx.sampleRate);
+        const schwelle = s.pegel.schwelle() * faktor;
+        const f = detectFrequency(s.puffer, this.ctx.sampleRate, schwelle);
         if (f > 0) s.sungMidi = freqToMidi(f);
         s.scorer.feed(zeit, s.sungMidi);
       }

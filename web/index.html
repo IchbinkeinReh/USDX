@@ -57,6 +57,16 @@
      liegt - im Hochformat ist die Notenzeile kaum zu erkennen. */
   #drehen{display:none;color:#ffb27f;font-size:13px;padding:6px 12px;
           background:#171a22}
+
+  /* Startflaeche ueber der Buehne. Sie ist der Grund, warum nicht sofort
+     losgesungen wird: Beim Wechsel ins Vollbild blendet der Browser unten
+     einen Hinweis ein, der genau den Liedtext verdeckt. Der verschwindet
+     nach ein paar Sekunden von selbst - bis dahin wartet man hier. */
+  #startflaeche{position:absolute;inset:0;display:flex;align-items:center;
+                justify-content:center;flex-direction:column;gap:14px;
+                background:rgba(13,15,20,0.82);z-index:5}
+  #losgehts{font-size:20px;padding:18px 42px;border-radius:14px}
+  #startnotiz{color:#98a0b0;font-size:14px;text-align:center;padding:0 20px}
 </style>
 </head>
 <body>
@@ -92,6 +102,10 @@
     <img id="hintergrund" alt="">
     <video id="video" muted playsinline preload="auto"></video>
     <canvas id="buehnebild" width="1280" height="480"></canvas>
+    <div id="startflaeche">
+      <button id="losgehts">Los geht's</button>
+      <div id="startnotiz">Antippen, sobald der Hinweis des Browsers weg ist.</div>
+    </div>
   </div>
   <p id="hinweis"></p>
 </div>
@@ -109,7 +123,7 @@ const auswahl = $('auswahl'), buehne = $('buehne');
 const canvas = $('buehnebild');
 const spiel = new Game(canvas, el);
 const handy = istHandy();
-let mikrofone = [], t = null;
+let mikrofone = [], t = null, besetzung = [];
 
 // Canvas auf die tatsaechliche Groesse setzen, sonst wird das Bild
 // weichgezeichnet. Muss auch nach dem Drehen wieder passieren.
@@ -212,12 +226,14 @@ $('anderes').addEventListener('click', () => {
 // ---------- Schritt 2: Singen ----------
 $('singen').addEventListener('click', async () => {
   $('singen').disabled = true;
-  const wahl = [...$('stimmen').querySelectorAll('select')].map((s) => ({
+  besetzung = [...$('stimmen').querySelectorAll('select')].map((s) => ({
     trackIndex: +s.dataset.track, deviceId: s.value || null,
   }));
 
   auswahl.classList.add('aus');
   buehne.classList.remove('aus');
+  $('startflaeche').style.display = 'flex';
+  el.hinweis.textContent = '';
 
   // Vollbild und Querformat MUESSEN aus dieser Klickbehandlung heraus
   // angefordert werden - spaeter fehlt die Nutzergeste und der Browser
@@ -227,9 +243,16 @@ $('singen').addEventListener('click', async () => {
     if (!konnte.quer) $('drehen').style.display = 'block';
   }
   passeAn();
+  // Bewusst NICHT sofort starten: Der Browser blendet beim Wechsel ins
+  // Vollbild unten einen Hinweis ein, der genau ueber dem Liedtext liegt.
+  // Wer selbst startet, tut das, wenn der weg ist.
+});
 
+$('losgehts').addEventListener('click', async () => {
+  $('startflaeche').style.display = 'none';
+  passeAn();
   try {
-    await spiel.start(wahl);
+    await spiel.start(besetzung);
   } catch (err) {
     el.hinweis.textContent = err.message;
     await zurueckZurAuswahl();
@@ -238,6 +261,7 @@ $('singen').addEventListener('click', async () => {
 
 async function zurueckZurAuswahl() {
   spiel.stop();
+  $('startflaeche').style.display = 'none';
   await vollbildAus();
   $('drehen').style.display = 'none';
   buehne.classList.add('aus');

@@ -9,6 +9,8 @@ import { lyricHelper, helferBahn,
          HELFER_MIN_VORLAUF, HELFER_GRENZE } from '../js/render.js';
 import { istHandy, HANDY_BREITE } from '../js/vollbild.js';
 import { Renderer } from '../js/render.js';
+import { Pegel, ZIEL_PEGEL, MAX_FAKTOR, MIN_FAKTOR,
+         MIN_SCHWELLE, UEBER_RAUSCHEN } from '../js/pegel.js';
 
 // Aufzeichnender Ersatz fuer den Zeichenkontext. Zeichnen laesst sich hier
 // nicht pruefen - WAS gezeichnet wird und WIE GROSS aber schon, und genau
@@ -217,6 +219,93 @@ E`);
   check('der Vorlauf zeigt in die Zukunft', rest > 0, String(rest));
 }
 
+console.log('Pegelregelung');
+{
+  // Ein leises Mikrofon: Gesang kommt nur mit 0,01 an, dazwischen Rauschen.
+  const p = new Pegel();
+  let t = 0;
+  const gib = (v, n = 1) => { for (let i = 0; i < n; i++) p.fuettern(v, t += 0.02); };
+
+  gib(0.001, 40);        // zwei Sekunden Zimmergeraeusch
+  gib(0.01, 60);         // dann Gesang
+
+  check('Rauschboden liegt beim Leisen', p.rauschboden() <= 0.002,
+        String(p.rauschboden()));
+  check('Spitze liegt beim Lauten', p.spitze() >= 0.008, String(p.spitze()));
+
+  // Der Kern: Ein leises Mikrofon wird hochgeregelt.
+  let f = 1;
+  for (let i = 0; i < 300; i++) f = p.berechneFaktor();
+  check('leises Mikrofon wird verstaerkt', f > 5, 'Faktor ' + f.toFixed(1));
+  check('und zwar auf den Zielpegel',
+        Math.abs(p.spitze() * f - ZIEL_PEGEL) < ZIEL_PEGEL * 0.25,
+        'ergibt ' + (p.spitze() * f).toFixed(3));
+
+  // Die Schwelle liegt ueber dem Rauschen, sonst zaehlte jedes Knistern.
+  check('Schwelle liegt ueber dem Rauschboden',
+        p.schwelle() > p.rauschboden(), String(p.schwelle()));
+  check('aber unter dem Gesang', p.schwelle() < 0.01,
+        String(p.schwelle()));
+}
+{
+  // Ein lautes Mikrofon darf NICHT abgeschwaecht werden - dafuer ist die
+  // Erkennung nicht der richtige Ort.
+  const p = new Pegel();
+  let t = 0;
+  for (let i = 0; i < 200; i++) p.fuettern(0.5, t += 0.02);
+  let f = 1;
+  for (let i = 0; i < 300; i++) f = p.berechneFaktor();
+  check('lautes Mikrofon bleibt unveraendert', f === MIN_FAKTOR,
+        'Faktor ' + f);
+}
+{
+  // Stille: Ohne Bremse wuerde das Zimmerrauschen bis zur Unkenntlichkeit
+  // hochgezogen.
+  const p = new Pegel();
+  let t = 0;
+  for (let i = 0; i < 200; i++) p.fuettern(0.0000001, t += 0.02);
+  let f = 1;
+  for (let i = 0; i < 500; i++) f = p.berechneFaktor();
+  check('in Stille wird nicht ueber die Grenze verstaerkt', f <= MAX_FAKTOR + 1e-9,
+        'Faktor ' + f.toFixed(1));
+  check('und die Schwelle faellt nicht auf null',
+        p.schwelle() >= MIN_SCHWELLE, String(p.schwelle()));
+}
+{
+  // Ein einzelner Knall darf die Regelung nicht fuer fuenf Sekunden
+  // zusammenbrechen lassen - deshalb Rangwerte statt Extremwerte.
+  const p = new Pegel();
+  let t = 0;
+  for (let i = 0; i < 100; i++) p.fuettern(0.01, t += 0.02);
+  p.fuettern(1.0, t += 0.02);          // Klopfen auf den Tisch
+  check('ein einzelner Ausreisser verdirbt die Spitze nicht',
+        p.spitze() < 0.05, String(p.spitze()));
+}
+{
+  // Das Fenster darf nicht unbegrenzt wachsen.
+  const p = new Pegel(5);
+  let t = 0;
+  for (let i = 0; i < 2000; i++) p.fuettern(0.01, t += 0.02);
+  check('nur die letzten fuenf Sekunden zaehlen', p.anzahl <= 5 / 0.02 + 2,
+        String(p.anzahl));
+  // Und Alteres faellt wirklich heraus: erst laut, dann lange leise.
+  const q = new Pegel(5);
+  let u = 0;
+  for (let i = 0; i < 100; i++) q.fuettern(0.5, u += 0.02);
+  for (let i = 0; i < 300; i++) q.fuettern(0.01, u += 0.02);
+  check('altes Lautes faellt aus dem Fenster', q.spitze() < 0.05,
+        String(q.spitze()));
+}
+{
+  const p = new Pegel();
+  check('ohne Werte kein Absturz',
+        p.rauschboden() === 0 && p.spitze() === 0 &&
+        p.schwelle() === MIN_SCHWELLE);
+  p.fuettern(NaN, 1); p.fuettern(0.1, NaN); p.fuettern(-1, 1);
+  check('unsinnige Werte werden nicht aufgenommen', p.anzahl === 0,
+        String(p.anzahl));
+}
+
 console.log('Zeichnen');
 {
   const lied = parseSong(`#TITLE:x
@@ -262,6 +351,32 @@ E`);
         anzeiger(handyBild)[1] >= 0 &&
         anzeiger(handyBild)[1] + anzeiger(handyBild)[3] <= 844,
         'x ' + Math.round(anzeiger(handyBild)[1]));
+
+  // Der Anzeiger sitzt auf der Hoehe der ersten Textzeile, nicht darueber.
+  {
+    const ctx = stubKontext();
+    const r = new Renderer({ width: 0, height: 0, getContext: () => ctx });
+    r.passeGroesseAn(844, 340, 3);
+    r.draw([{ line: lied.lines[0], nextLine: lied.lines[0], bars: [],
+              anteile: new Map(), name: '', score: 0 }], 5);
+    const rr = ctx.ops.filter((o) => o[0] === 'roundRect');
+    const anz = rr[rr.length - 1];
+    const texte = ctx.ops.filter((o) => o[0] === 'fillText');
+    const mitte = anz[2] + anz[4] / 2;
+    const grundlinie = texte[0][3];
+    check('Anzeiger liegt auf der ersten Textzeile',
+          Math.abs(grundlinie - mitte) < 14,
+          'Abstand ' + (grundlinie - mitte).toFixed(1));
+
+    // Und zwar VOR dem Text gezeichnet: Bei einer Zeile ueber die ganze
+    // Breite ueberlappen beide, und dann muss der Text obenauf liegen.
+    const iAnzeiger = ctx.ops.findIndex((o, i) =>
+      o[0] === 'roundRect' && i > ctx.ops.findIndex((q) => q[0] === 'createLinearGradient'));
+    const iText = ctx.ops.findIndex((o) => o[0] === 'fillText');
+    check('Anzeiger wird vor dem Text gezeichnet',
+          rr.length > 0 && iText > ctx.ops.lastIndexOf(anz),
+          'Text bei ' + iText);
+  }
 
   // Ohne passeGroesseAn muss es weiter gehen - sonst waeren diese Tests
   // nicht dieselbe Zeichenlogik wie im Browser.

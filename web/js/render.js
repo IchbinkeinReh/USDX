@@ -176,8 +176,10 @@ export class Renderer {
     const zeilenH = schrift * 1.45;
     // Der Anzeiger waechst mit der Schrift mit, statt eine feste Hoehe zu
     // haben - siehe helferBahn.
-    const helferH = Math.max(8, schrift * 0.45);
-    const bandH = helferH + schrift * 0.5 + zeilenH * 2;
+    // Der Anzeiger teilt sich die Reihe mit der ersten Textzeile und
+    // braucht deshalb keine eigene Hoehe mehr im Band.
+    const helferH = Math.max(8, schrift * 0.42);
+    const bandH = schrift * 0.35 + zeilenH * 2 + schrift * 0.35;
     const bandY = h - bandH;
     const notenH = bandY;
 
@@ -306,15 +308,24 @@ export class Renderer {
 
     if (!bahn.line) return;
 
-    const y0 = bandY + helferH + schrift * 0.5;
-    const textLinks = this.text(bahn.line, beat, w, y0 + zeilenH * 0.75,
-                                schrift, true);
+    const y0 = bandY + schrift * 0.35;
+    const grundlinie = y0 + zeilenH * 0.75;
+    const masse = this.zeilenMasse(bahn.line, w, schrift);
+
+    // Der Anzeiger sitzt AUF der Hoehe der ersten Textzeile, nicht darueber:
+    // Er zeigt auf den Punkt, an dem der Text anfaengt, und das liest sich
+    // nur, wenn beide auf einer Linie liegen.
+    //
+    // Gezeichnet wird er VOR dem Text. Bei einer Zeile, die fast die ganze
+    // Breite fuellt, bleibt links kein Platz und beide ueberlappen - dann
+    // steht der Text obendrauf und bleibt lesbar.
+    this.helfer(bahn.line, beat, masse.links,
+                grundlinie - schrift * 0.32 - helferH / 2, helferH, w);
+
+    this.text(bahn.line, beat, w, grundlinie, schrift, true, masse);
     if (bahn.nextLine)
       this.text(bahn.nextLine, -Infinity, w, y0 + zeilenH * 1.75,
                 schrift * 0.85, false);
-
-    this.helfer(bahn.line, beat, textLinks, bandY + schrift * 0.18,
-                helferH, w);
   }
 
   balken(x, y, w, h, r) {
@@ -322,6 +333,19 @@ export class Renderer {
     ctx.beginPath();
     ctx.roundRect(x, y, w, h, r);
     ctx.fill();
+  }
+
+  // Wo steht die Zeile und wie breit ist sie? Getrennt vom Zeichnen, weil
+  // der Anzeiger den linken Rand braucht, aber VOR dem Text gezeichnet wird.
+  zeilenMasse(line, w, groesse) {
+    const ctx = this.ctx;
+    ctx.font = `600 ${groesse}px system-ui, sans-serif`;
+    const breiten = line.notes.map((n) => ctx.measureText(n.text).width);
+    const gesamt = breiten.reduce((a, b) => a + b, 0);
+    // Passt die Zeile nicht, wird sie gestaucht statt abgeschnitten - eine
+    // halbe Silbe am Rand hilft niemandem.
+    const skal = gesamt > w - 24 ? (w - 24) / gesamt : 1;
+    return { breiten, gesamt, skal, links: (w - gesamt * skal) / 2 };
   }
 
   // Eine Zeile Liedtext. Gibt den linken Rand zurueck - dorthin faehrt der
@@ -334,17 +358,12 @@ export class Renderer {
   // silbenweise und man sieht nicht, wo im Wort man gerade ist.
   //
   // aktiv=false zeichnet die Vorschauzeile: gedaempft, ohne Einfaerbung.
-  text(line, beat, w, cy, groesse, aktiv) {
+  text(line, beat, w, cy, groesse, aktiv, masse) {
     const ctx = this.ctx;
     ctx.font = `600 ${groesse}px system-ui, sans-serif`;
     ctx.textBaseline = 'alphabetic';
 
-    const breiten = line.notes.map((n) => ctx.measureText(n.text).width);
-    const gesamt = breiten.reduce((a, b) => a + b, 0);
-    // Passt die Zeile nicht, wird sie gestaucht statt abgeschnitten - eine
-    // halbe Silbe am Rand hilft niemandem.
-    const skal = gesamt > w - 24 ? (w - 24) / gesamt : 1;
-    const links = (w - gesamt * skal) / 2;
+    const { breiten, skal, links } = masse || this.zeilenMasse(line, w, groesse);
     let cx = links;
 
     ctx.save();
