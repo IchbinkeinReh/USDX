@@ -262,10 +262,25 @@ dort geht es um den Rhythmus, nicht um die Tonhöhe.
 
 ### Das Textband
 
-Unten liegt ein abgedunkelter Streifen, nach oben auslaufend, damit keine
-harte Kante quer durchs Bild geht. Darin stehen der Zeilenanzeiger und
-**zwei Zeilen**: die aktuelle und, gedämpft darunter, die nächste — wie im
-Spiel, wo man ebenfalls sieht, was als Nächstes kommt.
+Ein abgedunkelter Streifen, nach oben auslaufend, damit keine harte Kante
+quer durchs Bild geht. Darin stehen der Zeilenanzeiger und **zwei Zeilen**:
+die aktuelle und, gedämpft darunter, die nächste — wie im Spiel, wo man
+ebenfalls sieht, was als Nächstes kommt.
+
+Wo es liegt, hängt davon ab, ob zwei verschiedene Texte gesungen werden:
+
+- **Kein Duett** — auch wenn zwei Menschen mitsingen: Der Text steht **einmal
+  unten**. Zweimal derselbe Text wäre nur Platzverschwendung.
+- **Duett** — jede Stimme bekommt ihren eigenen: der oberen **über** ihre
+  Noten, der unteren darunter. So liegen die Texte außen und die Notenflächen
+  in der Mitte beieinander; dieselbe Aufteilung wie im Spiel, wo die
+  Textleisten oben und unten sitzen.
+
+Auf der Bühne gibt es **keine Fußzeile** und keine Punktzahl in der
+Kopfleiste — beides nahm Platz weg, den die Noten brauchen. Die Punktzahl
+steht in der Bahn, der Name daneben nur dann, wenn es mehrere Bahnen gibt.
+Ein Hinweis oder das Ergebnis blendet sich nur ein, wenn es etwas zu sagen
+gibt.
 
 Beide Zeilen sind weiß; die nächste wird über die kleinere Schrift abgesetzt,
 nicht über blasse Farbe — man liest sie im Voraus, um vorbereitet zu sein,
@@ -285,7 +300,8 @@ von der ersten Note bis zum Ende der letzten. Man sieht damit auf einen Blick,
 
 Das bereits Gesungene wird abgedunkelt, nicht nur die Marke gesetzt: Sonst
 ließe sich der Fortschritt nicht ablesen, wenn die Marke gerade in einer
-Pause steht.
+Pause steht. Die Leiste ist bewusst schmal — sie soll ablesbar sein, nicht
+auffallen.
 
 Beim Duett kommen die Abschnitte beider Stimmen zusammen; dass sie sich
 teils überschneiden, stört beim Zeichnen nicht.

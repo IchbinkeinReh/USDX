@@ -46,12 +46,12 @@
   #bild_flaeche > *{position:absolute;inset:0;width:100%;height:100%}
   #hintergrund,#video{object-fit:contain;display:none;background:#11131a}
   canvas{display:block}
-  #hinweis{color:#98a0b0;font-size:13px;padding:6px 12px;min-height:24px;
-           background:#171a22}
+  #ergebnis{position:absolute;left:0;right:0;bottom:0;z-index:6;
+            background:rgba(8,10,15,0.88);color:#e8e8ea;font-size:15px;
+            padding:12px 16px;text-align:center}
 
   /* Im Vollbild zaehlt jeder Millimeter fuer die Noten. */
   #buehne:fullscreen #buehne_kopf{padding:4px 10px}
-  #buehne:fullscreen #hinweis{display:none}
 
   /* Laesst sich das Drehen nicht erzwingen, wird wenigstens gesagt, woran es
      liegt - im Hochformat ist die Notenzeile kaum zu erkennen. */
@@ -103,7 +103,6 @@
   <div id="buehne_kopf">
     <button id="zurueck">Zurück</button>
     <div id="titel"></div>
-    <div id="punkte">0</div>
   </div>
   <div id="drehen">Quer halten – im Hochformat ist die Notenzeile kaum zu erkennen.</div>
   <div id="bild_flaeche">
@@ -114,8 +113,11 @@
       <button id="losgehts">Los geht's</button>
       <div id="startnotiz">Antippen, sobald der Hinweis des Browsers weg ist.</div>
     </div>
+    <!-- Wird nur eingeblendet, wenn es etwas zu sagen gibt: am Ende das
+         Ergebnis, sonst ein Hinweis. Kein staendiger Fussbereich - der nahm
+         Platz weg, den die Noten brauchen. -->
+    <div id="ergebnis" class="aus"></div>
   </div>
-  <p id="hinweis"></p>
 </div>
 
 <script type="module">
@@ -124,7 +126,19 @@ import { istHandy, vollbildAn, vollbildAus, imVollbild } from './js/vollbild.js'
 
 const $ = (id) => document.getElementById(id);
 const el = {
-  titel: $('titel'), punkte: $('punkte'), hinweis: $('hinweis'),
+  titel: $('titel'),
+  // Die Punktzahl steht jetzt in der Bahn, nicht mehr in der Kopfleiste.
+  punkte: null,
+  // Der Hinweis blendet sich selbst ein und aus: Nur wenn Text drinsteht,
+  // ist er zu sehen. So gibt es keinen Fussbereich, der staendig Platz
+  // wegnimmt.
+  hinweis: {
+    get textContent() { return $('ergebnis').textContent; },
+    set textContent(v) {
+      $('ergebnis').textContent = v || '';
+      $('ergebnis').classList.toggle('aus', !v);
+    },
+  },
   video: $('video'), bild: $('hintergrund'),
 };
 const auswahl = $('auswahl'), buehne = $('buehne');
@@ -295,7 +309,6 @@ async function zurueckZurAuswahl() {
   buehne.classList.add('aus');
   auswahl.classList.remove('aus');
   $('singen').disabled = false;
-  el.punkte.textContent = '0';
 }
 $('zurueck').addEventListener('click', zurueckZurAuswahl);
 

@@ -20,14 +20,32 @@ import { Pegel, ZIEL_PEGEL, MAX_FAKTOR, MIN_FAKTOR,
 // daran lag es zuletzt zweimal.
 function stubKontext() {
   const ops = [];
+  // Die Verschiebung wird MITGERECHNET, nicht nur aufgezeichnet. Ohne das
+  // stehen in den aufgezeichneten Koordinaten oertliche Werte, und jede
+  // Aussage ueber "liegt oben" oder "liegt unten" waere wertlos.
+  let dx = 0, dy = 0;
+  const stapel = [];
   const c = { ops, globalAlpha: 1, fillStyle: '', strokeStyle: '', lineWidth: 1,
               font: '', textAlign: 'left', textBaseline: 'top', lineJoin: '' };
-  for (const m of ['clearRect', 'fillRect', 'beginPath', 'moveTo', 'lineTo',
-                   'stroke', 'fill', 'save', 'restore', 'clip', 'rect',
-                   'translate', 'scale', 'strokeText', 'setTransform'])
+  for (const m of ['beginPath', 'stroke', 'fill', 'clip', 'scale',
+                   'setTransform'])
     c[m] = (...a) => ops.push([m, ...a]);
-  c.roundRect = (...a) => ops.push(['roundRect', ...a]);
-  c.fillText = (t, x, y) => ops.push(['fillText', t, x, y]);
+  c.save = () => { stapel.push([dx, dy]); ops.push(['save']); };
+  c.restore = () => {
+    const v = stapel.pop();
+    if (v) { dx = v[0]; dy = v[1]; }
+    ops.push(['restore']);
+  };
+  c.translate = (x, y) => { dx += x; dy += y; ops.push(['translate', x, y]); };
+  c.clearRect = (x, y, w, h) => ops.push(['clearRect', x + dx, y + dy, w, h]);
+  c.fillRect = (x, y, w, h) => ops.push(['fillRect', x + dx, y + dy, w, h]);
+  c.rect = (x, y, w, h) => ops.push(['rect', x + dx, y + dy, w, h]);
+  c.moveTo = (x, y) => ops.push(['moveTo', x + dx, y + dy]);
+  c.lineTo = (x, y) => ops.push(['lineTo', x + dx, y + dy]);
+  c.roundRect = (x, y, w, h, r) =>
+    ops.push(['roundRect', x + dx, y + dy, w, h, r]);
+  c.fillText = (t, x, y) => ops.push(['fillText', t, x + dx, y + dy]);
+  c.strokeText = (t, x, y) => ops.push(['strokeText', t, x + dx, y + dy]);
   c.measureText = (t) => ({ width: t.length * 10 });
   c.createLinearGradient = () => ({ addColorStop() {} });
   return c;
@@ -456,21 +474,68 @@ E`);
               name: '', score: 0 }], 5);
     const rr = ctx.ops.filter((o) => o[0] === 'roundRect');
     const anz = rr[rr.length - 1];
-    const texte = ctx.ops.filter((o) => o[0] === 'fillText');
+    // Gezielt den LIEDTEXT nehmen - der erste fillText ist die Punktzahl
+    // in der Bahn.
+    const grundlinie =
+      ctx.ops.find((o) => o[0] === 'fillText' && o[1] === 'hallo')[3];
     const mitte = anz[2] + anz[4] / 2;
-    const grundlinie = texte[0][3];
     check('Anzeiger liegt auf der ersten Textzeile',
           Math.abs(grundlinie - mitte) < 14,
           'Abstand ' + (grundlinie - mitte).toFixed(1));
 
     // Und zwar VOR dem Text gezeichnet: Bei einer Zeile ueber die ganze
     // Breite ueberlappen beide, und dann muss der Text obenauf liegen.
-    const iAnzeiger = ctx.ops.findIndex((o, i) =>
-      o[0] === 'roundRect' && i > ctx.ops.findIndex((q) => q[0] === 'createLinearGradient'));
-    const iText = ctx.ops.findIndex((o) => o[0] === 'fillText');
+    const iText = ctx.ops.findIndex((o) => o[0] === 'fillText' && o[1] === 'hallo');
+    const iAnzeiger = ctx.ops.findIndex((o) => o[0] === 'roundRect' && o[4] < 20);
     check('Anzeiger wird vor dem Text gezeichnet',
-          rr.length > 0 && iText > ctx.ops.lastIndexOf(anz),
-          'Text bei ' + iText);
+          iAnzeiger >= 0 && iText > iAnzeiger,
+          'Anzeiger bei ' + iAnzeiger + ', Text bei ' + iText);
+  }
+
+  // Textlage: Beim Duett bekommt jede Stimme ihren Text - der oberen ueber
+  // ihre Noten, der unteren darunter. Sonst steht er nur EINMAL unten.
+  {
+    const zwei = [
+      { line: lied.lines[0], nextLine: null, bars: [], name: 'A', score: 0 },
+      { line: lied.lines[0], nextLine: null, bars: [], name: 'B', score: 0 },
+    ];
+    const male = (duett) => {
+      const ctx = stubKontext();
+      const r = new Renderer({ width: 0, height: 0, getContext: () => ctx });
+      r.passeGroesseAn(800, 600, 1);
+      r.draw(zwei, 5, false, null, duett);
+      return ctx.ops.filter((o) => o[0] === 'fillText' && o[1] === 'hallo');
+    };
+
+    const solo = male(false);
+    check('zwei Saenger, kein Duett: Text nur einmal', solo.length === 1,
+          String(solo.length));
+    check('und zwar unten', solo.length === 1 && solo[0][3] > 400,
+          solo.length ? String(solo[0][3]) : '-');
+
+    const duett = male(true);
+    check('Duett: jede Stimme hat ihren Text', duett.length === 2,
+          String(duett.length));
+    // Der obere Text liegt ueber den Noten der oberen Bahn, also im obersten
+    // Viertel; der untere ganz unten.
+    check('der obere Text liegt oben',
+          duett.length === 2 && duett[0][3] < 150,
+          duett.length === 2 ? String(duett[0][3]) : '-');
+    check('der untere Text liegt unten',
+          duett.length === 2 && duett[1][3] > 450,
+          duett.length === 2 ? String(duett[1][3]) : '-');
+  }
+
+  // Die Punktzahl steht in der Bahn, auch wenn es nur eine gibt - in der
+  // Kopfleiste stand sie frueher und nahm dort Platz weg.
+  {
+    const ctx = stubKontext();
+    const r = new Renderer({ width: 0, height: 0, getContext: () => ctx });
+    r.passeGroesseAn(800, 400, 1);
+    r.draw([{ line: lied.lines[0], nextLine: null, bars: [],
+              name: '', score: 4711 }], 5);
+    check('Punktzahl wird in der Bahn gezeigt',
+          ctx.ops.some((o) => o[0] === 'fillText' && o[1] === '4711'));
   }
 
   // Der Fortschrittsbalken wird nur gezeichnet, wenn er uebergeben wird -
@@ -482,10 +547,15 @@ E`);
     r.draw([{ line: lied.lines[0], nextLine: null, bars: [],
               name: '', score: 0 }], 5, false,
            { zeit: 5, dauer: 20, abschnitte: [{ von: 2, bis: 6 }] });
+    // Nur die schmalen Rechtecke ganz unten - der Hintergrund fuellt die
+    // ganze Flaeche und wuerde die Pruefung sonst mitnehmen.
     const rechtecke = ctx.ops.filter((o) => o[0] === 'fillRect');
-    const unten = rechtecke.filter((o) => o[2] + o[4] >= 399);
+    const unten = rechtecke.filter((o) => o[2] >= 380 && o[4] <= 20);
     check('Fortschrittsbalken liegt am unteren Rand', unten.length >= 3,
           String(unten.length));
+    // Halb so hoch wie zuvor: hoechstens 7 Punkte statt 14.
+    check('und ist schmal', unten.every((o) => o[4] <= 7),
+          unten.map((o) => o[4]).join(','));
     // Die Marke steht bei einem Viertel der Laenge.
     const marke = rechtecke.find((o) => o[3] === 2);
     check('Marke steht an der richtigen Stelle',

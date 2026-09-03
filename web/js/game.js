@@ -322,11 +322,7 @@ export class Game {
       // aus dem Lied - sonst bliebe die Leiste am Anfang leer.
       dauer: this.audio.duration > 0 ? this.audio.duration : this.liedEnde(),
       abschnitte: this.abschnitte,
-    });
-    const stand = (s) => (s.analyser ? String(s.scorer.score) : '–');
-    this.el.punkte.textContent = this.saenger.length > 1
-      ? this.saenger.map(stand).join(' · ')
-      : (this.saenger.length ? stand(this.saenger[0]) : '0');
+    }, this.song.isDuet);
 
     if (this.audio.ended) {
       this.laeuft = false;

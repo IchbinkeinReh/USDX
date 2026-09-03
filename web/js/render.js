@@ -129,7 +129,9 @@ export class Renderer {
   //   durchsichtig, sonst verdeckte er beides.
   // fortschritt: { zeit, dauer, abschnitte } - wo im Lied wir stehen und
   // wann ueberhaupt gesungen wird.
-  draw(bahnen, beat, hintergrund = false, fortschritt = null) {
+  // duett: beim Duett hat jede Stimme ihren eigenen Text; sonst singen alle
+  //   denselben und er wird nur EINMAL gezeigt.
+  draw(bahnen, beat, hintergrund = false, fortschritt = null, duett = false) {
     const { ctx, canvas } = this;
     // Ohne passeGroesseAn auf die rohen Canvas-Masse zurueckfallen - so
     // laesst sich das Zeichnen auch ohne Browser durchrechnen.
@@ -151,22 +153,44 @@ export class Renderer {
 
     // Unten ein schmaler Streifen fuer den Fortschritt, der Rest fuer die
     // Bahnen.
-    const leisteH = fortschritt ? Math.max(6, Math.min(14, h * 0.03)) : 0;
+    const leisteH = fortschritt ? Math.max(3, Math.min(7, h * 0.015)) : 0;
     const bahnenH = h - leisteH;
 
-    const hoehe = bahnenH / bahnen.length;
+    // Beim Duett bekommt jede Stimme ihren Text: der oberen ueber ihre
+    // Noten, der unteren darunter. So liegen die Texte aussen und die
+    // Notenflaechen in der Mitte beieinander - dieselbe Aufteilung wie im
+    // Spiel, wo die Textleisten oben und unten sitzen.
+    //
+    // Singen dagegen alle dieselbe Spur, waere zweimal derselbe Text nur
+    // Platzverschwendung. Dann bleiben die Bahnen textfrei und der Text
+    // steht einmal unten.
+    const gemeinsam = !duett;
+    // Dieselben Masse zum Rechnen wie zum Zeichnen - vorher wurde die
+    // Bandhoehe hier bestimmt und beim Zeichnen aus ihr zurueckgerechnet,
+    // was eine andere Schriftgroesse ergab.
+    const gemeinsamMasse = this.bandMasse(bahnenH);
+    const bandH = gemeinsam ? gemeinsamMasse.hoehe : 0;
+    const laneH = (bahnenH - bandH) / bahnen.length;
+
     bahnen.forEach((bahn, i) => {
-      this.zeichneBahn(bahn, beat, i, 0, i * hoehe, w, hoehe,
-                       bahnen.length > 1);
+      const lage = gemeinsam ? null : (i === 0 ? 'oben' : 'unten');
+      this.zeichneBahn(bahn, beat, i, 0, i * laneH, w, laneH,
+                       bahnen.length > 1, lage);
       if (i > 0) {
         ctx.strokeStyle = '#252b38';
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(0, i * hoehe);
-        ctx.lineTo(w, i * hoehe);
+        ctx.moveTo(0, i * laneH);
+        ctx.lineTo(w, i * laneH);
         ctx.stroke();
       }
     });
+
+    if (gemeinsam && bahnen[0]) {
+      this.textBand(bahnen[0], beat, w, bahnenH - bandH, bandH,
+                    gemeinsamMasse.schrift, gemeinsamMasse.zeilenH,
+                    gemeinsamMasse.helferH);
+    }
 
     if (fortschritt) this.leiste(fortschritt, 0, bahnenH, w, leisteH);
   }
@@ -203,7 +227,19 @@ export class Renderer {
     ctx.fillRect(px - 1, y, 2, h);
   }
 
-  zeichneBahn(bahn, beat, index, ox, oy, w, h, mitNamen) {
+  // Wie hoch das Textband bei dieser Bahnenhoehe wird. Getrennt gerechnet,
+  // weil draw() den Platz kennen muss, bevor die Bahnen gezeichnet werden.
+  bandMasse(h) {
+    const schrift = Math.max(14, Math.min(24, h * 0.075));
+    const zeilenH = schrift * 1.45;
+    const helferH = Math.max(8, schrift * 0.42);
+    return { schrift, zeilenH, helferH,
+             hoehe: schrift * 0.35 + zeilenH * 2 + schrift * 0.35 };
+  }
+
+  bandHoehe(h) { return this.bandMasse(h).hoehe; }
+
+  zeichneBahn(bahn, beat, index, ox, oy, w, h, mitNamen, textLage = 'unten') {
     const ctx = this.ctx;
     const farbe = FARBEN[index % FARBEN.length];
     const line = bahn.line;
@@ -211,40 +247,52 @@ export class Renderer {
     ctx.save();
     ctx.translate(ox, oy);
 
-    // Unten ein eigenes Band fuer Anzeiger und zwei Textzeilen. Die Noten
-    // bekommen nur den Platz darueber - sonst ueberdeckten sich beide.
-    const schrift = Math.max(14, Math.min(24, h * 0.075));
-    const zeilenH = schrift * 1.45;
-    // Der Anzeiger waechst mit der Schrift mit, statt eine feste Hoehe zu
-    // haben - siehe helferBahn.
-    // Der Anzeiger teilt sich die Reihe mit der ersten Textzeile und
-    // braucht deshalb keine eigene Hoehe mehr im Band.
-    const helferH = Math.max(8, schrift * 0.42);
-    const bandH = schrift * 0.35 + zeilenH * 2 + schrift * 0.35;
-    const bandY = h - bandH;
-    const notenH = bandY;
+    // Ein eigenes Band fuer Anzeiger und zwei Textzeilen. Wo es liegt,
+    // entscheidet textLage; die Noten bekommen den Rest - sonst ueberdeckten
+    // sich beide.
+    const { schrift, zeilenH, helferH, hoehe: bandH } = this.bandMasse(h);
+    const hatBand = textLage === 'oben' || textLage === 'unten';
+    const bandY = textLage === 'oben' ? 0 : h - bandH;
+    // Bei Text oben faengt die Notenflaeche darunter an.
+    const notenY = textLage === 'oben' ? bandH : 0;
+    const notenH = hatBand ? h - bandH : h;
 
-    if (mitNamen && bahn.name) {
+    // Punktzahl und Name stehen in der Bahn, nicht mehr in der Kopfleiste -
+    // dort nahmen sie Platz weg, den die Noten brauchen. Die Punktzahl wird
+    // immer gezeigt, der Name nur, wenn es mehrere Bahnen gibt.
+    const kopfY = textLage === 'oben' ? bandH + 6 : 8;
+    if (bahn.score !== undefined || bahn.name) {
       ctx.font = '600 15px system-ui, sans-serif';
       ctx.textBaseline = 'top';
+      if (mitNamen && bahn.name) {
+        if (this.hintergrund) {
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+          ctx.lineJoin = 'round';
+          ctx.strokeText(bahn.name, 12, kopfY);
+        }
+        ctx.fillStyle = farbe.stimme;
+        ctx.fillText(bahn.name, 12, kopfY);
+      }
+      // Kein Wert heisst "ohne Mikrofon". Eine 0 an dieser Stelle liesse es
+      // aussehen, als saenge jemand daneben.
+      ctx.textAlign = 'right';
       if (this.hintergrund) {
         ctx.lineWidth = 3;
         ctx.strokeStyle = 'rgba(0,0,0,0.8)';
         ctx.lineJoin = 'round';
-        ctx.strokeText(bahn.name, 12, 8);
+        ctx.strokeText(bahn.score === undefined ? 'nicht gewertet'
+                                                : String(bahn.score), w - 12, kopfY);
       }
-      ctx.fillStyle = farbe.stimme;
-      ctx.fillText(bahn.name, 12, 8);
-      // Kein Wert heisst "ohne Mikrofon". Eine 0 an dieser Stelle liesse es
-      // aussehen, als saenge jemand daneben.
-      ctx.textAlign = 'right';
       ctx.fillStyle = bahn.score === undefined ? '#5c6478' : '#ffd978';
       ctx.fillText(bahn.score === undefined ? 'nicht gewertet'
-                                            : String(bahn.score), w - 12, 8);
+                                            : String(bahn.score), w - 12, kopfY);
       ctx.textAlign = 'left';
     }
 
     if (!line || line.notes.length === 0) {
+      if (hatBand)
+        this.textBand(bahn, beat, w, bandY, bandH, schrift, zeilenH, helferH);
       ctx.restore();
       return;
     }
@@ -266,15 +314,15 @@ export class Renderer {
     const tonHoehe = Math.max(5, Math.min(14, nutzbar / umfang));
 
     const x = (b) => ((b - von) / spanne) * (w - 40) + 20;
-    // Mitte des Notenbereichs, nicht der ganzen Bahn - der untere Teil
-    // gehoert dem Textband.
-    const y = (p) => notenH * 0.55 - (p - mitte) * tonHoehe;
+    // Mitte des Notenbereichs, nicht der ganzen Bahn - der Rest gehoert dem
+    // Textband, das je nach Lage darueber oder darunter sitzt.
+    const y = (p) => notenY + notenH * 0.55 - (p - mitte) * tonHoehe;
 
     ctx.strokeStyle = this.hintergrund ? 'rgba(255,255,255,0.10)' : '#1e2230';
     ctx.lineWidth = 1;
     for (let p = -6; p <= 6; p += 2) {
       const ly = y(mitte + p);
-      if (ly < 0 || ly > notenH) continue;
+      if (ly < notenY || ly > notenY + notenH) continue;
       ctx.beginPath();
       ctx.moveTo(0, ly);
       ctx.lineTo(w, ly);
@@ -325,7 +373,8 @@ export class Renderer {
       }
     }
 
-    this.textBand(bahn, beat, w, bandY, bandH, schrift, zeilenH, helferH);
+    if (hatBand)
+      this.textBand(bahn, beat, w, bandY, bandH, schrift, zeilenH, helferH);
     ctx.restore();
   }
 
