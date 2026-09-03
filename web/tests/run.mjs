@@ -14,6 +14,7 @@ import { istHandy, HANDY_BREITE } from '../js/vollbild.js';
 import { Renderer } from '../js/render.js';
 import { Pegel, ZIEL_PEGEL, MAX_FAKTOR, MIN_FAKTOR,
          MIN_SCHWELLE, UEBER_RAUSCHEN } from '../js/pegel.js';
+import { bewertung, sterne, STUFEN } from '../js/bewertung.js';
 
 // Aufzeichnender Ersatz fuer den Zeichenkontext. Zeichnen laesst sich hier
 // nicht pruefen - WAS gezeichnet wird und WIE GROSS aber schon, und genau
@@ -278,6 +279,72 @@ E`);
   // er auf die zweite herunter, nicht auf etwas Vergangenes.
   const rest = secondsUntilLine(z, lineAt(z.tracks[0], 6), z.beatToTime(6));
   check('der Vorlauf zeigt in die Zukunft', rest > 0, String(rest));
+}
+
+console.log('Bewertung');
+{
+  // Die Schwellen stammen aus ShowRating in UScreenScore.pas. Geprueft wird
+  // jede Grenze von beiden Seiten - dort sind sie krumm (2010, 4010, 7510),
+  // und ein Vertippen faellt sonst nirgends auf.
+  const paare = [
+    [0, 'Nichtskönner'], [2009, 'Nichtskönner'],
+    [2010, 'Amateur'], [4009, 'Amateur'],
+    [4010, 'Möchtegern'], [5009, 'Möchtegern'],
+    [5010, 'Fortgeschritten'], [6009, 'Fortgeschritten'],
+    [6010, 'Sternchen'], [7509, 'Sternchen'],
+    [7510, 'Hit-Künstler'], [8509, 'Hit-Künstler'],
+    [8510, 'Superstar'], [9009, 'Superstar'],
+    [9010, 'UltraStar'], [10000, 'UltraStar'],
+  ];
+  let alle = true;
+  for (const [p, name] of paare)
+    if (bewertung(p).name !== name) {
+      alle = false;
+      check('Bewertung bei ' + p, false, bewertung(p).name + ' statt ' + name);
+    }
+  check('alle Schwellen stimmen mit dem Spiel ueberein', alle);
+
+  check('acht Stufen wie im Spiel', STUFEN.length === 8, String(STUFEN.length));
+  check('unterste Stufe ist 0', bewertung(0).stufe === 0);
+  check('oberste Stufe ist 7', bewertung(10000).stufe === 7);
+
+  // Randfaelle, die nicht vorkommen sollten, aber nicht abstuerzen duerfen.
+  check('ueber dem Hoechstwert bleibt es die oberste Stufe',
+        bewertung(99999).stufe === 7);
+  check('negativ ergibt die unterste', bewertung(-5).stufe === 0);
+  check('ohne Zahl kein Absturz', bewertung(undefined).stufe === 0);
+  check('Zwischenwerte werden gerundet',
+        bewertung(2009.6).name === 'Amateur', bewertung(2009.6).name);
+
+  check('Sterne bleiben im Bereich',
+        sterne(-1) === 0 && sterne(99) === 7 && sterne(3) === 3);
+}
+
+console.log('Punkteaufschluesselung');
+{
+  const g = parseSong(`#TITLE:x
+#BPM:120
+#GAP:0
+: 0 4 60 normal
+* 4 4 60 gold
+E`);
+  const w = new Scorer(g);
+  for (const n of g.notes)
+    for (let i = 0; i < 5; i++) w.feed(g.beatToTime(n.start + 0.5), n.pitch + 60);
+
+  const t = w.teilwertung();
+  check('Summe der Teile ergibt die Gesamtpunktzahl',
+        Math.abs(t.normal + t.golden - w.score) <= 1,
+        t.normal + '+' + t.golden + ' vs ' + w.score);
+  // Golden zaehlt doppelt: gleiche Laenge, also doppelt so viele Punkte.
+  // Auf zwei Punkte genau - beide Teile werden einzeln gerundet.
+  check('goldene Noten zaehlen doppelt',
+        Math.abs(t.golden - 2 * t.normal) <= 2,
+        t.normal + '/' + t.golden);
+
+  const leer = new Scorer(g);
+  const t0 = leer.teilwertung();
+  check('ohne Gesang keine Teilpunkte', t0.normal === 0 && t0.golden === 0);
 }
 
 console.log('Pegelregelung');

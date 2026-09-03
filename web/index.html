@@ -46,12 +46,26 @@
   #bild_flaeche > *{position:absolute;inset:0;width:100%;height:100%}
   #hintergrund,#video{object-fit:contain;display:none;background:#11131a}
   canvas{display:block}
+  /* ---------- Schritt 3: Ergebnis ---------- */
+  #ergebnisseite{padding:18px 14px 28px}
+  #ergebnis_titel{font-size:15px;color:#98a0b0;margin-bottom:2px}
+  #ergebnis_lied{font-size:21px;font-weight:600;margin-bottom:18px}
+  .karte{background:#171a22;border-radius:14px;padding:16px 18px;margin-bottom:12px}
+  .karte .wer{font-size:15px;color:#98a0b0}
+  .karte .punkte{font-size:40px;font-weight:700;color:#ffd978;line-height:1.1}
+  .karte .stufe{font-size:19px;font-weight:600;margin-top:2px}
+  .karte .sterne{color:#ffd978;letter-spacing:2px;margin-top:6px}
+  .karte .aufschluesselung{color:#98a0b0;font-size:14px;margin-top:10px}
+  .karte.ungewertet .punkte{color:#5c6478;font-size:24px}
+
   #ergebnis{position:absolute;left:0;right:0;bottom:0;z-index:6;
             background:rgba(8,10,15,0.88);color:#e8e8ea;font-size:15px;
             padding:12px 16px;text-align:center}
 
-  /* Im Vollbild zaehlt jeder Millimeter fuer die Noten. */
-  #buehne:fullscreen #buehne_kopf{padding:4px 10px}
+  /* Im Vollbild zaehlt jeder Millimeter fuer die Noten - die Kopfleiste
+     faellt dort ganz weg. Herauskommt man mit Escape oder der
+     Zurueck-Geste; danach ist sie wieder da. */
+  #buehne:fullscreen #buehne_kopf{display:none}
 
   /* Laesst sich das Drehen nicht erzwingen, wird wenigstens gesagt, woran es
      liegt - im Hochformat ist die Notenzeile kaum zu erkennen. */
@@ -120,9 +134,21 @@
   </div>
 </div>
 
+<!-- ============ Schritt 3: Ergebnis ============ -->
+<div id="ergebnisseite" class="aus">
+  <div id="ergebnis_titel">Ergebnis</div>
+  <div id="ergebnis_lied"></div>
+  <div id="ergebnis_karten"></div>
+  <div class="knopfreihe">
+    <button id="nochmal">Nochmal singen</button>
+    <button id="zurueck_zur_liste" class="still">Anderes Lied</button>
+  </div>
+</div>
+
 <script type="module">
 import { Game } from './js/game.js';
 import { istHandy, vollbildAn, vollbildAus, imVollbild } from './js/vollbild.js';
+import { bewertung, sterne, STUFEN } from './js/bewertung.js';
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -141,7 +167,8 @@ const el = {
   },
   video: $('video'), bild: $('hintergrund'),
 };
-const auswahl = $('auswahl'), buehne = $('buehne');
+const auswahl = $('auswahl'), buehne = $('buehne'),
+      ergebnisseite = $('ergebnisseite');
 const canvas = $('buehnebild');
 const spiel = new Game(canvas, el);
 const handy = istHandy();
@@ -277,13 +304,11 @@ $('singen').addEventListener('click', async () => {
   $('startflaeche').style.display = 'flex';
   el.hinweis.textContent = '';
 
-  // Vollbild und Querformat MUESSEN aus dieser Klickbehandlung heraus
-  // angefordert werden - spaeter fehlt die Nutzergeste und der Browser
-  // lehnt ab.
-  if (handy) {
-    const konnte = await vollbildAn(buehne);
-    if (!konnte.quer) $('drehen').style.display = 'block';
-  }
+  // Vollbild MUSS aus dieser Klickbehandlung heraus angefordert werden -
+  // spaeter fehlt die Nutzergeste und der Browser lehnt ab. Das gilt auf
+  // jedem Geraet; nur das Festhalten des Querformats ist eine Handysache.
+  const konnte = await vollbildAn(buehne);
+  if (handy && !konnte.quer) $('drehen').style.display = 'block';
   passeAn();
   // Bewusst NICHT sofort starten: Der Browser blendet beim Wechsel ins
   // Vollbild unten einen Hinweis ein, der genau ueber dem Liedtext liegt.
@@ -301,23 +326,76 @@ $('losgehts').addEventListener('click', async () => {
   }
 });
 
-async function zurueckZurAuswahl() {
+async function verlasseBuehne() {
   spiel.stop();
   $('startflaeche').style.display = 'none';
   await vollbildAus();
   $('drehen').style.display = 'none';
   buehne.classList.add('aus');
+}
+
+async function zurueckZurAuswahl() {
+  await verlasseBuehne();
+  ergebnisseite.classList.add('aus');
   auswahl.classList.remove('aus');
   $('singen').disabled = false;
+  el.hinweis.textContent = '';
 }
 $('zurueck').addEventListener('click', zurueckZurAuswahl);
+$('zurueck_zur_liste').addEventListener('click', zurueckZurAuswahl);
 
-// Lied zu Ende: Vollbild verlassen, Ergebnis aber stehen lassen - wer gerade
-// gesungen hat, will erst die Punkte sehen und nicht sofort wieder die Liste.
-spiel.onEnde = async (text) => {
-  await vollbildAus();
-  $('drehen').style.display = 'none';
-  el.hinweis.textContent = text;
+// Noch einmal dasselbe Lied, mit derselben Besetzung.
+$('nochmal').addEventListener('click', async () => {
+  ergebnisseite.classList.add('aus');
+  buehne.classList.remove('aus');
+  $('startflaeche').style.display = 'flex';
+  el.hinweis.textContent = '';
+  const konnte = await vollbildAn(buehne);
+  if (handy && !konnte.quer) $('drehen').style.display = 'block';
+  passeAn();
+});
+
+function zeigeErgebnis(ergebnis) {
+  $('ergebnis_lied').textContent = $('gewaehlt').textContent;
+  $('ergebnis_karten').innerHTML = ergebnis.map((e) => {
+    if (!e.gewertet) {
+      return `<div class="karte ungewertet"><div class="wer">${esc(e.name)}</div>` +
+        `<div class="punkte">nicht gewertet</div>` +
+        `<div class="aufschluesselung">Ohne Mikrofon lässt sich nichts ` +
+        `bewerten.</div></div>`;
+    }
+    const b = bewertung(e.punkte);
+    const st = sterne(b.stufe);
+    return `<div class="karte"><div class="wer">${esc(e.name)}</div>` +
+      `<div class="punkte" data-ziel="${e.punkte}">0</div>` +
+      `<div class="stufe">${esc(b.name)}</div>` +
+      `<div class="sterne">${'★'.repeat(st)}${'☆'.repeat(STUFEN.length - 1 - st)}</div>` +
+      `<div class="aufschluesselung">Noten ${e.normal} · ` +
+      `Goldene Noten ${e.golden}</div></div>`;
+  }).join('');
+
+  // Hochzaehlen wie im Spiel - das Ergebnis soll sich aufbauen, nicht
+  // einfach dastehen.
+  ergebnisseite.querySelectorAll('.punkte[data-ziel]').forEach((el2) => {
+    const ziel = +el2.dataset.ziel;
+    const start = performance.now();
+    const dauer = 1200;
+    const schritt = (jetzt) => {
+      const t = Math.min(1, (jetzt - start) / dauer);
+      // Am Ende auslaufen lassen statt gleichmaessig hochzaehlen.
+      el2.textContent = Math.round(ziel * (1 - Math.pow(1 - t, 3)));
+      if (t < 1) requestAnimationFrame(schritt);
+    };
+    requestAnimationFrame(schritt);
+  });
+
+  ergebnisseite.classList.remove('aus');
+}
+
+// Lied zu Ende: Vollbild verlassen und die Ergebnisseite zeigen.
+spiel.onEnde = async (ergebnis) => {
+  await verlasseBuehne();
+  zeigeErgebnis(ergebnis);
 };
 
 // Verlaesst jemand das Vollbild von Hand (Escape, Zurueck-Geste), darf das

@@ -151,6 +151,27 @@ export class Scorer {
     return Math.round((erreicht / this.maxValue) * MAX_SCORE);
   }
 
+  // Punkte getrennt nach gewoehnlichen und goldenen Noten - so schluesselt
+  // es auch die Ergebnisseite des Spiels auf.
+  //
+  // Was hier NICHT dabei ist: der Zeilenbonus. Im Spiel sind dafuer 1000 der
+  // 10000 Punkte reserviert (MAX_SONG_LINE_BONUS); hier gibt es ihn nicht,
+  // die vollen 10000 kommen aus den Noten. Die Zahlen sind also mit sich
+  // selbst vergleichbar, nicht mit denen aus dem Spiel.
+  teilwertung() {
+    let normal = 0;
+    let golden = 0;
+    if (!(this.maxValue > 0)) return { normal: 0, golden: 0 };
+    for (const [note, s] of this.state) {
+      if (s.tries === 0) continue;
+      const wert = (s.hits / s.tries) * note.length * noteFactor(note.type)
+                   / this.maxValue * MAX_SCORE;
+      if (noteFactor(note.type) > 1) golden += wert;
+      else normal += wert;
+    }
+    return { normal: Math.round(normal), golden: Math.round(golden) };
+  }
+
   // Fuer die Anzeige: Anteil 0..1 der zuletzt gesungenen Note.
   get accuracy() {
     let hits = 0;

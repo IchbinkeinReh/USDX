@@ -433,18 +433,48 @@ Der Relativmodus (`#RELATIVE`) zählt den Versatz **je Stimme**
 die zweite Stimme mit jeder Zeile der ersten weiter weg; ein Test hält beide
 Fälle fest.
 
-### Zwei Schritte
+### Drei Schritte
 
-Erst das Lied wählen, dann singen. Dazwischen liegt die Zuordnung der
+Lied wählen, singen, Ergebnis. Dazwischen liegt die Zuordnung der
 Mikrofone — die braucht Ruhe und Platz, und auf der Bühne ist beides weg.
+
+### Die Ergebnisseite
+
+Am Ende zeigt eine eigene Seite, wie gut es war — je Sänger eine Karte mit
+Punktzahl, Bewertung und Sternen. Die Punktzahl zählt hoch, wie im Spiel.
+
+Stufen und Schwellen sind aus `ShowRating` in `src/screens/UScreenScore.pas`
+übernommen, die Bezeichnungen aus `game/languages/German.ini`:
+
+| Punkte | Stufe |
+| --- | --- |
+| 0–2009 | Nichtskönner |
+| 2010–4009 | Amateur |
+| 4010–5009 | Möchtegern |
+| 5010–6009 | Fortgeschritten |
+| 6010–7509 | Sternchen |
+| 7510–8509 | Hit-Künstler |
+| 8510–9009 | Superstar |
+| 9010–10000 | UltraStar |
+
+Die Grenzen sind krumm, weil sie es im Original sind; ein glattes Nachbauen
+hätte die Stufen verschoben. Tests prüfen jede Grenze von beiden Seiten.
+
+Aufgeschlüsselt wird nach gewöhnlichen und goldenen Noten. **Den Zeilenbonus
+gibt es nicht** — im Spiel sind dafür 1000 der 10000 Punkte reserviert
+(`MAX_SONG_LINE_BONUS`), hier kommen die vollen 10000 aus den Noten. Die
+Zahlen sind also mit sich selbst vergleichbar, nicht mit denen aus dem Spiel.
 
 Gestartet wird **nicht automatisch**: Auf der Bühne liegt ein „Los geht's".
 Der Browser blendet beim Wechsel ins Vollbild unten einen Hinweis ein, der
 genau über dem Liedtext liegt; er verschwindet nach ein paar Sekunden von
 selbst, und bis dahin wartet man.
 
-Auf dem **Handy** wird beim Wechsel Vollbild angefordert und, wenn möglich,
-das Querformat festgehalten; am Ende des Liedes wird beides wieder gelöst.
+Vollbild wird auf **jedem** Gerät angefordert; das Festhalten des Querformats
+ist eine Handysache. Im Vollbild fällt die Kopfleiste weg — dort zählt jeder
+Millimeter für die Noten. Herauskommt man mit Escape oder der Zurück-Geste,
+danach ist sie wieder da. Am Ende des Liedes wird das Vollbild von selbst
+verlassen, wenn die Ergebnisseite erscheint.
 Im Hochformat bleiben je Notenzeile ein paar Zentimeter, auf denen weder
 Noten noch Text zu erkennen sind.
 
