@@ -1,29 +1,62 @@
 // Tonhoehenerkennung aus dem Mikrofon.
 //
-// Im Spiel macht das PortAudio samt eigener Analyse; im Browser gibt es
-// dafuer die Web Audio API. Das Verfahren hier ist die normierte
-// Quadratdifferenz (McLeod), eine Autokorrelation mit Normierung - robuster
-// gegen Oktavfehler als die reine Autokorrelation und ohne Bibliothek
-// umsetzbar.
+// Portiert aus src/base/URecord.pas - dasselbe Verfahren wie im Spiel, damit
+// sich beide Fassungen gleich verhalten: die zirkulare mittlere
+// Betragsdifferenz (CAMDF) ueber eine feste Halbtontabelle.
 //
-// Gesungen wird zwischen etwa 70 Hz (tiefe Maennerstimme) und 1000 Hz;
-// ausserhalb davon wird gar nicht erst gesucht, das spart Rechenzeit und
-// verhindert Ausreisser.
-
-export const MIN_FREQ = 70;
-export const MAX_FREQ = 1000;
-
-// Unterhalb dieser Lautstaerke ist es Stille oder Raumgeraeusch. Ohne diese
-// Schwelle "erkennt" das Verfahren in jedem Rauschen eine Tonhoehe.
-export const MIN_RMS = 0.01;
-
-// Wie eindeutig der Fund sein muss. Darunter ist es eher Geraeusch als Ton.
+//   D(tau) = 1/N * Summe |x((n+tau) mod N) - x(n)|
 //
-// 0.9 war zu streng: Eine Stimme im Raum, mit Hall und Musik im Hintergrund,
-// kommt selten so sauber an. USDX kennt gar keine solche Schranke - dort
-// entscheidet allein die Lautstaerke. 0.8 laesst echten Gesang durch; gegen
-// Rauschen schuetzt weiter die Pegelschwelle, die jetzt mitwaechst.
-export const MIN_CLARITY = 0.8;
+// Fuer jeden der 49 Halbtoene von C2 bis C6 wird die zugehoerige
+// Verschiebung geprueft; der kleinste Wert gewinnt. Trifft die Verschiebung
+// die Periode, liegen die Werte uebereinander und die Differenz wird klein.
+//
+// Der erste Entwurf benutzte stattdessen die normierte Quadratdifferenz
+// (McLeod/NSDF) mit einer Schranke fuer die Eindeutigkeit des Fundes. Das
+// war der Grund, warum oft kein Balken kam: Gemessen an nachgebauten
+// Aufnahmen fand das Verfahren den richtigen Ton, verwarf ihn aber - eine
+// Stimme ueber laufender Musik kam auf eine Eindeutigkeit von 0,51, eine
+// verrauschte auf 0,71, und beides lag unter der Schranke.
+//
+// USDX kennt so eine Schranke gar nicht. Dort entscheidet ALLEIN die
+// Lautstaerke, ob ausgewertet wird; danach gibt es immer einen Ton. Das ist
+// grosszuegiger und gelegentlich falsch - aber ein gelegentlich falscher
+// Balken ist beim Singen deutlich besser als gar keiner.
+
+// Kammerton und Umfang wie im Spiel: 49 Halbtoene von C2 (65,4 Hz) bis
+// C6 (1046,5 Hz).
+export const BASIS_FREQ = 440;
+export const HALBTOENE = 49;
+
+// Der Halbton mit dem Index 33 ist der Kammerton a' = MIDI 69. Daraus folgt
+// der Versatz zur MIDI-Nummer.
+export const MIDI_VERSATZ = 69 - 33;   // = 36, also Index 0 = C2 = MIDI 36
+
+export const MIN_FREQ = frequenzVonIndex(0);
+export const MAX_FREQ = frequenzVonIndex(HALBTOENE - 1);
+
+// Lautstaerkeschranke. Im Spiel einstellbar von 0,05 bis 0,60
+// (IThresholdVals in UIni.pas); 0,05 ist die empfindlichste Stufe.
+// Gemessen wird wie dort der GROESSTE Betrag im Fenster, nicht der
+// Effektivwert - ein kurzer lauter Anlaut zaehlt damit schon.
+export const MIN_VOLUME = 0.05;
+
+export function frequenzVonIndex(index) {
+  return BASIS_FREQ * Math.pow(2, (index - 33) / 12);
+}
+
+// Verschiebungen in Abtastwerten, eine je Halbton.
+// Wird je Abtastrate einmal gebaut und dann wiederverwendet.
+const delayCache = new Map();
+export function verschiebungen(sampleRate) {
+  let d = delayCache.get(sampleRate);
+  if (!d) {
+    d = new Int32Array(HALBTOENE);
+    for (let i = 0; i < HALBTOENE; i++)
+      d[i] = Math.round(sampleRate / frequenzVonIndex(i));
+    delayCache.set(sampleRate, d);
+  }
+  return d;
+}
 
 export function rms(buffer) {
   let sum = 0;
@@ -31,64 +64,64 @@ export function rms(buffer) {
   return Math.sqrt(sum / buffer.length);
 }
 
-// Wie nah ein Gipfel am hoechsten liegen muss, um genommen zu werden.
-// Der Kern des Verfahrens: Bei einem periodischen Signal ist der Wert bei
-// JEDEM Vielfachen der Periode fast gleich hoch. Wer einfach das Maximum
-// nimmt, landet zufaellig auf einer tieferen Oktave - im ersten Entwurf
-// wurden 220, 440 und 880 Hz allesamt als 110 Hz erkannt. Richtig ist der
-// ERSTE Gipfel, der nah genug am hoechsten liegt.
-export const PEAK_RATIO = 0.9;
+// Groesster Betrag im Fenster - das ist die Groesse, an der USDX die
+// Lautstaerke misst (MaxSampleVolume in URecord.pas).
+export function maxVolume(buffer) {
+  let m = 0;
+  for (let i = 0; i < buffer.length; i++) {
+    const v = buffer[i] < 0 ? -buffer[i] : buffer[i];
+    if (v > m) m = v;
+  }
+  return m;
+}
 
-// Liefert die Frequenz in Hz, oder -1 wenn nichts Eindeutiges zu finden war.
+// Liefert den Halbtonindex 0..48, oder -1 wenn es zu leise war.
 //
-// minRms kann von aussen gesetzt werden - die Pegelregelung kennt den
-// Rauschboden des Raumes und damit eine bessere Schranke als ein fester Wert.
-export function detectFrequency(buffer, sampleRate, minRms = MIN_RMS) {
+// Die zirkulare Fassung (mod N statt Abbruch am Ende) ist bewusst dieselbe
+// wie im Spiel: Sie vergleicht bei jeder Verschiebung gleich viele Werte,
+// wodurch tiefe Toene nicht dadurch benachteiligt werden, dass fuer sie
+// weniger Vergleiche uebrig bleiben.
+export function detectToneIndex(buffer, sampleRate, minVolume = MIN_VOLUME) {
   const n = buffer.length;
   if (n < 128) return -1;
-  if (rms(buffer) < minRms) return -1;
+  // Muss eine Zweierpotenz sein, sonst greift die Maskierung nicht.
+  if ((n & (n - 1)) !== 0) return -1;
+  if (maxVolume(buffer) < minVolume) return -1;
 
-  const maxLag = Math.min(n - 1, Math.floor(sampleRate / MIN_FREQ));
-  const minLag = Math.max(2, Math.floor(sampleRate / MAX_FREQ));
-  if (minLag >= maxLag) return -1;
+  const delays = verschiebungen(sampleRate);
+  const maske = n - 1;
+  let besterIndex = 0;
+  let besterWert = Infinity;
 
-  // Normierte Quadratdifferenz je Verschiebung.
-  const nsdf = new Float32Array(maxLag + 1);
-  let hoechster = 0;
-  for (let lag = minLag; lag <= maxLag; lag++) {
-    let korrelation = 0;
-    let energie = 0;
-    for (let i = 0; i < n - lag; i++) {
-      korrelation += buffer[i] * buffer[i + lag];
-      energie += buffer[i] * buffer[i] + buffer[i + lag] * buffer[i + lag];
+  for (let t = 0; t < HALBTOENE; t++) {
+    const tau = delays[t];
+    let summe = 0;
+    for (let i = 0; i < n; i++) {
+      const d = buffer[(i + tau) & maske] - buffer[i];
+      summe += d < 0 ? -d : d;
     }
-    nsdf[lag] = energie > 0 ? (2 * korrelation) / energie : 0;
-    if (nsdf[lag] > hoechster) hoechster = nsdf[lag];
-  }
-
-  if (hoechster < MIN_CLARITY) return -1;
-
-  // Ersten Gipfel suchen, der nah genug am hoechsten liegt.
-  const schwelle = hoechster * PEAK_RATIO;
-  let bestLag = -1;
-  for (let lag = minLag + 1; lag < maxLag; lag++) {
-    if (nsdf[lag] > nsdf[lag - 1] && nsdf[lag] >= nsdf[lag + 1] &&
-        nsdf[lag] >= schwelle) {
-      bestLag = lag;
-      break;
+    summe /= n;
+    // "<=" wie ArrayIndexOfMinimum im Spiel: Bei Gleichstand gewinnt der
+    // spaetere, also hoehere Ton.
+    if (summe <= besterWert) {
+      besterWert = summe;
+      besterIndex = t;
     }
   }
-  if (bestLag < 0) return -1;
+  return besterIndex;
+}
 
-  // Der wahre Gipfel liegt meist zwischen zwei Verschiebungen. Eine Parabel
-  // durch die drei Punkte trifft ihn genauer - ohne das ist die Aufloesung
-  // bei hohen Toenen zu grob, um Halbtoene zu unterscheiden.
-  const y0 = nsdf[bestLag - 1], y1 = nsdf[bestLag], y2 = nsdf[bestLag + 1];
-  const nenner = 2 * (2 * y1 - y0 - y2);
-  const versatz = nenner !== 0 ? (y2 - y0) / nenner : 0;
-  const lag = bestLag + Math.max(-1, Math.min(1, versatz));
+// MIDI-Notennummer, oder -1.
+export function detectMidi(buffer, sampleRate, minVolume = MIN_VOLUME) {
+  const i = detectToneIndex(buffer, sampleRate, minVolume);
+  return i < 0 ? -1 : i + MIDI_VERSATZ;
+}
 
-  return sampleRate / lag;
+// Frequenz in Hz, oder -1. Aufloesung ist der Halbton - genau wie im Spiel,
+// und mehr braucht die Wertung auch nicht, die ohnehin in Halbtoenen denkt.
+export function detectFrequency(buffer, sampleRate, minVolume = MIN_VOLUME) {
+  const i = detectToneIndex(buffer, sampleRate, minVolume);
+  return i < 0 ? -1 : frequenzVonIndex(i);
 }
 
 // Frequenz -> MIDI-Notennummer (69 = Kammerton a').

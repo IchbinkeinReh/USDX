@@ -112,9 +112,33 @@ Taktgeber ist die Abspielposition des `<audio>`-Elements, **nicht** ein
 Zeitgeber. Timer schwanken, und schon ein halber Schlag Versatz macht das
 Singen unmöglich.
 
-Die Tonhöhenerkennung ist dieselbe Idee wie im Spiel (NSDF/McLeod). Wichtig
-ist dabei die Spitzenauswahl: Nimmt man schlicht das globale Maximum, landen
-220, 440 und 880 Hz alle bei 110 Hz. Ein Test hält genau diesen Fehler fest.
+Die Tonhöhenerkennung ist **dasselbe Verfahren wie im Spiel**, portiert aus
+`src/base/URecord.pas`: die zirkulare mittlere Betragsdifferenz (CAMDF) über
+eine feste Tabelle von 49 Halbtönen, C2 bis C6.
+
+```
+D(τ) = 1/N · Σ |x((n+τ) mod N) − x(n)|
+```
+
+Für jeden Halbton wird die zugehörige Verschiebung geprüft, der kleinste Wert
+gewinnt. Auflösung ist damit der Halbton — genau wie im Spiel, und mehr
+braucht die Wertung nicht, die ohnehin in Halbtönen denkt.
+
+**Entscheidend ist, was NICHT geprüft wird.** Der erste Entwurf benutzte
+stattdessen die normierte Quadratdifferenz (McLeod/NSDF) mit einer Schranke
+für die Eindeutigkeit des Fundes. Genau daran scheiterte die Erkennung im
+Betrieb: An nachgebauten Aufnahmen gemessen fand das Verfahren den richtigen
+Ton, verwarf ihn aber — eine Stimme über laufender Musik kam auf eine
+Eindeutigkeit von 0,51, eine verrauschte auf 0,71, beides unter der Schranke.
+
+USDX kennt so eine Schranke gar nicht. Dort entscheidet **allein die
+Lautstärke**, ob ausgewertet wird; danach gibt es immer einen Ton. Das ist
+großzügiger und gelegentlich falsch — aber ein gelegentlich falscher Balken
+ist beim Singen deutlich besser als gar keiner. Ein Test hält fest, dass
+lautes Rauschen jetzt bewusst einen Ton ergibt.
+
+Gemessen wird die Lautstärke wie dort am **größten Betrag** im Fenster
+(`MaxSampleVolume`), nicht am Effektivwert.
 
 ### Pegeln
 
@@ -136,6 +160,9 @@ Daraus zwei Werte, und beide werden gebraucht:
 | Rauschboden (20. Rangwert) | was im Raum ohnehin klingt |
 | Spitze (90. Rangwert) | wie laut gesungen wird |
 
+Gerechnet wird in Spitzenwerten, demselben Maß wie die Lautstärkeschranke des
+Spiels.
+
 **Rangwerte, nicht Extremwerte.** Ein einmaliges Klopfen auf den Tisch würde
 die Spitze sonst fünf Sekunden lang verderben und die Verstärkung
 zusammenbrechen lassen.
@@ -146,18 +173,23 @@ nächsten lauten Stelle. Abgeschwächt wird nie; dafür ist die Erkennung nicht
 der richtige Ort. Nach oben wird langsam nachgeführt, nach unten schneller:
 Übersteuern soll kurz bleiben.
 
-Der zweite Gewinn ist die **Schwelle**: Sie liegt jetzt beim
-2,5-fachen des gemessenen Rauschbodens statt bei einem festen Wert. Genau das
-entscheidet, ob Gesang durchkommt — die Verstärkung allein tut das nicht, das
-Verfahren ist gegen die Lautstärke unempfindlich.
+Der zweite Gewinn ist die **Schwelle**: Sie liegt beim 1,5-fachen des
+gemessenen Rauschbodens statt bei einem festen Wert. Genau das entscheidet,
+ob Gesang durchkommt — die Verstärkung allein tut das nicht, das Verfahren
+ist gegen die Lautstärke unempfindlich. Der Faktor ist knapp bemessen, weil
+bei laufender Musik der „Rauschboden" das Lied selbst ist: Wer mehr verlangt,
+verlangt, dass der Sänger die Anlage übertönt.
+
+Geprüft wird die Schwelle am **rohen** Signal, nicht am verstärkten. Die
+Verstärkung wird gedämpft nachgezogen und hinkt dem berechneten Faktor
+hinterher — man verglich sonst gegen eine Lautstärke, die noch gar nicht
+anliegt, und verwarf zu viel.
 
 Der Rohpegel wird an einem **zweiten Abgriff vor der Verstärkung** gemessen.
 Am verstärkten Signal ließe sich der Faktor nicht bestimmen — man regelte
 gegen die eigene Regelung.
 
-`MIN_CLARITY` liegt jetzt bei 0,8 statt 0,9. Eine Stimme im Raum, mit Hall
-und Musik im Hintergrund, kommt selten sauberer an; USDX kennt gar keine
-solche Schranke, dort entscheidet allein die Lautstärke.
+
 
 ### Liedtext
 

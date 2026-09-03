@@ -18,6 +18,11 @@
 //   Spitze       das Laute im Fenster. Daraus folgt, wie weit verstaerkt
 //                werden muss, damit Gesang den Wertebereich ausfuellt.
 //
+// Gemessen wird der GROESSTE Betrag im Fenster, nicht der Effektivwert -
+// dasselbe Mass, an dem USDX seine Lautstaerkeschranke festmacht
+// (MaxSampleVolume in URecord.pas). So bedeuten die Zahlen hier dasselbe wie
+// dort.
+//
 // Bewusst NICHT der kleinste und groesste Wert, sondern Rangwerte: Ein
 // einzelnes Klopfen auf den Tisch wuerde die Spitze sonst fuer fuenf
 // Sekunden verderben und die Verstaerkung zusammenbrechen lassen.
@@ -30,7 +35,7 @@ export const RANG_LAUT = 0.90;
 
 // Auf diesen Pegel wird hochgeregelt. Nicht auf 1: Gesang schwankt, und wer
 // bis an den Rand verstaerkt, uebersteuert bei der naechsten lauten Stelle.
-export const ZIEL_PEGEL = 0.20;
+export const ZIEL_PEGEL = 0.45;
 
 // Grenzen der Verstaerkung. Nach oben, damit in einer Pause nicht das
 // Zimmerrauschen bis zur Unkenntlichkeit hochgezogen wird; nach unten nie
@@ -39,11 +44,14 @@ export const MIN_FAKTOR = 1;
 export const MAX_FAKTOR = 40;
 
 // Wie weit ueber dem Rauschboden es liegen muss, um als Gesang zu gelten.
-export const UEBER_RAUSCHEN = 2.5;
+// Ueber lauter Musik aus dem Lautsprecher ist der Rauschboden nicht mehr das
+// Zimmer, sondern das Lied selbst. Wer da das Zweieinhalbfache verlangt,
+// verlangt, dass der Saenger die Anlage uebertoent - deshalb knapp bemessen.
+export const UEBER_RAUSCHEN = 1.5;
 
 // Unterste Schwelle, auch wenn es vollkommen still war. Ohne sie wuerde in
 // absoluter Stille der Rauschboden zu null und jedes Knistern zaehlte.
-export const MIN_SCHWELLE = 0.004;
+export const MIN_SCHWELLE = 0.02;
 
 function rangwert(sortiert, anteil) {
   if (sortiert.length === 0) return 0;

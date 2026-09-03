@@ -3,7 +3,9 @@
 
 import { parseSong, noteProgress, secondsUntilLine, lineAt, nextLineAt,
          NOTE_FREESTYLE, NOTE_GOLDEN } from '../js/song.js';
-import { detectFrequency, freqToMidi, sameTone, toneDistance, rms } from '../js/pitch.js';
+import { detectFrequency, detectMidi, freqToMidi, sameTone, toneDistance,
+         rms, maxVolume, verschiebungen,
+         MIN_FREQ, MAX_FREQ } from '../js/pitch.js';
 import { Scorer, MAX_SCORE, inOktave } from '../js/score.js';
 import { lyricHelper, helferBahn,
          HELFER_MIN_VORLAUF, HELFER_GRENZE } from '../js/render.js';
@@ -99,22 +101,60 @@ console.log('Punktwert');
 check('Freestyle zaehlt nicht, Golden doppelt', s.maxNoteValue === 24, String(s.maxNoteValue));
 
 console.log('Tonhoehe');
-for (const f of [82.4, 110, 220, 261.6, 440, 880]) {
-  const ab = Math.abs(freqToMidi(detectFrequency(ton(f), 44100)) - freqToMidi(f));
-  check(`${f} Hz auf unter 0,2 Halbtoene genau`, ab < 0.2, ab.toFixed(3));
+// CAMDF liefert Halbtoene, keine Zwischenwerte - genau wie im Spiel, und
+// mehr braucht die Wertung nicht, die ohnehin in Halbtoenen denkt.
+for (const f of [82.41, 110, 220, 261.63, 440, 880]) {
+  const midi = detectMidi(ton(f), 44100);
+  const soll = Math.round(freqToMidi(f));
+  check(`${f} Hz ergibt den richtigen Halbton`, midi === soll,
+        'erkannt ' + midi + ', erwartet ' + soll);
 }
 // Der Fehler, der im ersten Entwurf drin war: 220 und 440 wurden als 110
-// erkannt, weil das globale Maximum statt des ersten Gipfels genommen wurde.
+// erkannt. Beim portierten Verfahren waere das ein Griff in die falsche
+// Verschiebung - der Test bleibt, weil der Fehler teuer waere.
 check('kein Oktavfehler nach unten',
-      detectFrequency(ton(440), 44100) > 400, String(detectFrequency(ton(440), 44100)));
+      detectMidi(ton(440), 44100) === 69, String(detectMidi(ton(440), 44100)));
+check('und keiner nach oben',
+      detectMidi(ton(110), 44100) === 45, String(detectMidi(ton(110), 44100)));
+
+// Die Tabelle deckt C2 bis C6 ab, wie NumHalftones in URecord.pas.
+check('unterster Halbton ist C2', Math.round(freqToMidi(MIN_FREQ)) === 36,
+      String(MIN_FREQ.toFixed(2)));
+check('oberster Halbton ist C6', Math.round(freqToMidi(MAX_FREQ)) === 84,
+      String(MAX_FREQ.toFixed(2)));
 
 const stille = new Float32Array(4096);
-check('Stille ergibt keinen Ton', detectFrequency(stille, 44100) === -1);
+check('Stille ergibt keinen Ton', detectMidi(stille, 44100) === -1);
+
+// Anders als vorher: Lautes Rauschen ERGIBT einen Ton. Das ist kein
+// Versehen, sondern das Verhalten des Spiels - dort entscheidet allein die
+// Lautstaerke, danach kommt immer ein Ton heraus. Die vorige Fassung wies
+// hier ab und wies dabei auch echten Gesang ab, sobald Musik oder Hall
+// dazukamen; genau das war der Grund, warum oft kein Balken erschien.
 const rauschen = new Float32Array(4096).map(() => (Math.random() - 0.5) * 0.6);
-check('Rauschen ergibt keinen Ton', detectFrequency(rauschen, 44100) === -1,
-      String(detectFrequency(rauschen, 44100)));
-check('zu kurzer Block ergibt -1', detectFrequency(new Float32Array(64), 44100) === -1);
+check('lautes Rauschen ergibt einen Ton - wie im Spiel',
+      detectMidi(rauschen, 44100) >= 0);
+// Leises Rauschen faellt dagegen unter die Lautstaerkeschranke.
+const leise = new Float32Array(4096).map(() => (Math.random() - 0.5) * 0.01);
+check('leises Rauschen faellt unter die Schranke',
+      detectMidi(leise, 44100) === -1);
+
+check('zu kurzer Block ergibt -1', detectMidi(new Float32Array(64), 44100) === -1);
+// Die zirkulare Rechnung maskiert mit N-1 und braucht deshalb eine
+// Zweierpotenz. Ein anderer Block darf nicht still Unsinn liefern.
+check('Block ohne Zweierpotenz wird abgelehnt',
+      detectMidi(new Float32Array(3000).fill(0.5), 44100) === -1);
 check('Pegel wird gemessen', rms(ton(440)) > 0.1 && rms(stille) === 0);
+check('Spitzenwert wird gemessen',
+      maxVolume(ton(440)) > rms(ton(440)) && maxVolume(stille) === 0);
+
+// Die Verschiebungstabelle ist die aus dem Spiel.
+{
+  const d = verschiebungen(44100);
+  check('49 Halbtoene', d.length === 49, String(d.length));
+  // Kammerton a' liegt bei Index 33: 44100/440 = 100,2 -> 100
+  check('Verschiebung fuer den Kammerton stimmt', d[33] === 100, String(d[33]));
+}
 
 console.log('Tonvergleich');
 check('gleicher Ton trifft', sameTone(60, 60));
@@ -221,17 +261,18 @@ E`);
 
 console.log('Pegelregelung');
 {
-  // Ein leises Mikrofon: Gesang kommt nur mit 0,01 an, dazwischen Rauschen.
+  // Gerechnet wird in Spitzenwerten, wie im Spiel. Ein leises Mikrofon:
+  // Gesang kommt mit 0,04 an, Zimmergeraeusch mit 0,004.
   const p = new Pegel();
   let t = 0;
   const gib = (v, n = 1) => { for (let i = 0; i < n; i++) p.fuettern(v, t += 0.02); };
 
-  gib(0.001, 40);        // zwei Sekunden Zimmergeraeusch
-  gib(0.01, 60);         // dann Gesang
+  gib(0.004, 40);        // zwei Sekunden Zimmergeraeusch
+  gib(0.04, 60);         // dann Gesang
 
-  check('Rauschboden liegt beim Leisen', p.rauschboden() <= 0.002,
+  check('Rauschboden liegt beim Leisen', p.rauschboden() <= 0.006,
         String(p.rauschboden()));
-  check('Spitze liegt beim Lauten', p.spitze() >= 0.008, String(p.spitze()));
+  check('Spitze liegt beim Lauten', p.spitze() >= 0.03, String(p.spitze()));
 
   // Der Kern: Ein leises Mikrofon wird hochgeregelt.
   let f = 1;
@@ -244,15 +285,26 @@ console.log('Pegelregelung');
   // Die Schwelle liegt ueber dem Rauschen, sonst zaehlte jedes Knistern.
   check('Schwelle liegt ueber dem Rauschboden',
         p.schwelle() > p.rauschboden(), String(p.schwelle()));
-  check('aber unter dem Gesang', p.schwelle() < 0.01,
+  check('aber unter dem Gesang', p.schwelle() < 0.04,
         String(p.schwelle()));
+
+  // Der Fall, an dem die vorige Fassung scheiterte: Musik laeuft ueber den
+  // Lautsprecher, der "Rauschboden" ist also das Lied selbst. Wer dann das
+  // Zweieinhalbfache verlangt, verlangt, dass der Saenger die Anlage
+  // uebertoent.
+  const q = new Pegel();
+  let u = 0;
+  for (let i = 0; i < 150; i++) q.fuettern(0.05, u += 0.02);   // Musik
+  for (let i = 0; i < 100; i++) q.fuettern(0.09, u += 0.02);   // Gesang darueber
+  check('Gesang ueber laufender Musik kommt durch', q.schwelle() < 0.09,
+        'Schwelle ' + q.schwelle().toFixed(3));
 }
 {
   // Ein lautes Mikrofon darf NICHT abgeschwaecht werden - dafuer ist die
   // Erkennung nicht der richtige Ort.
   const p = new Pegel();
   let t = 0;
-  for (let i = 0; i < 200; i++) p.fuettern(0.5, t += 0.02);
+  for (let i = 0; i < 200; i++) p.fuettern(0.8, t += 0.02);
   let f = 1;
   for (let i = 0; i < 300; i++) f = p.berechneFaktor();
   check('lautes Mikrofon bleibt unveraendert', f === MIN_FAKTOR,
@@ -276,10 +328,10 @@ console.log('Pegelregelung');
   // zusammenbrechen lassen - deshalb Rangwerte statt Extremwerte.
   const p = new Pegel();
   let t = 0;
-  for (let i = 0; i < 100; i++) p.fuettern(0.01, t += 0.02);
+  for (let i = 0; i < 100; i++) p.fuettern(0.04, t += 0.02);
   p.fuettern(1.0, t += 0.02);          // Klopfen auf den Tisch
   check('ein einzelner Ausreisser verdirbt die Spitze nicht',
-        p.spitze() < 0.05, String(p.spitze()));
+        p.spitze() < 0.1, String(p.spitze()));
 }
 {
   // Das Fenster darf nicht unbegrenzt wachsen.
@@ -291,9 +343,9 @@ console.log('Pegelregelung');
   // Und Alteres faellt wirklich heraus: erst laut, dann lange leise.
   const q = new Pegel(5);
   let u = 0;
-  for (let i = 0; i < 100; i++) q.fuettern(0.5, u += 0.02);
-  for (let i = 0; i < 300; i++) q.fuettern(0.01, u += 0.02);
-  check('altes Lautes faellt aus dem Fenster', q.spitze() < 0.05,
+  for (let i = 0; i < 100; i++) q.fuettern(0.8, u += 0.02);
+  for (let i = 0; i < 300; i++) q.fuettern(0.04, u += 0.02);
+  check('altes Lautes faellt aus dem Fenster', q.spitze() < 0.1,
         String(q.spitze()));
 }
 {

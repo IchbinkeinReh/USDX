@@ -12,7 +12,7 @@
 // verteilen, die niemand nachvollziehen kann.
 
 import { parseSong, lineAt, nextLineAt } from './song.js';
-import { detectFrequency, freqToMidi, rms } from './pitch.js';
+import { detectMidi, maxVolume } from './pitch.js';
 import { Pegel } from './pegel.js';
 import { Scorer } from './score.js';
 import { Renderer } from './render.js';
@@ -266,10 +266,14 @@ export class Game {
     const bahnen = this.saenger.map((s) => {
       s.sungMidi = -1;
       if (s.analyser) {
-        // Erst den rohen Pegel messen und die Regelung nachfuehren ...
+        // Erst am ROHEN Signal messen und die Regelung nachfuehren. Die
+        // Schranke wird ebenfalls hier geprueft, nicht am verstaerkten:
+        // Die Verstaerkung wird gedaempft nachgezogen und hinkt dem
+        // berechneten Faktor hinterher - man verglich sonst gegen eine
+        // Lautstaerke, die noch gar nicht anliegt, und verwarf zu viel.
         s.rohAnalyser.getFloatTimeDomainData(s.rohPuffer);
-        const roh = rms(s.rohPuffer);
-        s.pegel.fuettern(roh, zeit);
+        const spitze = maxVolume(s.rohPuffer);
+        s.pegel.fuettern(spitze, zeit);
         const faktor = s.pegel.berechneFaktor();
         if (s.verstaerker) {
           // Sanft nachziehen statt springen - ein harter Sprung im
@@ -277,13 +281,13 @@ export class Game {
           s.verstaerker.gain.setTargetAtTime(faktor, this.ctx.currentTime, 0.1);
         }
 
-        // ... dann das verstaerkte Signal auswerten. Die Schwelle kommt
-        // ebenfalls aus der Regelung: Sie kennt den Rauschboden des Raumes
-        // und damit besser als ein fester Wert, was Gesang ist.
-        s.analyser.getFloatTimeDomainData(s.puffer);
-        const schwelle = s.pegel.schwelle() * faktor;
-        const f = detectFrequency(s.puffer, this.ctx.sampleRate, schwelle);
-        if (f > 0) s.sungMidi = freqToMidi(f);
+        if (spitze >= s.pegel.schwelle()) {
+          // Ausgewertet wird das verstaerkte Signal. Die Schranke steht auf
+          // 0, weil sie oben schon geprueft wurde - wie im Spiel, wo nach
+          // der Lautstaerkepruefung immer ein Ton herauskommt.
+          s.analyser.getFloatTimeDomainData(s.puffer);
+          s.sungMidi = detectMidi(s.puffer, this.ctx.sampleRate, 0);
+        }
         s.scorer.feed(zeit, s.sungMidi);
       }
       // Anteil je Note fuer die Einfaerbung.
