@@ -9,10 +9,23 @@
 // Gewertet wird deshalb je Block, und die Note bekommt den Anteil der
 // Bloecke, in denen richtig getroffen wurde.
 
-import { countsForScore, noteFactor } from './song.js';
-import { sameTone } from './pitch.js';
+import { countsForScore, noteFactor, NOTE_RAP, NOTE_RAP_GOLDEN } from './song.js';
 
 export const MAX_SCORE = 10000;
+
+// Schwierigkeitsstufen wie im Spiel (IDifficulty in UIni.pas).
+export const LEICHT = 0;
+export const MITTEL = 1;
+export const SCHWER = 2;
+
+// Wie viele Halbtoene daneben noch als Treffer zaehlen.
+//
+// Im Spiel: Range := 2 - Ini.Difficulty (UNote.pas). Leicht laesst also zwei
+// Halbtoene zu, Mittel einen, Schwer gar keinen.
+export function toleranz(schwierigkeit) {
+  const s = Math.max(LEICHT, Math.min(SCHWER, schwierigkeit | 0));
+  return 2 - s;
+}
 
 // Holt den gesungenen Ton in die Oktave der Zielnote.
 //
@@ -30,9 +43,14 @@ export function inOktave(sungMidi, zielMidi) {
 export class Scorer {
   // trackIndex waehlt die Stimme. Beim Solo gibt es nur die 0, beim Duett
   // bekommt jeder Saenger seine eigene Wertung gegen seine eigene Spur.
-  constructor(song, trackIndex = 0) {
+  // Leicht ist die Voreinstellung: Mit Raummikrofon und laufender Musik ist
+  // der Halbton auf den Punkt kaum zu treffen, und wer nichts trifft, hoert
+  // auf zu singen.
+  constructor(song, trackIndex = 0, schwierigkeit = LEICHT) {
     this.song = song;
     this.trackIndex = trackIndex;
+    this.schwierigkeit = schwierigkeit;
+    this.toleranz = toleranz(schwierigkeit);
     this.track = song.track ? song.track(trackIndex) : song;
     this.maxValue = this.track.maxNoteValue;
     // Je Note: wie viele Treffer und wie viele Versuche.
@@ -58,11 +76,26 @@ export class Scorer {
       this.state.set(note, s);
     }
     s.tries++;
-    const treffer = sameTone(sungMidi, note.pitch + 60);
+    const treffer = this.trifft(sungMidi, note);
     if (treffer) s.hits++;
 
     this.merkeBalken(seconds, sungMidi, note, treffer);
     return treffer;
+  }
+
+  // Die Trefferpruefung des Spiels (UNote.pas):
+  //
+  //   Abs(Note.Tone - Sound.Tone) <= Range
+  //     or Note.NoteType = ntRap or ntRapGolden
+  //
+  // Der gesungene Ton ist dabei schon in die Oktave der Zielnote geholt -
+  // ohne das koennte niemand eine Oktave tiefer mitsingen. Rap-Noten treffen
+  // immer: Dort geht es um den Rhythmus, nicht um die Tonhoehe.
+  trifft(sungMidi, note) {
+    if (note.type === NOTE_RAP || note.type === NOTE_RAP_GOLDEN) return true;
+    if (!(sungMidi >= 0)) return false;
+    const ziel = note.pitch + 60;
+    return Math.abs(ziel - inOktave(sungMidi, ziel)) <= this.toleranz;
   }
 
   // Haelt fest, was gesungen wurde - aber NUR dort, wo im Lied auch eine

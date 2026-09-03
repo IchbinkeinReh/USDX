@@ -82,6 +82,14 @@
     <div id="gewaehlt"></div>
     <div id="gewaehlt_info"></div>
     <div id="stimmen"></div>
+    <div class="stimme">
+      <label>Schwierigkeit</label>
+      <select id="schwierigkeit">
+        <option value="0" selected>Leicht – zwei Halbtöne Spielraum</option>
+        <option value="1">Mittel – ein Halbton</option>
+        <option value="2">Schwer – auf den Punkt</option>
+      </select>
+    </div>
     <div class="warnung" id="warnung"></div>
     <div class="knopfreihe">
       <button id="singen">Singen</button>
@@ -252,7 +260,7 @@ $('losgehts').addEventListener('click', async () => {
   $('startflaeche').style.display = 'none';
   passeAn();
   try {
-    await spiel.start(besetzung);
+    await spiel.start(besetzung, +$('schwierigkeit').value);
   } catch (err) {
     el.hinweis.textContent = err.message;
     await zurueckZurAuswahl();

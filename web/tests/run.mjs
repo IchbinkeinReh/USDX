@@ -6,7 +6,8 @@ import { parseSong, noteProgress, secondsUntilLine, lineAt, nextLineAt,
 import { detectFrequency, detectMidi, freqToMidi, sameTone, toneDistance,
          rms, maxVolume, verschiebungen,
          MIN_FREQ, MAX_FREQ } from '../js/pitch.js';
-import { Scorer, MAX_SCORE, inOktave } from '../js/score.js';
+import { Scorer, MAX_SCORE, inOktave, toleranz,
+         LEICHT, MITTEL, SCHWER } from '../js/score.js';
 import { lyricHelper, helferBahn,
          HELFER_MIN_VORLAUF, HELFER_GRENZE } from '../js/render.js';
 import { istHandy, HANDY_BREITE } from '../js/vollbild.js';
@@ -170,8 +171,10 @@ check('ohne Eingabe null Punkte', w.score === 0);
 for (let i = 0; i < 10; i++) w.feed(s.beatToTime(1), 120);
 check('richtig gesungen gibt Punkte', w.score > 0, String(w.score));
 
+// Deutlich daneben, nicht nur ein Halbton: Die Voreinstellung ist "leicht"
+// und laesst zwei Halbtoene zu.
 const w2 = new Scorer(s);
-for (let i = 0; i < 10; i++) w2.feed(s.beatToTime(1), 121);   // Halbton daneben
+for (let i = 0; i < 10; i++) w2.feed(s.beatToTime(1), 126);   // Tritonus daneben
 check('falsch gesungen gibt nichts', w2.score === 0, String(w2.score));
 
 const w3 = new Scorer(s);
@@ -533,12 +536,13 @@ E`);
         String(w.bars[0].tone));
 
   // Danebengesungen: eigener Balken, nicht als Treffer, auf der gemessenen
-  // Hoehe statt auf der Note.
+  // Hoehe statt auf der Note. Deutlich daneben, weil die Voreinstellung
+  // "leicht" zwei Halbtoene durchgehen laesst.
   const w2 = new Scorer(b);
-  w2.feed(b.beatToTime(1), 62);
+  w2.feed(b.beatToTime(1), 66);
   check('Fehlgriff gibt einen eigenen Balken', w2.bars.length === 1);
   check('nicht als Treffer vermerkt', w2.bars[0].hit === false);
-  check('und auf der gesungenen Hoehe', w2.bars[0].tone === 62,
+  check('und auf der gesungenen Hoehe', w2.bars[0].tone === 66,
         String(w2.bars[0].tone));
 
   // Wechsel von daneben auf getroffen trennt die Balken.
@@ -756,6 +760,59 @@ check('Relativmodus: erste Stimme zaehlt fuer sich',
 check('Relativmodus: zweite Stimme faengt wieder bei null an',
       relativ.tracks[1].notes.map((n) => n.start).join(',') === '0,4',
       relativ.tracks[1].notes.map((n) => n.start).join(','));
+
+console.log('Schwierigkeitsstufen');
+{
+  // Im Spiel: Range := 2 - Ini.Difficulty (UNote.pas).
+  check('leicht laesst zwei Halbtoene zu', toleranz(LEICHT) === 2);
+  check('mittel einen', toleranz(MITTEL) === 1);
+  check('schwer keinen', toleranz(SCHWER) === 0);
+  check('unsinnige Werte werden begrenzt',
+        toleranz(-5) === 2 && toleranz(99) === 0);
+
+  const b = parseSong(`#TITLE:x
+#BPM:120
+#GAP:0
+: 0 8 0 la
+E`);
+  // Note mit pitch 0 ist MIDI 60.
+  const eins = (stufe, gesungen) => {
+    const w = new Scorer(b, 0, stufe);
+    return w.feed(b.beatToTime(1), gesungen);
+  };
+
+  check('genau getroffen zaehlt immer',
+        eins(SCHWER, 60) && eins(MITTEL, 60) && eins(LEICHT, 60));
+
+  // Das war der Grund fuer die Beschwerde: Ein Halbton daneben galt als
+  // Fehlschlag, weil fest auf der schwersten Stufe gewertet wurde.
+  check('ein Halbton daneben: leicht ja', eins(LEICHT, 61) === true);
+  check('ein Halbton daneben: mittel ja', eins(MITTEL, 61) === true);
+  check('ein Halbton daneben: schwer nein', eins(SCHWER, 61) === false);
+
+  check('zwei Halbtoene daneben: leicht ja', eins(LEICHT, 62) === true);
+  check('zwei Halbtoene daneben: mittel nein', eins(MITTEL, 62) === false);
+  check('drei Halbtoene daneben: auch leicht nein', eins(LEICHT, 63) === false);
+
+  // Die Oktave zaehlt weiterhin nicht - wer tiefer singt, trifft.
+  check('eine Oktave tiefer trifft', eins(LEICHT, 48) === true);
+  check('eine Oktave tiefer und einen Halbton daneben trifft auch',
+        eins(LEICHT, 49) === true);
+
+  // Ohne Angabe wird leicht gewertet.
+  const ohne = new Scorer(b);
+  check('ohne Angabe ist es leicht', ohne.toleranz === 2);
+  check('und ein Halbton daneben zaehlt',
+        ohne.feed(b.beatToTime(1), 61) === true);
+
+  // Rap trifft im Spiel immer - dort geht es um den Rhythmus.
+  const r = parseSong('#TITLE:x\n#BPM:120\n#GAP:0\nR 0 8 0 yo\nE');
+  const wr = new Scorer(r, 0, SCHWER);
+  check('Rap trifft auch weit daneben',
+        wr.feed(r.beatToTime(1), 70) === true);
+  check('Rap trifft auch ohne erkannten Ton',
+        wr.feed(r.beatToTime(2), -1) === true);
+}
 
 console.log('Wertung im Duett');
 const wA = new Scorer(d, 0);

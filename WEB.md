@@ -233,9 +233,26 @@ einen zweiten danebenzusetzen — gerechnet wird in ganzen Schlägen wie im
 Spiel, sonst entstünden bei jedem Bild Splitter.
 
 Die Trefferentscheidung ist dieselbe wie bei der Wertung, damit Bild und
-Punktzahl sich nicht widersprechen. Sie ist strenger als in USDX: Dort gibt
-es ein Toleranzband (`Range = 2 - Schwierigkeit`), hier muss der Halbton
-stimmen.
+Punktzahl sich nicht widersprechen.
+
+### Schwierigkeitsstufen
+
+Wie im Spiel: `Range = 2 − Schwierigkeit` (`UNote.pas`).
+
+| Stufe | Spielraum |
+| --- | --- |
+| Leicht (Voreinstellung) | zwei Halbtöne |
+| Mittel | ein Halbton |
+| Schwer | auf den Punkt |
+
+**Leicht ist die Voreinstellung**, und das ist keine Bequemlichkeit: Mit
+einem Raummikrofon und laufender Musik ist der Halbton auf den Punkt kaum zu
+treffen, und wer nichts trifft, hört auf zu singen. Die erste Fassung wertete
+fest ohne Spielraum — also auf der schwersten Stufe.
+
+Verglichen wird **nach** der Oktavverschiebung; wer eine Oktave tiefer
+mitsingt, trifft also weiterhin. Rap-Noten treffen wie im Spiel **immer** —
+dort geht es um den Rhythmus, nicht um die Tonhöhe.
 
 ### Das Textband
 

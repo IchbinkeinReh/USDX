@@ -14,7 +14,7 @@
 import { parseSong, lineAt, nextLineAt } from './song.js';
 import { detectMidi, maxVolume } from './pitch.js';
 import { Pegel } from './pegel.js';
-import { Scorer } from './score.js';
+import { Scorer, LEICHT } from './score.js';
 import { Renderer } from './render.js';
 
 const FFT_GROESSE = 4096;
@@ -194,8 +194,8 @@ export class Game {
 
   // besetzung: [{ trackIndex, deviceId }] - ein Eintrag je mitsingender Stimme.
   // deviceId darf null sein; dann wird die Stimme angezeigt, aber nicht
-  // gewertet.
-  async start(besetzung) {
+  // gewertet. schwierigkeit steuert, wie weit daneben noch zaehlt.
+  async start(besetzung, schwierigkeit = LEICHT) {
     if (!this.song) return;
 
     const belegt = new Set();
@@ -211,7 +211,7 @@ export class Game {
     for (const b of besetzung) {
       const eintrag = {
         trackIndex: b.trackIndex,
-        scorer: new Scorer(this.song, b.trackIndex),
+        scorer: new Scorer(this.song, b.trackIndex, schwierigkeit),
         analyser: null,
         puffer: null,
         sungMidi: -1,
