@@ -68,6 +68,8 @@ type
       WebOnly:    boolean;
       // --webport: Port der Weboberflaeche. 0 heisst "Voreinstellung".
       WebPort:    word;
+      // --webhost: Bindeadresse. Leer = von ueberall erreichbar.
+      WebHost:    string;
       ScreenMode: TScreenMode;
       Joypad:     boolean;
       Split:      TSplitMode;
@@ -155,6 +157,7 @@ begin
   Web         := False;
   WebOnly     := False;
   WebPort     := 0;
+  WebHost     := '';
   NoLog       := false;
   CheckSongs  := false;
   ScreenMode  := scmDefault;
@@ -272,6 +275,12 @@ begin
           // Ausserhalb des gueltigen Bereichs bleibt es bei der
           // Voreinstellung, statt auf Port 0 zu lauschen.
           WebPort := StrToIntDef(ParamStr(I + 1), 0);
+      end
+
+      else if (Command = 'webhost') then
+      begin
+        if (PCount > I) then
+          WebHost := ParamStr(I + 1);
       end
 
       else if (Command = 'language') then

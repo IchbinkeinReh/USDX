@@ -21,6 +21,7 @@ Es gibt sie in zwei Ausbaustufen:
 ```
 ultrastardx --web-only --songpath ~/Lieder
 ultrastardx --web-only --webport 9000
+ultrastardx --web-only --webhost 127.0.0.1
 ```
 
 Startet **nur** die Weboberfläche: kein Fenster, kein OpenGL, kein SDL.
@@ -229,10 +230,16 @@ Fälle fest.
 
 ## Sicherheit
 
-**Es gibt keine Anmeldung.** Wer im selben Netz ist, kann die Liederliste
-sehen, Lieder auswählen und die Lieddateien herunterladen. Für ein Heimnetz
-ist das gewollt — ins Internet gehört dieser Port nicht, und hinter eine
-Portfreigabe erst recht nicht.
+**Es gibt keine Anmeldung.** Wer den Port erreicht, kann die Liederliste
+sehen, Lieder auswählen und alle Lied-, Ton- und Videodateien herunterladen.
+Für ein Heimnetz ist das gewollt — offen ins Internet gehört dieser Port
+nicht.
+
+Soll er doch von außen erreichbar sein, gehört ein Vorschalt-Server davor,
+der die Anmeldung prüft. Dann **muss** `--webhost 127.0.0.1` gesetzt sein:
+Ohne das lauscht der Dienst auf allen Adressen, der Port ist am
+Vorschalt-Server vorbei direkt erreichbar, und die Anmeldung ist wertlos.
+`tests/headless.sh` prüft die Bindung mit.
 
 Ausgeliefert werden nur zwei Arten von Dateien:
 

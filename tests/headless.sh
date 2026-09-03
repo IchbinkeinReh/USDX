@@ -49,8 +49,9 @@ printf 'VIDEO' > "$ORDNER/lieder/Duo/v.mp4"
 printf 'BILD' > "$ORDNER/lieder/Duo/b.jpg"
 printf 'kein Lied\n' > "$ORDNER/lieder/liesmich.txt"
 
-"./$SPIEL" --web-only --webport "$PORT" --songpath "$ORDNER/lieder" \
-    > "$LOG" 2>&1 &
+# --webhost 127.0.0.1: Der Test prueft gleich mit, dass die Bindung wirkt.
+"./$SPIEL" --web-only --webport "$PORT" --webhost 127.0.0.1 \
+    --songpath "$ORDNER/lieder" > "$LOG" 2>&1 &
 PID=$!
 
 # Warten, bis der Server antwortet - nicht blind schlafen.
@@ -76,6 +77,16 @@ fi
 hole() { curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT$1"; }
 
 pruefe "startet ohne Bildschirm" "$BEREIT" "1"
+
+# Hinter einem Vorschalt-Server, der die Anmeldung prueft, MUSS der Dienst
+# auf 127.0.0.1 haengen. Lauschte er auf allen Adressen, waere der Port aus
+# dem Netz direkt erreichbar und die Anmeldung damit wertlos.
+if command -v ss > /dev/null 2>&1; then
+    OFFEN=$(ss -ltn 2>/dev/null | grep -c "0.0.0.0:$PORT")
+    pruefe "haengt nicht auf allen Adressen" "$OFFEN" "0"
+    GEBUNDEN=$(ss -ltn 2>/dev/null | grep -c "127.0.0.1:$PORT")
+    pruefe "haengt auf 127.0.0.1" "$GEBUNDEN" "1"
+fi
 pruefe "Status antwortet" "$(hole /api/status)" "200"
 pruefe "Oberflaeche wird ausgeliefert" "$(hole /)" "200"
 pruefe "Modul wird ausgeliefert" "$(hole /js/song.js)" "200"

@@ -400,9 +400,9 @@ begin
     if Params.WebOnly then
     begin
       if (Params.WebPort > 0) then
-        ExitCode := RunHeadlessWeb(Params.WebPort)
+        ExitCode := RunHeadlessWeb(Params.WebPort, Params.WebHost)
       else
-        ExitCode := RunHeadlessWeb(WEB_DEFAULT_PORT);
+        ExitCode := RunHeadlessWeb(WEB_DEFAULT_PORT, Params.WebHost);
       Halt(ExitCode);
     end;
   finally

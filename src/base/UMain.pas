@@ -378,7 +378,7 @@ begin
       // --webport schlaegt die Voreinstellung; 0 heisst "nicht angegeben".
       WebServer := TWebServerThread.Create(WebBridge,
         IfThen(Params.WebPort > 0, Params.WebPort, WEB_DEFAULT_PORT),
-        FindeWebOrdner());
+        FindeWebOrdner(), Params.WebHost);
     end;
 
     Log.LogStatus('Main Loop', 'Initialization');

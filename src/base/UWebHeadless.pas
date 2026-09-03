@@ -30,7 +30,7 @@ uses
 
 // Startet den Server und laeuft, bis abgebrochen wird.
 // Rueckgabe ist der Beendigungscode fuer das Programm.
-function RunHeadlessWeb(Port: word): integer;
+function RunHeadlessWeb(Port: word; const Adresse: UTF8String = ''): integer;
 
 implementation
 
@@ -86,7 +86,7 @@ begin
   end;
 end;
 
-function RunHeadlessWeb(Port: word): integer;
+function RunHeadlessWeb(Port: word; const Adresse: UTF8String = ''): integer;
 var
   Bridge: TWebBridge;
   Server: TWebServerThread;
@@ -146,9 +146,12 @@ begin
       WriteLn('Weboberflaeche: ', WebOrdner);
 
     WebLogHandler := Melde;
-    Server := TWebServerThread.Create(Bridge, Port, WebOrdner);
+    Server := TWebServerThread.Create(Bridge, Port, WebOrdner, Adresse);
 
-    WriteLn('Bereit auf Port ', Port, ' - mit Strg-C beenden.');
+    if (Adresse <> '') then
+      WriteLn('Bereit auf ', Adresse, ' Port ', Port, ' - mit Strg-C beenden.')
+    else
+      WriteLn('Bereit auf Port ', Port, ' - mit Strg-C beenden.');
     Flush(Output);
 
     while not Beenden do

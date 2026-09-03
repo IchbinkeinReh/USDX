@@ -34,12 +34,21 @@ uses
   UWebBridge;
 
 type
+  // TFPHttpServer veroeffentlicht die Bindeadresse nicht - sie liegt im
+  // Vorfahren unter protected. Ein Nachfahre darf die Sichtbarkeit anheben;
+  // das ist die ganze Aufgabe dieser Klasse.
+  TBindbarerServer = class(TFPHttpServer)
+    public
+      property Address;
+  end;
+
   TWebServerThread = class(TThread)
     private
-      fServer:  TFPHttpServer;
+      fServer:  TBindbarerServer;
       fBridge:  TWebBridge;
       fPort:    word;
       fWebRoot: UTF8String;
+      fAdresse: UTF8String;
       procedure SendeDatei(const Pfad, ContentType: UTF8String;
                            var ARequest: TFPHTTPConnectionRequest;
                            var AResponse: TFPHTTPConnectionResponse);
@@ -50,8 +59,14 @@ type
     public
       // AWebRoot ist der Ordner mit index.html und js/. Leer heisst: nur die
       // eingebaute Fernbedienungsseite.
+      // AAdresse begrenzt, von wo aus der Server erreichbar ist. Leer heisst
+      // "von ueberall" - richtig fuer das Heimnetz. Steht der Server hinter
+      // einem Vorschalt-Server, der die Anmeldung prueft, MUSS hier
+      // 127.0.0.1 stehen: Sonst ist der Port unter Umgehung der Anmeldung
+      // direkt aus dem Netz erreichbar, und die Anmeldung ist wertlos.
       constructor Create(ABridge: TWebBridge; APort: word;
-                         const AWebRoot: UTF8String = '');
+                         const AWebRoot: UTF8String = '';
+                         const AAdresse: UTF8String = '');
       destructor Destroy; override;
       procedure Stop;
   end;
@@ -69,6 +84,7 @@ var
 implementation
 
 uses
+  StrUtils,
   UWebApi;
 
 procedure Melde(const Nachricht: UTF8String; Fehler: boolean);
@@ -78,11 +94,13 @@ begin
 end;
 
 constructor TWebServerThread.Create(ABridge: TWebBridge; APort: word;
-                                   const AWebRoot: UTF8String = '');
+                                   const AWebRoot: UTF8String = '';
+                                   const AAdresse: UTF8String = '');
 begin
   fBridge := ABridge;
   fPort := APort;
   fWebRoot := AWebRoot;
+  fAdresse := AAdresse;
   FreeOnTerminate := false;
   inherited Create(false);
 end;
@@ -106,7 +124,8 @@ begin
   // merkt vom Abschalten erst etwas, wenn die naechste Verbindung eintrifft.
   // Ohne diesen Anstupser wartet das Spiel beim Beenden endlos.
   try
-    Wecker := TInetSocket.Create('127.0.0.1', fPort);
+    Wecker := TInetSocket.Create(
+      IfThen(fAdresse <> '', fAdresse, '127.0.0.1'), fPort);
     Wecker.Free;
   except
     // Der Server ist schon zu - genau das wollten wir.
@@ -235,12 +254,17 @@ end;
 
 procedure TWebServerThread.Execute;
 begin
-  fServer := TFPHttpServer.Create(nil);
+  fServer := TBindbarerServer.Create(nil);
   try
     fServer.Port := fPort;
+    if (fAdresse <> '') then
+      fServer.Address := fAdresse;
     fServer.Threaded := true;
     fServer.OnRequest := HandleRequest;
-    Melde(Format('Web interface on port %d', [fPort]), false);
+    if (fAdresse <> '') then
+      Melde(Format('Web interface on %s port %d', [fAdresse, fPort]), false)
+    else
+      Melde(Format('Web interface on port %d', [fPort]), false);
     try
       fServer.Active := true;   // blockiert bis Active := false
     except
