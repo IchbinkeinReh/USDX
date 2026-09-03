@@ -18,6 +18,10 @@ import { Renderer } from './render.js';
 
 const FFT_GROESSE = 4096;
 
+// Ab wie viel Abweichung das Video nachgezogen wird. Jedes Bild neu zu
+// setzen laesst es ruckeln; gar nicht nachzuziehen laesst es davonlaufen.
+const VIDEO_TOLERANZ = 0.30;
+
 export class Game {
   constructor(canvas, elemente) {
     this.renderer = new Renderer(canvas);
@@ -28,6 +32,84 @@ export class Game {
     this.saenger = [];      // [{ trackIndex, scorer, analyser, puffer, sungMidi }]
     this.ctx = null;
     this.laeuft = false;
+    this.hatVideo = false;
+    this.hatBild = false;
+  }
+
+  // Video und Hintergrundbild vorbereiten.
+  //
+  // Dieselbe Reihenfolge wie im Spiel (UScreenSingController): Ist ein Video
+  // da, laeuft es; sonst steht das Bild. Beide werden geladen, denn das Bild
+  // ist der Rueckfall - und der wird oefter gebraucht, als man denkt: In
+  // vielen aelteren Liedern steht ein .avi oder .mpg, und das spielt kein
+  // Browser ab. Erst der Fehler beim Laden verraet das, vorher nicht.
+  bereiteHintergrund(index, song) {
+    const { video, bild } = this.el;
+    this.hatVideo = false;
+    this.hatBild = false;
+
+    if (bild) {
+      bild.style.display = 'none';
+      if (song.background) {
+        bild.onload = () => {
+          this.hatBild = true;
+          if (!this.hatVideo) bild.style.display = 'block';
+        };
+        bild.onerror = () => { this.hatBild = false; };
+        bild.src = `/api/song/${index}/background`;
+      } else {
+        bild.removeAttribute('src');
+      }
+    }
+
+    if (video) {
+      video.style.display = 'none';
+      video.pause();
+      // Stumm, und das ist keine Bequemlichkeit: Der Ton kommt aus der
+      // Tondatei. Liefe die Tonspur des Videos mit, hoerte man alles doppelt
+      // und leicht versetzt.
+      video.muted = true;
+      video.removeAttribute('src');
+      video.load();
+
+      if (song.video) {
+        video.oncanplay = () => {
+          this.hatVideo = true;
+          video.style.display = 'block';
+          if (bild) bild.style.display = 'none';
+        };
+        video.onerror = () => {
+          // Kein Video - das Bild uebernimmt, falls es eines gibt.
+          this.hatVideo = false;
+          video.style.display = 'none';
+          if (bild && this.hatBild) bild.style.display = 'block';
+        };
+        video.src = `/api/song/${index}/video`;
+        video.load();
+      }
+    }
+  }
+
+  // Zieht das Video an den Ton heran.
+  //
+  // Massgeblich ist die Tonzeit, nicht das Video: Videoposition = VIDEOGAP +
+  // Tonzeit, genau wie in UScreenSingController. Nachgezogen wird nur bei
+  // spuerbarer Abweichung - jedes Bild neu zu setzen laesst es ruckeln.
+  haltVideoNach(zeit) {
+    const video = this.el.video;
+    if (!this.hatVideo || !video) return;
+
+    const ziel = zeit + this.song.videoGap;
+    if (ziel < 0) {
+      // Negativer VIDEOGAP: Das Video faengt spaeter an als der Ton. Bis
+      // dahin steht es auf dem ersten Bild.
+      if (!video.paused) video.pause();
+      if (video.currentTime !== 0) video.currentTime = 0;
+      return;
+    }
+    if (video.paused) video.play().catch(() => {});
+    if (Math.abs(video.currentTime - ziel) > VIDEO_TOLERANZ)
+      video.currentTime = ziel;
   }
 
   async ladeLied(index) {
@@ -38,6 +120,7 @@ export class Game {
     this.song = parseSong(txt);   // wirft bei kaputten Spurwechseln
     this.audio.src = `/api/song/${index}/audio`;
     this.el.titel.textContent = `${this.song.artist} – ${this.song.title}`;
+    this.bereiteHintergrund(index, this.song);
     return this.song;
   }
 
@@ -135,6 +218,7 @@ export class Game {
   stop() {
     this.laeuft = false;
     this.audio.pause();
+    if (this.el.video) this.el.video.pause();
     for (const s of this.saenger)
       if (s.strom) s.strom.getTracks().forEach((t) => t.stop());
   }
@@ -182,7 +266,8 @@ export class Game {
       };
     });
 
-    this.renderer.draw(bahnen, beat);
+    this.haltVideoNach(zeit);
+    this.renderer.draw(bahnen, beat, this.hatVideo || this.hatBild);
     const stand = (s) => (s.analyser ? String(s.scorer.score) : '–');
     this.el.punkte.textContent = this.saenger.length > 1
       ? this.saenger.map(stand).join(' · ')
@@ -190,6 +275,7 @@ export class Game {
 
     if (this.audio.ended) {
       this.laeuft = false;
+      if (this.el.video) this.el.video.pause();
       this.el.hinweis.textContent = 'Fertig - ' + this.saenger
         .map((s) => s.analyser
           ? `${s.scorer.name}: ${s.scorer.score}`

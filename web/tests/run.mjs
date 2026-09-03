@@ -103,6 +103,30 @@ check('in der Pause gibt es nichts zu treffen', w4.feed(s.beatToTime(1000), 60) 
 check('Freestyle wird nicht gewertet', w4.feed(s.beatToTime(17), 60) === null);
 
 console.log();
+console.log('Video und Hintergrund');
+const v = parseSong(`#TITLE:Mit Bild
+#ARTIST:Wer
+#BPM:120
+#VIDEO:clip.mp4
+#BACKGROUND:bild.jpg
+#VIDEOGAP:1,5
+: 0 4 60 a
+E`);
+check('Videodatei aus dem Kopf', v.video === 'clip.mp4', v.video);
+check('Hintergrundbild aus dem Kopf', v.background === 'bild.jpg', v.background);
+// Kommazahlen stehen mal mit Punkt, mal mit Komma - beim VIDEOGAP wuerde
+// ein Punkt-Komma-Fehler das Bild um Sekunden verschieben.
+check('VIDEOGAP mit Komma', v.videoGap === 1.5, String(v.videoGap));
+
+const v2 = parseSong('#TITLE:x\n#BPM:120\n#VIDEOGAP:-2.25\n: 0 4 60 a\nE');
+check('VIDEOGAP mit Punkt und Vorzeichen', v2.videoGap === -2.25,
+      String(v2.videoGap));
+
+const v3 = parseSong('#TITLE:x\n#BPM:120\n: 0 4 60 a\nE');
+check('ohne Angabe ist der Versatz null', v3.videoGap === 0, String(v3.videoGap));
+check('ohne Angabe kein Video und kein Bild',
+      v3.video === '' && v3.background === '');
+
 console.log('Duett');
 
 const d = parseSong(`#TITLE:Zusammen

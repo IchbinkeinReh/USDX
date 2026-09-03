@@ -206,6 +206,18 @@ begin
                                    CatSongs.Song[I].Audio).ToUTF8()
     else
       Liste[Anzahl].AudioPath := '';
+    // Video und Hintergrundbild fuer die Weboberflaeche. Dieselbe Regel wie
+    // im Spiel: Das Bild ist der Rueckfall, wenn kein Video da ist.
+    if CatSongs.Song[I].Video.IsSet then
+      Liste[Anzahl].VideoPath := CatSongs.Song[I].Path.Append(
+                                   CatSongs.Song[I].Video).ToUTF8()
+    else
+      Liste[Anzahl].VideoPath := '';
+    if CatSongs.Song[I].Background.IsSet then
+      Liste[Anzahl].BackgPath := CatSongs.Song[I].Path.Append(
+                                   CatSongs.Song[I].Background).ToUTF8()
+    else
+      Liste[Anzahl].BackgPath := '';
     Inc(Anzahl);
   end;
   SetLength(Liste, Anzahl);

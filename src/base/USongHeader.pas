@@ -36,6 +36,9 @@ type
   TSongHeader = record
     TxtPath:   UTF8String;   // vollstaendiger Pfad der .txt
     AudioPath: UTF8String;   // vollstaendiger Pfad der Tondatei, '' wenn keine
+    VideoPath: UTF8String;   // #VIDEO, '' wenn keins
+    BackgPath: UTF8String;   // #BACKGROUND, '' wenn keins
+    VideoGap:  double;       // #VIDEOGAP in Sekunden
     Artist:    UTF8String;
     Title:     UTF8String;
     Edition:   UTF8String;
@@ -92,7 +95,23 @@ var
   Datei: TextFile;
   Zeile, Schluessel, Wert: UTF8String;
   Trenner, Gelesen: integer;
-  Ordner, TonName: UTF8String;
+  Ordner, TonName, VideoName, BildName: UTF8String;
+
+  // Loest einen Dateinamen aus dem Kopf gegen den Ordner der .txt auf.
+  // Leer, wenn nichts dasteht oder die Datei fehlt.
+  function Daneben(const Name: UTF8String): UTF8String;
+  begin
+    Result := '';
+    if (Name = '') then Exit;
+    // Absolute Pfade kommen vor und bleiben stehen. Sonst gilt der Name
+    // relativ zur .txt - Rueckstriche aus Windows-Dateien mit umsetzen.
+    if (Name[1] = PathDelim) or (Pos(':', Name) = 2) then
+      Result := Name
+    else
+      Result := Ordner + StringReplace(Name, '\', PathDelim, [rfReplaceAll]);
+    if not FileExists(Result) then
+      Result := '';
+  end;
 begin
   Result := False;
   FillChar(Header, SizeOf(Header), 0);
@@ -103,7 +122,12 @@ begin
   Header.Edition := '';
   Header.Genre := '';
   Header.Language := '';
+  Header.VideoPath := '';
+  Header.BackgPath := '';
+  Header.VideoGap := 0;
   TonName := '';
+  VideoName := '';
+  BildName := '';
 
   AssignFile(Datei, FileName);
   {$I-}
@@ -149,7 +173,14 @@ begin
       else if (Schluessel = 'YEAR')     then Header.Year     := LiesJahr(Wert)
       // AUDIO ist die heutige Schreibweise, MP3 die aeltere. MP3 darf AUDIO
       // nicht ueberschreiben, wenn beide dastehen.
-      else if (Schluessel = 'AUDIO')    then TonName := Wert
+      else if (Schluessel = 'AUDIO')    then TonName   := Wert
+      else if (Schluessel = 'VIDEO')    then VideoName := Wert
+      else if (Schluessel = 'BACKGROUND') then BildName := Wert
+      // VIDEOGAP steht mal mit Punkt, mal mit Komma - wie alle Kommazahlen
+      // im Format.
+      else if (Schluessel = 'VIDEOGAP') then
+        Header.VideoGap := StrToFloatDef(
+          StringReplace(Wert, ',', '.', [rfReplaceAll]), 0, FormatSettings)
       else if (Schluessel = 'MP3') and (TonName = '') then TonName := Wert;
     end;
   finally
@@ -159,20 +190,10 @@ begin
     if (IOResult <> 0) then ;   // beim Schliessen ist ein Fehler egal
   end;
 
-  if (TonName <> '') then
-  begin
-    Ordner := ExtractFilePath(FileName);
-    // Der Name steht relativ zur .txt. Ein absoluter Pfad in der Datei waere
-    // ungewoehnlich, kommt aber vor - dann bleibt er stehen.
-    if (Length(TonName) > 0) and
-       ((TonName[1] = PathDelim) or (Pos(':', TonName) = 2)) then
-      Header.AudioPath := TonName
-    else
-      Header.AudioPath := Ordner +
-        StringReplace(TonName, '\', PathDelim, [rfReplaceAll]);
-    if not FileExists(Header.AudioPath) then
-      Header.AudioPath := '';
-  end;
+  Ordner := ExtractFilePath(FileName);
+  Header.AudioPath := Daneben(TonName);
+  Header.VideoPath := Daneben(VideoName);
+  Header.BackgPath := Daneben(BildName);
 
   Result := (Header.Title <> '') or (Header.Artist <> '');
 end;

@@ -139,6 +139,40 @@ begin
   Check('auch wenn MP3 zuerst dasteht',
         ExtractFileName(H.AudioPath) = 'neu.ogg', H.AudioPath);
 
+  // --- Video und Hintergrundbild ---
+  WriteLn('Video und Hintergrundbild');
+  SchreibeDatei(Basis + 'g' + PathDelim + 'lied.txt',
+    '#TITLE:Mit Bild'#10'#ARTIST:Wer'#10 +
+    '#VIDEO:clip.mp4'#10'#BACKGROUND:bild.jpg'#10'#VIDEOGAP:1,5'#10 +
+    ': 0 4 60 a'#10);
+  SchreibeDatei(Basis + 'g' + PathDelim + 'clip.mp4', 'V');
+  SchreibeDatei(Basis + 'g' + PathDelim + 'bild.jpg', 'B');
+  ReadSongHeader(Basis + 'g' + PathDelim + 'lied.txt', H);
+  Check('Video wird gefunden',
+        ExtractFileName(H.VideoPath) = 'clip.mp4', H.VideoPath);
+  Check('Hintergrundbild wird gefunden',
+        ExtractFileName(H.BackgPath) = 'bild.jpg', H.BackgPath);
+  // Kommazahlen stehen im Format mal mit Punkt, mal mit Komma. Ein
+  // Punkt-Komma-Fehler verschoebe das Video um Sekunden.
+  Check('VIDEOGAP mit Komma wird gelesen',
+        Abs(H.VideoGap - 1.5) < 0.001, FloatToStr(H.VideoGap));
+
+  SchreibeDatei(Basis + 'h' + PathDelim + 'lied.txt',
+    '#TITLE:Punkt'#10'#ARTIST:Wer'#10'#VIDEOGAP:-2.25'#10': 0 4 60 a'#10);
+  ReadSongHeader(Basis + 'h' + PathDelim + 'lied.txt', H);
+  Check('VIDEOGAP mit Punkt und Vorzeichen',
+        Abs(H.VideoGap + 2.25) < 0.001, FloatToStr(H.VideoGap));
+
+  // Steht ein Video im Kopf, das es nicht gibt, darf kein Pfad entstehen -
+  // sonst lieferte der Server spaeter eine Datei aus, die fehlt.
+  SchreibeDatei(Basis + 'i' + PathDelim + 'lied.txt',
+    '#TITLE:Fehlt'#10'#ARTIST:Wer'#10'#VIDEO:gibtesnicht.mp4'#10 +
+    ': 0 4 60 a'#10);
+  ReadSongHeader(Basis + 'i' + PathDelim + 'lied.txt', H);
+  Check('genanntes, aber fehlendes Video bleibt leer',
+        H.VideoPath = '', H.VideoPath);
+  Check('ohne Angabe kein VIDEOGAP', H.VideoGap = 0, FloatToStr(H.VideoGap));
+
   // --- keine Lieddatei ---
   WriteLn('Was kein Lied ist');
   SchreibeDatei(Basis + 'liesmich.txt', 'Hier steht nur Text.'#10);
@@ -155,7 +189,7 @@ begin
     Lieder := ScanSongs(Ordner);
 
     Gefunden := Length(Lieder);
-    Check('alle Lieder gefunden, die Liesmich nicht', Gefunden = 6,
+    Check('alle Lieder gefunden, die Liesmich nicht', Gefunden = 9,
           IntToStr(Gefunden));
 
     DuoIdx := -1; AbbaIdx := -1;
@@ -176,6 +210,21 @@ begin
       if (Lieder[I].Index = I) then Inc(Gefunden);
     Check('Index ist fortlaufend und ohne Luecken',
           Gefunden = Length(Lieder), IntToStr(Gefunden));
+
+    Gefunden := 0;
+    for I := 0 to High(Lieder) do
+      if (Lieder[I].Title = 'Mit Bild') then
+      begin
+        Check('Video landet in der Liederliste',
+              ExtractFileName(Lieder[I].VideoPath) = 'clip.mp4',
+              Lieder[I].VideoPath);
+        Check('Hintergrundbild landet in der Liederliste',
+              ExtractFileName(Lieder[I].BackgPath) = 'bild.jpg',
+              Lieder[I].BackgPath);
+        Inc(Gefunden);
+      end;
+    Check('das Lied mit Bild ist genau einmal dabei', Gefunden = 1,
+          IntToStr(Gefunden));
 
     Check('Pfad zur .txt ist gesetzt',
           (AbbaIdx >= 0) and FileExists(Lieder[AbbaIdx].TxtPath),
@@ -206,8 +255,14 @@ begin
   DeleteFile(Basis + 'f' + PathDelim + 'lied.txt');
   DeleteFile(Basis + 'f' + PathDelim + 'neu.ogg');
   DeleteFile(Basis + 'f' + PathDelim + 'alt.mp3');
+  DeleteFile(Basis + 'g' + PathDelim + 'lied.txt');
+  DeleteFile(Basis + 'g' + PathDelim + 'clip.mp4');
+  DeleteFile(Basis + 'g' + PathDelim + 'bild.jpg');
+  DeleteFile(Basis + 'h' + PathDelim + 'lied.txt');
+  DeleteFile(Basis + 'i' + PathDelim + 'lied.txt');
   RemoveDir(Basis + 'a'); RemoveDir(Basis + 'b'); RemoveDir(Basis + 'c');
   RemoveDir(Basis + 'd'); RemoveDir(Basis + 'e'); RemoveDir(Basis + 'f');
+  RemoveDir(Basis + 'g'); RemoveDir(Basis + 'h'); RemoveDir(Basis + 'i');
   RemoveDir(Basis);
 
   WriteLn;

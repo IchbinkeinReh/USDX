@@ -80,6 +80,27 @@ begin
   else if (Endung = '.m4a')  then Result := 'audio/mp4'
   else if (Endung = '.wav')  then Result := 'audio/wav'
   else if (Endung = '.flac') then Result := 'audio/flac'
+  // Bewegtbild. Was der Browser davon tatsaechlich abspielen kann, ist eine
+  // andere Frage - .avi und .mpg stehen in vielen aelteren Liedern und
+  // spielt kein Browser. Der richtige Typ gehoert trotzdem hin: Nur so kann
+  // der Browser sauber abwinken, statt an geratenen Daten zu wuergen.
+  else if (Endung = '.mp4')  then Result := 'video/mp4'
+  else if (Endung = '.m4v')  then Result := 'video/mp4'
+  else if (Endung = '.webm') then Result := 'video/webm'
+  else if (Endung = '.ogv')  then Result := 'video/ogg'
+  else if (Endung = '.mkv')  then Result := 'video/x-matroska'
+  else if (Endung = '.avi')  then Result := 'video/x-msvideo'
+  else if (Endung = '.mpg')  then Result := 'video/mpeg'
+  else if (Endung = '.mpeg') then Result := 'video/mpeg'
+  else if (Endung = '.mov')  then Result := 'video/quicktime'
+  else if (Endung = '.divx') then Result := 'video/x-msvideo'
+  // Hintergrundbilder.
+  else if (Endung = '.jpg')  then Result := 'image/jpeg'
+  else if (Endung = '.jpeg') then Result := 'image/jpeg'
+  else if (Endung = '.png')  then Result := 'image/png'
+  else if (Endung = '.gif')  then Result := 'image/gif'
+  else if (Endung = '.webp') then Result := 'image/webp'
+  else if (Endung = '.bmp')  then Result := 'image/bmp'
   else Result := 'application/octet-stream';
 end;
 
@@ -88,7 +109,7 @@ function ResolveFileRequest(Bridge: TWebBridge; const Path, WebRoot: UTF8String;
 var
   I, Index, Schraeg: integer;
   Rest, Name: UTF8String;
-  Audio: boolean;
+  Art: TWebFileKind;
 begin
   FilePath := '';
   ContentType := '';
@@ -103,15 +124,17 @@ begin
     if (Schraeg <= 1) then Exit;
 
     Name := Copy(Rest, Schraeg + 1, Length(Rest));
-    if (Name = 'txt') then Audio := False
-    else if (Name = 'audio') then Audio := True
+    if      (Name = 'txt')        then Art := wfkTxt
+    else if (Name = 'audio')      then Art := wfkAudio
+    else if (Name = 'video')      then Art := wfkVideo
+    else if (Name = 'background') then Art := wfkBackground
     else Exit;
 
     // -1 als Ausweichwert: StrToIntDef schluckt auch "3x" nicht, und ein
     // negativer Index wird von SongPath ohnehin abgelehnt.
     Index := StrToIntDef(Copy(Rest, 1, Schraeg - 1), -1);
     if not Assigned(Bridge) then Exit;
-    if not Bridge.SongPath(Index, Audio, FilePath) then
+    if not Bridge.SongPath(Index, Art, FilePath) then
     begin
       FilePath := '';
       Exit;

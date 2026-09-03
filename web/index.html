@@ -20,7 +20,14 @@
   .a{font-weight:600}.t{color:#98a0b0;font-size:14px}
   .duett{color:#ffb27f;font-size:12px;margin-left:6px}
   #buehne{padding:14px}
-  canvas{width:100%;height:46vh;background:#11131a;border-radius:12px;display:block}
+  /* Video, Bild und Noten liegen uebereinander. Der Canvas ist durchsichtig
+     und zeichnet nur darauf - deshalb bekommt der Rahmen den Hintergrund,
+     nicht der Canvas selbst. */
+  #bild_flaeche{position:relative;width:100%;height:46vh;border-radius:12px;
+                overflow:hidden;background:#11131a}
+  #bild_flaeche > *{position:absolute;inset:0;width:100%;height:100%}
+  #hintergrund,#video{object-fit:cover;display:none;background:#11131a}
+  canvas{display:block}
   #kopf{display:flex;justify-content:space-between;align-items:baseline;margin:10px 2px}
   #punkte{font-size:26px;font-weight:700;color:#ffd978}
   #hinweis{color:#98a0b0;font-size:14px;min-height:20px;margin:0 2px}
@@ -48,7 +55,11 @@
     <div class="warnung" id="warnung"></div>
   </div>
 
-  <canvas id="buehnebild" width="1280" height="480"></canvas>
+  <div id="bild_flaeche">
+    <img id="hintergrund" alt="">
+    <video id="video" muted playsinline preload="auto"></video>
+    <canvas id="buehnebild" width="1280" height="480"></canvas>
+  </div>
   <p id="hinweis"></p>
 </div>
 <script type="module">
@@ -58,6 +69,8 @@ const el = {
   titel: document.getElementById('titel'),
   punkte: document.getElementById('punkte'),
   hinweis: document.getElementById('hinweis'),
+  video: document.getElementById('video'),
+  bild: document.getElementById('hintergrund'),
 };
 const canvas = document.getElementById('buehnebild');
 // Auf die tatsaechliche Groesse setzen, sonst wird das Bild weichgezeichnet.

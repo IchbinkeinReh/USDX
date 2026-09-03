@@ -26,13 +26,22 @@ export class Renderer {
 
   // bahnen: [{ line, sungMidi, anteile, name, score }]
   // beat:   aktueller Schlag, gilt fuer alle Bahnen
-  draw(bahnen, beat) {
+  // hintergrund: liegt Video oder Bild dahinter? Dann bleibt der Canvas
+  //   durchsichtig, sonst verdeckte er beides.
+  draw(bahnen, beat, hintergrund = false) {
     const { ctx, canvas } = this;
     const w = canvas.width, h = canvas.height;
 
     ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = '#11131a';
+    if (hintergrund) {
+      // Nur abdunkeln, nicht zumalen. Ohne diesen Schleier verschwinden
+      // Text und Noten in hellen Bildstellen - das Spiel macht es genauso.
+      ctx.fillStyle = 'rgba(10, 12, 18, 0.45)';
+    } else {
+      ctx.fillStyle = '#11131a';
+    }
     ctx.fillRect(0, 0, w, h);
+    this.hintergrund = hintergrund;
 
     if (!bahnen || bahnen.length === 0) return;
 
@@ -62,6 +71,12 @@ export class Renderer {
     if (mitNamen && bahn.name) {
       ctx.font = '600 15px system-ui, sans-serif';
       ctx.textBaseline = 'top';
+      if (this.hintergrund) {
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+        ctx.lineJoin = 'round';
+        ctx.strokeText(bahn.name, 12, 8);
+      }
       ctx.fillStyle = farbe.stimme;
       ctx.fillText(bahn.name, 12, 8);
       // Kein Wert heisst "ohne Mikrofon". Eine 0 an dieser Stelle liesse es
@@ -97,7 +112,7 @@ export class Renderer {
     const x = (b) => ((b - von) / spanne) * (w - 40) + 20;
     const y = (p) => h * 0.45 - (p - mitte) * tonHoehe;
 
-    ctx.strokeStyle = '#1e2230';
+    ctx.strokeStyle = this.hintergrund ? 'rgba(255,255,255,0.10)' : '#1e2230';
     ctx.lineWidth = 1;
     for (let p = -6; p <= 6; p += 2) {
       ctx.beginPath();
@@ -169,10 +184,20 @@ export class Renderer {
     let cx = (w - gesamt) / 2;
     const cy = h - groesse * 0.6;
 
+    // Auf bewegtem Bild wandert staendig Helligkeit unter den Text. Ein
+    // Rand macht ihn unabhaengig davon lesbar; ohne ihn verschwinden einzelne
+    // Silben genau dann, wenn man sie braucht.
+    if (this.hintergrund) {
+      ctx.lineWidth = Math.max(3, groesse * 0.16);
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+      ctx.lineJoin = 'round';
+    }
+
     line.notes.forEach((note, i) => {
       const aktiv = beat >= note.start && beat < note.start + note.length;
+      if (this.hintergrund) ctx.strokeText(note.text, cx, cy);
       ctx.fillStyle = aktiv ? '#ffd978'
-                    : (beat >= note.start ? '#8b93a4' : '#e8e8ea');
+                    : (beat >= note.start ? '#c3c9d6' : '#ffffff');
       ctx.fillText(note.text, cx, cy);
       cx += breiten[i];
     });

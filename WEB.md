@@ -112,6 +112,41 @@ Die Tonhöhenerkennung ist dieselbe Idee wie im Spiel (NSDF/McLeod). Wichtig
 ist dabei die Spitzenauswahl: Nimmt man schlicht das globale Maximum, landen
 220, 440 und 880 Hz alle bei 110 Hz. Ein Test hält genau diesen Fehler fest.
 
+### Video und Hintergrundbild
+
+Dieselbe Reihenfolge wie im Spiel (`UScreenSingController`): Ist ein Video da,
+läuft es; sonst steht das Hintergrundbild aus `#BACKGROUND`; sonst bleibt es
+dunkel. Beides wird geladen — das Bild ist der **Rückfall**, nicht die
+zweite Wahl.
+
+Der Rückfall wird öfter gebraucht, als es klingt: In vielen älteren Liedern
+steht ein `.avi`, `.mpg` oder `.divx`, und das spielt **kein Browser** ab.
+Der Server liefert die Datei trotzdem mit dem richtigen Typ aus — nur so kann
+der Browser sauber abwinken, statt an geratenen Daten zu würgen. Erst sein
+`error` verrät, dass es nicht geht; vorher lässt sich das nicht feststellen.
+Dann übernimmt das Bild. Zuverlässig laufen `.mp4`, `.webm` und `.ogv`.
+
+Der Gleichlauf folgt dem Spiel: **Videoposition = `#VIDEOGAP` + Tonzeit**.
+Maßgeblich ist also die Tonzeit, nicht das Video. Nachgezogen wird nur bei
+mehr als 0,3 s Abweichung — jedes Bild neu zu setzen ließe das Video ruckeln,
+gar nicht nachzuziehen ließe es davonlaufen. Ein negativer `#VIDEOGAP`
+bedeutet, dass das Video später einsetzt als der Ton; bis dahin steht es auf
+dem ersten Bild.
+
+Das Video läuft **stumm**. Das ist keine Bequemlichkeit: Der Ton kommt aus
+der Tondatei, und liefe die Tonspur des Videos mit, hörte man alles doppelt
+und leicht versetzt.
+
+Der Canvas mit Noten und Text liegt darüber und ist dann durchsichtig — er
+legt nur einen Schleier darüber und setzt den Text mit einem Rand ab. Ohne
+das verschwinden einzelne Silben in hellen Bildstellen genau dann, wenn man
+sie braucht.
+
+Ein Lied ohne Video antwortet auf `/api/song/N/video` mit **404**, nicht mit
+einer leeren 200-Antwort: Der Browser fragt immer erst an und fällt genau auf
+den 404 zurück; eine leere Antwort verstünde er als kaputtes Video und zeigte
+gar nichts.
+
 ### Duette
 
 Duette werden ganz gesungen, nicht nur die erste Stimme. Jede Stimme bekommt
@@ -141,7 +176,8 @@ Fälle fest.
 
 ### Grenzen
 
-- Kein Video, kein Hintergrundbild.
+- Videoformate, die der Browser nicht kennt (`.avi`, `.mpg`, `.divx`), fallen
+  auf das Hintergrundbild zurück.
 - Ohne Mikrofonfreigabe läuft das Lied, es wird nur nicht gewertet.
 - Die Punkte bleiben im Browser und wandern nicht in die Bestenliste.
 - Mehr als zwei Stimmen gibt es nicht — wie in USDX.
@@ -183,7 +219,7 @@ es wirken könnte. Tests in `testwebapi` und `testwebserver` halten das fest.
 | `js/pitch.js` | Tonhöhe aus dem Mikrofon |
 | `js/score.js` | Wertung, je Stimme eine |
 | `js/render.js` | Noten und Text auf Canvas, eine Bahn je Stimme |
-| `js/game.js` | Schleife, Ton, Mikrofone, Besetzung |
+| `js/game.js` | Schleife, Ton, Video, Mikrofone, Besetzung |
 
 Der Webthread fasst **niemals** die Datenstrukturen des Spiels an.
 `CatSongs.Song` wird beim Einlesen, Sortieren und Filtern ständig verändert;
@@ -201,9 +237,9 @@ HTTP-Server und JSON stammen aus der FPC-Standardbibliothek
 (`fphttpserver`, `fpjson`), es kommt keine Abhängigkeit dazu. Die
 Weboberfläche lädt nichts aus dem Internet nach.
 
-### Ton ausliefern
+### Ton und Video ausliefern
 
-Tondateien gehen als `ContentStream` hinaus, nicht über `AResponse.Content`:
+Ton-, Video- und Bilddateien gehen als `ContentStream` hinaus, nicht über `AResponse.Content`:
 Letzteres wird intern als Zeilenliste geführt und hängt beim Senden
 Zeilenenden an — bei Text fällt das kaum auf, eine MP3 ist danach kaputt. Ein
 Test schickt deshalb bewusst eine Datei mit Nullbyte, CR und LF durch und
@@ -222,6 +258,8 @@ keine Dauer an und kann nicht springen.
 | `GET /api/select?index=N` | Lied im Spiel auswählen |
 | `GET /api/song/N/txt` | die Lieddatei |
 | `GET /api/song/N/audio` | die Tondatei, mit `Range` |
+| `GET /api/song/N/video` | das Video, mit `Range`; 404 wenn keins |
+| `GET /api/song/N/background` | das Hintergrundbild; 404 wenn keins |
 
 ## Tests
 

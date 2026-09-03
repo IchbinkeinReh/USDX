@@ -227,6 +227,8 @@ begin
       Result[Anzahl].Duet      := Kopf.Duet;
       Result[Anzahl].TxtPath   := Kopf.TxtPath;
       Result[Anzahl].AudioPath := Kopf.AudioPath;
+      Result[Anzahl].VideoPath := Kopf.VideoPath;
+      Result[Anzahl].BackgPath := Kopf.BackgPath;
       Inc(Anzahl);
     end;
     SetLength(Result, Anzahl);

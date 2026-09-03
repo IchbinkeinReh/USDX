@@ -57,6 +57,8 @@ begin
   L[0].TxtPath := '/lieder/abba.txt';  L[0].AudioPath := '/lieder/abba.mp3';
   L[1].Duet := True;   // Queen-Eintrag als Duett
   L[1].TxtPath := '/lieder/queen.txt'; L[1].AudioPath := '';   // ohne Ton
+  L[0].VideoPath := '/lieder/abba.mp4'; L[0].BackgPath := '/lieder/abba.jpg';
+  L[1].VideoPath := '';                 L[1].BackgPath := '/lieder/queen.png';
   B.PublishSongs(L);
 
   WriteLn('Seite und Status');
@@ -186,6 +188,30 @@ begin
         ResolveFileRequest(B, '/js/../../etc/passwd', 'web', Pfad, CT) = waNichts);
   Check('unbekanntes js wird nicht geliefert',
         ResolveFileRequest(B, '/js/geheim.js', 'web', Pfad, CT) = waNichts);
+
+  WriteLn;
+  WriteLn('Video und Hintergrundbild');
+  Check('Video wird zugeordnet',
+        (ResolveFileRequest(B, '/api/song/0/video', '', Pfad, CT) = waDatei) and
+        (Pfad = '/lieder/abba.mp4'), Pfad);
+  Check('mit Videotyp', CT = 'video/mp4', CT);
+  Check('Hintergrundbild wird zugeordnet',
+        (ResolveFileRequest(B, '/api/song/0/background', '', Pfad, CT) = waDatei) and
+        (Pfad = '/lieder/abba.jpg'), Pfad);
+  Check('mit Bildtyp', CT = 'image/jpeg', CT);
+  Check('png bekommt seinen eigenen Typ',
+        (ResolveFileRequest(B, '/api/song/1/background', '', Pfad, CT) = waDatei) and
+        (CT = 'image/png'), CT);
+
+  // Ein Lied ohne Video muss 404 liefern. Der Browser fragt naemlich immer
+  // erst an und faellt bei 404 auf das Bild zurueck - eine leere 200-Antwort
+  // haette er als kaputtes Video verstanden.
+  Check('fehlendes Video: 404',
+        ResolveFileRequest(B, '/api/song/1/video', '', Pfad, CT) = waFehlt);
+
+  // Auch hier gilt: aus der URL kommt kein Pfad, sondern eine Zahl.
+  Check('erfundene Dateiart am Lied: 404',
+        ResolveFileRequest(B, '/api/song/0/cover', '', Pfad, CT) = waFehlt);
 
   Check('ohne Webordner faellt die Seite zurueck',
         ResolveFileRequest(B, '/index.html', '', Pfad, CT) = waNichts);

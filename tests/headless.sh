@@ -43,8 +43,10 @@ mkdir -p "$ORDNER/lieder/Solo" "$ORDNER/lieder/Duo"
 printf '#TITLE:Solo\n#ARTIST:Einer\n#YEAR:1976\n#MP3:t.mp3\n#BPM:100\n: 0 4 60 a\nE\n' \
     > "$ORDNER/lieder/Solo/lied.txt"
 printf 'TON' > "$ORDNER/lieder/Solo/t.mp3"
-printf '#TITLE:Zusammen\n#ARTIST:Duo\n#BPM:120\nP1\n: 0 4 60 a\nP2\n: 0 4 67 b\nE\n' \
+printf '#TITLE:Zusammen\n#ARTIST:Duo\n#BPM:120\n#VIDEO:v.mp4\n#BACKGROUND:b.jpg\n#VIDEOGAP:1.5\nP1\n: 0 4 60 a\nP2\n: 0 4 67 b\nE\n' \
     > "$ORDNER/lieder/Duo/lied.txt"
+printf 'VIDEO' > "$ORDNER/lieder/Duo/v.mp4"
+printf 'BILD' > "$ORDNER/lieder/Duo/b.jpg"
 printf 'kein Lied\n' > "$ORDNER/lieder/liesmich.txt"
 
 "./$SPIEL" --web-only --webport "$PORT" --songpath "$ORDNER/lieder" \
@@ -85,6 +87,33 @@ DUETTE=$(curl -s "http://127.0.0.1:$PORT/api/songs" | grep -o '"duet" : true' | 
 pruefe "genau ein Duett erkannt" "$(echo "$DUETTE" | tr -d ' ')" "1"
 
 pruefe "Lieddatei abrufbar" "$(hole /api/song/0/txt)" "200"
+
+# Welcher Eintrag das Duett ist, haengt an der Reihenfolge der Ordner.
+# Deshalb suchen statt raten.
+DUETT=$(curl -s "http://127.0.0.1:$PORT/api/songs" \
+        | tr '}' '\n' | grep '"duet" : true' | grep -o '"index" : [0-9]*' \
+        | grep -o '[0-9]*')
+SOLO=$(curl -s "http://127.0.0.1:$PORT/api/songs" \
+       | tr '}' '\n' | grep '"duet" : false' | grep -o '"index" : [0-9]*' \
+       | grep -o '[0-9]*')
+
+pruefe "Video wird ausgeliefert" "$(hole "/api/song/$DUETT/video")" "200"
+pruefe "Hintergrundbild wird ausgeliefert" \
+       "$(hole "/api/song/$DUETT/background")" "200"
+
+TYP=$(curl -s -o /dev/null -w '%{content_type}' \
+      "http://127.0.0.1:$PORT/api/song/$DUETT/video")
+pruefe "Video mit passendem Typ" "$TYP" "video/mp4"
+TYP=$(curl -s -o /dev/null -w '%{content_type}' \
+      "http://127.0.0.1:$PORT/api/song/$DUETT/background")
+pruefe "Bild mit passendem Typ" "$TYP" "image/jpeg"
+
+# Ohne Video muss 404 kommen: Der Browser fragt immer erst an und faellt
+# genau darauf zurueck. Eine leere 200-Antwort haette er als kaputtes Video
+# verstanden und gar nichts angezeigt.
+pruefe "Lied ohne Video antwortet mit 404" "$(hole "/api/song/$SOLO/video")" "404"
+pruefe "Lied ohne Bild antwortet mit 404" \
+       "$(hole "/api/song/$SOLO/background")" "404"
 pruefe "unbekanntes Lied wird abgewiesen" "$(hole /api/song/99/txt)" "404"
 pruefe "Ausbruch aus dem Webordner scheitert" "$(hole /js/../../etc/passwd)" "404"
 

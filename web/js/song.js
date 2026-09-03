@@ -73,6 +73,12 @@ export class Song {
   get artist() { return this.headers.ARTIST || ''; }
   get audio()  { return this.headers.AUDIO || this.headers.MP3 || ''; }
   get video()  { return this.headers.VIDEO || ''; }
+  get background() { return this.headers.BACKGROUND || ''; }
+
+  // #VIDEOGAP in Sekunden. Im Spiel gilt: Videoposition = VIDEOGAP + Tonzeit
+  // (UScreenSingController). Ein falsches Vorzeichen verschiebt das Bild
+  // gegen den Ton, ohne dass sonst etwas auffiele.
+  get videoGap() { return parseNumber(this.headers.VIDEOGAP); }
 
   // Die Namen der Stimmen, in der Reihenfolge der Spuren.
   get singerNames() { return this.tracks.map((t) => t.name); }

@@ -54,7 +54,12 @@ type
     // Damit ist ein Ausbruch aus dem Liedordner ueber die URL ausgeschlossen.
     TxtPath:   UTF8String;
     AudioPath: UTF8String;
+    VideoPath: UTF8String;
+    BackgPath: UTF8String;
   end;
+
+  // Welche Datei eines Liedes gemeint ist.
+  TWebFileKind = (wfkTxt, wfkAudio, wfkVideo, wfkBackground);
   TWebSongArray = array of TWebSong;
 
   TWebCommandKind = (wckNone, wckStart);
@@ -88,7 +93,7 @@ type
 
       // Schlaegt den Dateipfad zu einem Index nach. false, wenn es den Index
       // nicht gibt oder das Lied keine solche Datei hat.
-      function  SongPath(Index: integer; Audio: boolean;
+      function  SongPath(Index: integer; Art: TWebFileKind;
                          out Path: UTF8String): boolean;
 
       function  SongCount: integer;
@@ -134,7 +139,7 @@ begin
   end;
 end;
 
-function TWebBridge.SongPath(Index: integer; Audio: boolean;
+function TWebBridge.SongPath(Index: integer; Art: TWebFileKind;
                              out Path: UTF8String): boolean;
 begin
   Path := '';
@@ -145,10 +150,13 @@ begin
     Result := (Index >= 0) and (Index <= High(fSongs));
     if Result then
     begin
-      if Audio then
-        Path := fSongs[Index].AudioPath
+      case Art of
+        wfkAudio:      Path := fSongs[Index].AudioPath;
+        wfkVideo:      Path := fSongs[Index].VideoPath;
+        wfkBackground: Path := fSongs[Index].BackgPath;
       else
         Path := fSongs[Index].TxtPath;
+      end;
       Result := Path <> '';
     end;
   finally
