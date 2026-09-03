@@ -1,17 +1,20 @@
 // Liest das UltraStar-Liedformat (.txt).
 //
 // Deckungsgleich mit src/base/USong.pas gehalten - die Dateien sollen in
-// beiden Fassungen des Spiels gleich klingen. Die beiden Stellen, an denen
-// man sich sicher vertut:
+// beiden Fassungen des Spiels gleich klingen. Die Stellen, an denen man sich
+// sicher vertut:
 //
 //   * #BPM aus der Datei wird intern MIT VIER MULTIPLIZIERT. USDX rechnet in
 //     Vierteln (USong.pas: BPM := Wert * Mult * 4). Ohne das liegt alles um
 //     den Faktor vier daneben.
 //   * Eine Note mit Laenge 0 wird zu einer Freestyle-Note, nicht verworfen.
+//   * Im Relativmodus zaehlt der Versatz JE SPUR (USong.pas: Rel[CurrentTrack]).
+//     Ein gemeinsamer Zaehler laesst die zweite Stimme im Duett wandern.
 //
 // Notenzeile:  <Typ> <Startschlag> <Laenge> <Tonhoehe> <Text>
 // Typen:       ':' normal, '*' golden, 'F' freestyle, 'R' Rap, 'G' Rap golden
-// '-' <Schlag> beginnt eine neue Zeile, 'E' beendet das Lied.
+// '-' <Schlag> [<Versatz>] beginnt eine neue Zeile, 'E' beendet das Lied.
+// 'P1'/'P2' schalten im Duett auf die erste bzw. zweite Stimme um.
 
 export const NOTE_NORMAL = 'normal';
 export const NOTE_GOLDEN = 'golden';
@@ -38,10 +41,30 @@ export function noteFactor(type) {
   return (type === NOTE_GOLDEN || type === NOTE_RAP_GOLDEN) ? 2 : 1;
 }
 
+// Eine Stimme. Beim Solo gibt es genau eine, beim Duett zwei.
+export class Track {
+  constructor(name) {
+    this.name = name;
+    this.lines = [];      // [{ startBeat, notes: [...] }]
+  }
+
+  get notes() {
+    return this.lines.flatMap((l) => l.notes);
+  }
+
+  // Hoechstpunktzahl, gegen die diese Stimme gewertet wird.
+  get maxNoteValue() {
+    return this.notes
+      .filter((n) => countsForScore(n.type))
+      .reduce((sum, n) => sum + n.length * noteFactor(n.type), 0);
+  }
+}
+
 export class Song {
   constructor() {
     this.headers = {};
-    this.lines = [];      // [{ startBeat, notes: [...] }]
+    this.tracks = [];
+    this.isDuet = false;
     this.bpm = 0;         // bereits mal vier, also wie USDX intern rechnet
     this.gap = 0;         // Millisekunden
   }
@@ -50,6 +73,11 @@ export class Song {
   get artist() { return this.headers.ARTIST || ''; }
   get audio()  { return this.headers.AUDIO || this.headers.MP3 || ''; }
   get video()  { return this.headers.VIDEO || ''; }
+
+  // Die Namen der Stimmen, in der Reihenfolge der Spuren.
+  get singerNames() { return this.tracks.map((t) => t.name); }
+
+  track(index) { return this.tracks[index] || this.tracks[0]; }
 
   // Schlag -> Sekunden. Dieselbe Formel wie UNote.GetTimeFromBeat.
   beatToTime(beat) {
@@ -62,16 +90,12 @@ export class Song {
     return ((seconds - this.gap / 1000) * this.bpm) / 60;
   }
 
-  get notes() {
-    return this.lines.flatMap((l) => l.notes);
-  }
-
-  // Hoechstpunktzahl, gegen die gewertet wird.
-  get maxNoteValue() {
-    return this.notes
-      .filter((n) => countsForScore(n.type))
-      .reduce((sum, n) => sum + n.length * noteFactor(n.type), 0);
-  }
+  // Diese drei beziehen sich auf die erste Stimme. Beim Solo ist das die
+  // einzige, beim Duett muss man sich bewusst fuer eine Spur entscheiden -
+  // deshalb nehmen Wertung und Anzeige eine Spur entgegen, nicht das Lied.
+  get lines()        { return this.tracks[0] ? this.tracks[0].lines : []; }
+  get notes()        { return this.tracks[0] ? this.tracks[0].notes : []; }
+  get maxNoteValue() { return this.tracks[0] ? this.tracks[0].maxNoteValue : 0; }
 }
 
 function parseNumber(text) {
@@ -80,15 +104,36 @@ function parseNumber(text) {
   return Number.isFinite(value) ? value : 0;
 }
 
+// Liest die Nummer aus einem Spurwechsel. "P1" und "P 1" sind beide erlaubt.
+function parsePlayerNumber(line) {
+  const m = line.match(/^P\s*(\d+)/);
+  return m ? parseInt(m[1], 10) : NaN;
+}
+
 export function parseSong(text) {
   const song = new Song();
   const lines = String(text).split(/\r?\n/);
-  let current = null;   // aktuelle Zeile
-  let duetWarned = false;
+
+  // Ob das Lied ein Duett ist, entscheidet USDX an der ERSTEN Zeile des
+  // Notenteils: Faengt sie mit P an, ist es eines. Ein spaeterer Spurwechsel
+  // in einem Sololied ist dort ein Fehler - und hier auch, sonst saenge man
+  // stillschweigend zwei Stimmen durcheinander.
+  let firstNoteLineSeen = false;
+  let current = null;          // aktuelle Zeile innerhalb der Spur
+  let currentTrack = 0;
+  let relative = false;
+  const rel = [0, 0];          // Versatz je Spur, siehe Kopfkommentar
+
+  const trackOf = (index) => {
+    while (song.tracks.length <= index) {
+      song.tracks.push(new Track('P' + (song.tracks.length + 1)));
+    }
+    return song.tracks[index];
+  };
 
   const beginLine = (startBeat) => {
     current = { startBeat, notes: [] };
-    song.lines.push(current);
+    trackOf(currentTrack).lines.push(current);
   };
 
   for (const raw of lines) {
@@ -106,22 +151,45 @@ export function parseSong(text) {
 
     const type = line[0];
 
+    if (!firstNoteLineSeen) {
+      firstNoteLineSeen = true;
+      relative = /^(yes|true|1)$/i.test(song.headers.RELATIVE || '');
+      if (type === 'P') {
+        song.isDuet = true;
+        trackOf(1);            // beide Spuren anlegen, auch wenn eine leer bleibt
+      }
+    }
+
     if (type === 'E') break;
 
     if (type === 'P') {
-      // Duette haben zwei Spuren. Diese Fassung singt nur die erste; alles
-      // andere waere ein halbes Duett, und das ist schlechter als ein
-      // ehrliches "wird nicht unterstuetzt".
-      if (!duetWarned) {
-        song.duet = true;
-        duetWarned = true;
+      if (!song.isDuet) {
+        throw new Error(
+          'Spurwechsel "' + line + '" in einem Sololied. P1/P2 sind nur ' +
+          'erlaubt, wenn schon die erste Zeile des Notenteils eine P-Zeile ist.');
       }
+      const nummer = parsePlayerNumber(line);
+      if (nummer !== 1 && nummer !== 2) {
+        // USDX lehnt das Lied hier ab. Stillschweigend weiterzusingen waere
+        // schlechter: Die Noten landeten in der falschen Stimme.
+        throw new Error('Unbekannte Spurnummer in "' + line + '"');
+      }
+      currentTrack = nummer - 1;
+      trackOf(currentTrack);
+      current = null;          // die neue Spur faengt ihre Zeilen selbst an
       continue;
     }
 
     if (type === '-') {
       const parts = line.slice(1).trim().split(/\s+/);
-      beginLine(parseInt(parts[0], 10) || 0);
+      const param1 = parseInt(parts[0], 10) || 0;
+      // Im Relativmodus beginnt die Zeile beim bisherigen Versatz, und erst
+      // danach waechst er um den zweiten Wert - genau in dieser Reihenfolge
+      // (USong.pas: NewSentence).
+      beginLine(param1 + (relative ? rel[currentTrack] : 0));
+      if (relative && parts.length > 1) {
+        rel[currentTrack] += parseInt(parts[1], 10) || 0;
+      }
       continue;
     }
 
@@ -132,14 +200,14 @@ export function parseSong(text) {
     const m = rest.match(/^(-?\d+)\s+(-?\d+)\s+(-?\d+)\s?(.*)$/);
     if (!m) continue;
 
-    const start = parseInt(m[1], 10);
+    const start = parseInt(m[1], 10) + (relative ? rel[currentTrack] : 0);
     const length = parseInt(m[2], 10);
     const pitch = parseInt(m[3], 10);
     const lyric = m[4] === undefined ? '' : m[4];
 
     if (current === null) beginLine(start);
 
-    song.lines[song.lines.length - 1].notes.push({
+    current.notes.push({
       // Laenge 0 -> Freestyle, genau wie in USong.pas.
       type: length === 0 ? NOTE_FREESTYLE : TYPES[type],
       start,
@@ -152,8 +220,29 @@ export function parseSong(text) {
   song.bpm = parseNumber(song.headers.BPM) * 4;   // siehe Kopfkommentar
   song.gap = parseNumber(song.headers.GAP);
 
+  if (song.tracks.length === 0) trackOf(0);
+
+  // Namen der Saenger. #P1/#P2 ist die heutige Schreibweise, #DUETSINGERP1
+  // die alte; USDX liest beide, also lesen wir beide.
+  const namen = [
+    song.headers.P1 || song.headers.DUETSINGERP1,
+    song.headers.P2 || song.headers.DUETSINGERP2,
+  ];
+  song.tracks.forEach((t, i) => {
+    if (namen[i]) t.name = namen[i];
+  });
+
   // Leere Zeilen (etwa ein '-' am Ende) stoeren nur beim Anzeigen.
-  song.lines = song.lines.filter((l) => l.notes.length > 0);
+  for (const t of song.tracks) {
+    t.lines = t.lines.filter((l) => l.notes.length > 0);
+  }
+  // Eine Spur ohne jede Note ist keine - das kommt vor, wenn ein Lied als
+  // Duett angelegt, die zweite Stimme aber nie gefuellt wurde.
+  if (song.isDuet && song.tracks.length > 1 &&
+      song.tracks[1].lines.length === 0) {
+    song.tracks.length = 1;
+    song.isDuet = false;
+  }
 
   return song;
 }

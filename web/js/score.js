@@ -15,11 +15,19 @@ import { sameTone } from './pitch.js';
 export const MAX_SCORE = 10000;
 
 export class Scorer {
-  constructor(song) {
+  // trackIndex waehlt die Stimme. Beim Solo gibt es nur die 0, beim Duett
+  // bekommt jeder Saenger seine eigene Wertung gegen seine eigene Spur.
+  constructor(song, trackIndex = 0) {
     this.song = song;
-    this.maxValue = song.maxNoteValue;
+    this.trackIndex = trackIndex;
+    this.track = song.track ? song.track(trackIndex) : song;
+    this.maxValue = this.track.maxNoteValue;
     // Je Note: wie viele Treffer und wie viele Versuche.
     this.state = new Map();
+  }
+
+  get name() {
+    return this.track && this.track.name ? this.track.name : '';
   }
 
   // Meldet eine gemessene Tonhoehe zu einem Zeitpunkt.
@@ -42,7 +50,7 @@ export class Scorer {
   // Welche Note ist zu diesem Zeitpunkt zu singen? null in den Pausen.
   noteAt(seconds) {
     const beat = this.song.timeToBeat(seconds);
-    for (const note of this.song.notes) {
+    for (const note of this.track.notes) {
       if (beat >= note.start && beat < note.start + note.length) return note;
     }
     return null;

@@ -48,6 +48,7 @@ type
     Genre:    UTF8String;
     Language: UTF8String;
     Year:     integer;
+    Duet:     boolean;      // hat zwei Stimmen (P1/P2)
     // Dateien fuer die Weboberflaeche. Der Browser bekommt sie NIE zu sehen -
     // er schickt nur den Index, und der Server schlaegt den Pfad hier nach.
     // Damit ist ein Ausbruch aus dem Liedordner ueber die URL ausgeschlossen.

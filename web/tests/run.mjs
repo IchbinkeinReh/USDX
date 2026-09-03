@@ -103,5 +103,143 @@ check('in der Pause gibt es nichts zu treffen', w4.feed(s.beatToTime(1000), 60) 
 check('Freestyle wird nicht gewertet', w4.feed(s.beatToTime(17), 60) === null);
 
 console.log();
+console.log('Duett');
+
+const d = parseSong(`#TITLE:Zusammen
+#BPM:120
+#P1:Anna
+#P2:Bert
+P1
+: 0 4 60 Ich
+: 4 4 62 sing
+- 8
+: 8 4 64 mit
+P2
+: 0 4 67 Und
+: 4 4 69 ich
+- 8
+: 8 4 71 auch
+E`);
+
+check('als Duett erkannt', d.isDuet === true);
+check('zwei Stimmen', d.tracks.length === 2, String(d.tracks.length));
+check('Namen aus #P1/#P2', d.singerNames.join(',') === 'Anna,Bert',
+      d.singerNames.join(','));
+check('erste Stimme hat ihre Noten',
+      d.tracks[0].notes.map((n) => n.text).join(' ') === 'Ich sing mit',
+      d.tracks[0].notes.map((n) => n.text).join(' '));
+check('zweite Stimme hat ihre Noten',
+      d.tracks[1].notes.map((n) => n.text).join(' ') === 'Und ich auch',
+      d.tracks[1].notes.map((n) => n.text).join(' '));
+check('Zeilen bleiben je Stimme getrennt',
+      d.tracks[0].lines.length === 2 && d.tracks[1].lines.length === 2);
+check('beide Stimmen zaehlen gleich viel',
+      d.tracks[0].maxNoteValue === 12 && d.tracks[1].maxNoteValue === 12,
+      d.tracks[0].maxNoteValue + '/' + d.tracks[1].maxNoteValue);
+
+// Alte Zugriffe zeigen weiter auf die erste Stimme - sonst braeche jeder
+// bestehende Aufruf, der noch nichts von Spuren weiss.
+check('song.notes meint weiterhin die erste Stimme',
+      d.notes.length === 3 && d.notes[0].text === 'Ich');
+
+const alt = parseSong(`#BPM:120
+#DUETSINGERP1:Alt1
+#DUETSINGERP2:Alt2
+P 1
+: 0 4 60 a
+P 2
+: 0 4 60 b
+E`);
+check('alte Kopfzeilen DUETSINGERP1/2 gelten auch',
+      alt.singerNames.join(',') === 'Alt1,Alt2', alt.singerNames.join(','));
+check('"P 1" mit Leerzeichen wird erkannt',
+      alt.tracks.length === 2 && alt.tracks[1].notes[0].text === 'b');
+
+const ohneNamen = parseSong(`#BPM:120
+P1
+: 0 4 60 a
+P2
+: 0 4 60 b
+E`);
+check('ohne Kopfzeilen heissen die Stimmen P1 und P2',
+      ohneNamen.singerNames.join(',') === 'P1,P2');
+
+// Ein Spurwechsel in einem Sololied ist in USDX ein Fehler. Still
+// weiterzulesen wuerde die Noten in der falschen Stimme ablegen.
+let gemeckert = false;
+try {
+  parseSong(`#BPM:120
+: 0 4 60 a
+P2
+: 4 4 60 b
+E`);
+} catch (e) { gemeckert = true; }
+check('Spurwechsel im Sololied wird abgelehnt', gemeckert);
+
+gemeckert = false;
+try {
+  parseSong(`#BPM:120
+P1
+: 0 4 60 a
+P3
+: 4 4 60 b
+E`);
+} catch (e) { gemeckert = true; }
+check('unbekannte Spurnummer wird abgelehnt', gemeckert);
+
+const leer = parseSong(`#BPM:120
+P1
+: 0 4 60 a
+P2
+E`);
+check('Duett ohne zweite Stimme gilt als Solo',
+      leer.isDuet === false && leer.tracks.length === 1);
+
+// Der Versatz im Relativmodus zaehlt je Spur. Mit einem gemeinsamen Zaehler
+// wandert die zweite Stimme mit jeder Zeile der ersten weiter weg.
+const relativ = parseSong(`#BPM:120
+#RELATIVE:yes
+P1
+: 0 4 60 a
+- 4 4
+: 0 4 60 b
+P2
+: 0 4 60 c
+- 4 4
+: 0 4 60 d
+E`);
+check('Relativmodus: erste Stimme zaehlt fuer sich',
+      relativ.tracks[0].notes.map((n) => n.start).join(',') === '0,4',
+      relativ.tracks[0].notes.map((n) => n.start).join(','));
+check('Relativmodus: zweite Stimme faengt wieder bei null an',
+      relativ.tracks[1].notes.map((n) => n.start).join(',') === '0,4',
+      relativ.tracks[1].notes.map((n) => n.start).join(','));
+
+console.log('Wertung im Duett');
+const wA = new Scorer(d, 0);
+const wB = new Scorer(d, 1);
+check('jede Wertung kennt ihren Namen',
+      wA.name === 'Anna' && wB.name === 'Bert');
+check('und ihre eigene Hoechstsumme',
+      wA.maxValue === 12 && wB.maxValue === 12);
+
+// Anna singt ihre Noten, Bert schweigt.
+for (const n of d.tracks[0].notes)
+  for (let i = 0; i < 5; i++) wA.feed(d.beatToTime(n.start + 0.5), n.pitch + 60);
+for (const n of d.tracks[1].notes)
+  for (let i = 0; i < 5; i++) wB.feed(d.beatToTime(n.start + 0.5), -1);
+check('wer singt, bekommt die volle Punktzahl', wA.score === MAX_SCORE,
+      String(wA.score));
+check('wer schweigt, bekommt keine', wB.score === 0, String(wB.score));
+
+// Die Stimmen liegen zeitlich uebereinander. Bert darf nicht dafuer Punkte
+// bekommen, dass Anna ihre Toene trifft - das ist der Fehler, den ein
+// gemeinsamer Notenvorrat machen wuerde.
+const wC = new Scorer(d, 1);
+for (const n of d.tracks[0].notes)
+  for (let i = 0; i < 5; i++) wC.feed(d.beatToTime(n.start + 0.5), n.pitch + 60);
+check('Toene der anderen Stimme zaehlen nicht', wC.score === 0, String(wC.score));
+
+console.log();
 console.log(`${bestanden} bestanden, ${fehlgeschlagen} fehlgeschlagen`);
 if (fehlgeschlagen > 0) process.exit(1);

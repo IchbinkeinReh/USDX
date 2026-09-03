@@ -65,12 +65,39 @@ Die Tonhöhenerkennung ist dieselbe Idee wie im Spiel (NSDF/McLeod). Wichtig
 ist dabei die Spitzenauswahl: Nimmt man schlicht das globale Maximum, landen
 220, 440 und 880 Hz alle bei 110 Hz. Ein Test hält genau diesen Fehler fest.
 
+### Duette
+
+Duette werden ganz gesungen, nicht nur die erste Stimme. Jede Stimme bekommt
+eine eigene Bahn, eine eigene Farbe und eine eigene Wertung gegen **ihre**
+Noten. Die Bahnen teilen sich die Zeitachse, damit man sieht, wann man dran
+ist.
+
+Ob ein Lied ein Duett ist, entscheidet dieselbe Regel wie in USDX: Es ist
+eines, wenn schon die **erste** Zeile des Notenteils ein `P` ist. Ein
+Spurwechsel mitten in einem Sololied ist in USDX ein Fehler und wird hier
+ebenfalls abgelehnt — stillschweigend weiterzulesen legte die Noten in der
+falschen Stimme ab. `P1`/`P 1` und `P2`/`P 2` sind erlaubt, andere Nummern
+nicht. Die Namen kommen aus `#P1`/`#P2` oder den älteren
+`#DUETSINGERP1`/`#DUETSINGERP2`; ohne Angabe heißen sie `P1` und `P2`.
+
+**Jede Stimme braucht ein eigenes Mikrofon.** Zwei Menschen an einem
+Mikrofon lassen sich nicht auseinanderhalten — man bekäme zweimal dieselbe
+Wertung, nicht zwei. Der Aufbau lässt das deshalb gar nicht erst zu und sagt
+es vorher, statt hinterher Punkte zu erklären. Ist nur ein Mikrofon da, läuft
+die zweite Stimme mit, wird aber nicht gewertet; angezeigt wird dann „nicht
+gewertet" und **nicht** eine 0, denn eine 0 hieße „danebengesungen".
+
+Der Relativmodus (`#RELATIVE`) zählt den Versatz **je Stimme**
+(`Rel[CurrentTrack]` in `USong.pas`). Mit einem gemeinsamen Zähler wandert
+die zweite Stimme mit jeder Zeile der ersten weiter weg; ein Test hält beide
+Fälle fest.
+
 ### Grenzen
 
-- Ein Spieler. Duette werden erkannt, gesungen wird die erste Stimme.
 - Kein Video, kein Hintergrundbild.
 - Ohne Mikrofonfreigabe läuft das Lied, es wird nur nicht gewertet.
 - Die Punkte bleiben im Browser und wandern nicht in die Bestenliste.
+- Mehr als zwei Stimmen gibt es nicht — wie in USDX.
 
 ## Sicherheit
 
@@ -102,11 +129,11 @@ es wirken könnte. Tests in `testwebapi` und `testwebserver` halten das fest.
 | Datei in `web/` | Aufgabe |
 | --- | --- |
 | `index.html` | Seite, Liedauswahl |
-| `js/song.js` | `.txt` einlesen, Schlag ↔ Zeit |
+| `js/song.js` | `.txt` einlesen, Spuren, Schlag ↔ Zeit |
 | `js/pitch.js` | Tonhöhe aus dem Mikrofon |
-| `js/score.js` | Wertung |
-| `js/render.js` | Noten und Text auf Canvas |
-| `js/game.js` | Schleife, Ton, Mikrofon |
+| `js/score.js` | Wertung, je Stimme eine |
+| `js/render.js` | Noten und Text auf Canvas, eine Bahn je Stimme |
+| `js/game.js` | Schleife, Ton, Mikrofone, Besetzung |
 
 Der Webthread fasst **niemals** die Datenstrukturen des Spiels an.
 `CatSongs.Song` wird beim Einlesen, Sortieren und Filtern ständig verändert;
@@ -141,7 +168,7 @@ keine Dauer an und kann nicht springen.
 | --- | --- |
 | `GET /` | die Oberfläche |
 | `GET /api/status` | Anzahl Lieder, Stand der Abschrift |
-| `GET /api/songs?q=&mode=&max=` | Suche, höchstens 200 Treffer |
+| `GET /api/songs?q=&mode=&max=` | Suche, höchstens 200 Treffer; `duet` je Eintrag |
 | `GET /api/select?index=N` | Lied im Spiel auswählen |
 | `GET /api/song/N/txt` | die Lieddatei |
 | `GET /api/song/N/audio` | die Tondatei, mit `Range` |

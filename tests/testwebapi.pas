@@ -55,6 +55,7 @@ begin
   L[1].Index := 6; L[1].Artist := 'Queen';   L[1].Title := 'Bohemian';      L[1].Genre := 'Rock';   L[1].Year := 1975;
   L[2].Index := 7; L[2].Artist := 'Nirvana'; L[2].Title := 'Smells';        L[2].Genre := 'Grunge'; L[2].Year := 1991;
   L[0].TxtPath := '/lieder/abba.txt';  L[0].AudioPath := '/lieder/abba.mp3';
+  L[1].Duet := True;   // Queen-Eintrag als Duett
   L[1].TxtPath := '/lieder/queen.txt'; L[1].AudioPath := '';   // ohne Ton
   B.PublishSongs(L);
 
@@ -135,6 +136,21 @@ begin
 
   Status := HandleWebRequest(nil, '/api/status', Q, CT, Body);
   Check('ohne Bruecke: 503 statt Absturz', Status = 503, IntToStr(Status));
+
+  Ruf('/api/songs', ['q', 'queen', 'mode', 'artist']);
+  D := GetJSON(Body);
+  try
+    Check('Duett wird gemeldet',
+          (TJSONArray(D).Count = 1) and
+          TJSONObject(TJSONArray(D)[0]).Booleans['duet']);
+  finally D.Free; end;
+  Ruf('/api/songs', ['q', 'abba', 'mode', 'artist']);
+  D := GetJSON(Body);
+  try
+    Check('Sololied wird nicht als Duett gemeldet',
+          (TJSONArray(D).Count = 1) and
+          (not TJSONObject(TJSONArray(D)[0]).Booleans['duet']));
+  finally D.Free; end;
 
   WriteLn;
   WriteLn('Dateianfragen');

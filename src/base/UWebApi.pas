@@ -171,6 +171,7 @@ begin
       Eintrag.Add('genre', Treffer[I].Genre);
       Eintrag.Add('language', Treffer[I].Language);
       Eintrag.Add('year', Treffer[I].Year);
+      Eintrag.Add('duet', Treffer[I].Duet);
       Liste.Add(Eintrag);
     end;
     Result := Liste.AsJSON;

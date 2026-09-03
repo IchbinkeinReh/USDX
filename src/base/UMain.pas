@@ -195,6 +195,7 @@ begin
     Liste[Anzahl].Genre    := CatSongs.Song[I].Genre;
     Liste[Anzahl].Language := CatSongs.Song[I].Language;
     Liste[Anzahl].Year     := CatSongs.Song[I].Year;
+    Liste[Anzahl].Duet     := CatSongs.Song[I].isDuet;
     // Pfade fuer die Weboberflaeche mitgeben. Path ist der Ordner, FileName
     // und Audio jeweils nur der Name darin - erst zusammengesetzt ergibt das
     // eine Datei, die sich oeffnen laesst.

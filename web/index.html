@@ -8,20 +8,29 @@
   *{box-sizing:border-box}
   body{margin:0;background:#0d0f14;color:#e8e8ea;font-family:system-ui,sans-serif}
   header{display:flex;gap:10px;align-items:center;padding:10px 14px;background:#171a22}
-  input{flex:1;font-size:16px;padding:9px;border-radius:8px;border:1px solid #333a48;
+  input,select{font-size:16px;padding:9px;border-radius:8px;border:1px solid #333a48;
         background:#0d0f14;color:#e8e8ea}
+  input{flex:1}
   button{font-size:15px;padding:9px 16px;border-radius:8px;border:0;
          background:#3d6ae0;color:#fff;cursor:pointer}
   button:disabled{background:#333a48;cursor:default}
-  #liste{max-height:38vh;overflow:auto;border-bottom:1px solid #222733}
+  #liste{max-height:34vh;overflow:auto;border-bottom:1px solid #222733}
   #liste div{padding:10px 14px;border-bottom:1px solid #1b1f29;cursor:pointer}
   #liste div:active{background:#232936}
   .a{font-weight:600}.t{color:#98a0b0;font-size:14px}
+  .duett{color:#ffb27f;font-size:12px;margin-left:6px}
   #buehne{padding:14px}
   canvas{width:100%;height:46vh;background:#11131a;border-radius:12px;display:block}
   #kopf{display:flex;justify-content:space-between;align-items:baseline;margin:10px 2px}
   #punkte{font-size:26px;font-weight:700;color:#ffd978}
   #hinweis{color:#98a0b0;font-size:14px;min-height:20px;margin:0 2px}
+  #besetzung{background:#171a22;border-radius:12px;padding:12px 14px;margin:10px 0;
+             display:none}
+  #besetzung h3{margin:0 0 10px;font-size:15px;font-weight:600}
+  .stimme{display:flex;gap:10px;align-items:center;margin-bottom:8px}
+  .stimme label{min-width:90px;font-weight:600}
+  .stimme select{flex:1}
+  .warnung{color:#ff9b8a;font-size:14px;min-height:18px}
 </style>
 </head>
 <body>
@@ -32,6 +41,13 @@
 <div id="liste"></div>
 <div id="buehne">
   <div id="kopf"><div id="titel">Kein Lied gewählt</div><div id="punkte">0</div></div>
+
+  <div id="besetzung">
+    <h3>Wer singt welche Stimme?</h3>
+    <div id="stimmen"></div>
+    <div class="warnung" id="warnung"></div>
+  </div>
+
   <canvas id="buehnebild" width="1280" height="480"></canvas>
   <p id="hinweis"></p>
 </div>
@@ -55,7 +71,10 @@ const spiel = new Game(canvas, el);
 const suche = document.getElementById('suche');
 const liste = document.getElementById('liste');
 const start = document.getElementById('start');
-let gewaehlt = -1, t = null;
+const besetzung = document.getElementById('besetzung');
+const stimmen = document.getElementById('stimmen');
+const warnung = document.getElementById('warnung');
+let t = null, mikrofone = [];
 
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
 
@@ -64,25 +83,95 @@ async function sucheLieder() {
   const d = await r.json();
   liste.innerHTML = d.map(s =>
     `<div data-i="${s.index}"><div class="a">${esc(s.artist)}</div>` +
-    `<div class="t">${esc(s.title)}${s.year ? ' · ' + s.year : ''}</div></div>`).join('');
+    `<div class="t">${esc(s.title)}${s.year ? ' · ' + s.year : ''}` +
+    `${s.duet ? '<span class="duett">Duett</span>' : ''}</div></div>`).join('');
 }
 suche.addEventListener('input', () => { clearTimeout(t); t = setTimeout(sucheLieder, 250); });
+
+// Baut die Auswahl "welche Stimme an welchem Mikrofon".
+function zeigeBesetzung(song) {
+  stimmen.innerHTML = '';
+  warnung.textContent = '';
+
+  const auswahl = (i) => {
+    const opts = ['<option value="">— nicht werten —</option>']
+      .concat(mikrofone.map((m, k) =>
+        `<option value="${esc(m.deviceId)}"${k === i ? ' selected' : ''}>` +
+        `${esc(m.label)}</option>`));
+    return `<select data-track="${i}">${opts.join('')}</select>`;
+  };
+
+  song.tracks.forEach((tr, i) => {
+    const zeile = document.createElement('div');
+    zeile.className = 'stimme';
+    zeile.innerHTML = `<label>${esc(tr.name)}</label>${auswahl(i)}`;
+    stimmen.appendChild(zeile);
+  });
+
+  besetzung.style.display = 'block';
+  if (song.isDuet && mikrofone.length < 2) {
+    warnung.textContent =
+      'Nur ein Mikrofon gefunden. Zwei Stimmen lassen sich damit nicht ' +
+      'auseinanderhalten – die zweite läuft ungewertet mit.';
+  }
+  pruefeDoppelt();
+}
+
+// Dasselbe Mikrofon zweimal ergibt keine zwei Wertungen, sondern zweimal
+// dieselbe. Lieber vorher sagen als hinterher Punkte erklaeren.
+function pruefeDoppelt() {
+  const gewaehlt = [...stimmen.querySelectorAll('select')]
+    .map((s) => s.value).filter((v) => v !== '');
+  const doppelt = gewaehlt.length !== new Set(gewaehlt).size;
+  if (doppelt) {
+    warnung.textContent = 'Ein Mikrofon kann nur einer Stimme zugeordnet werden.';
+    start.disabled = true;
+  } else {
+    if (warnung.textContent === 'Ein Mikrofon kann nur einer Stimme zugeordnet werden.')
+      warnung.textContent = '';
+    start.disabled = false;
+  }
+}
+stimmen.addEventListener('change', pruefeDoppelt);
 
 liste.addEventListener('click', async (e) => {
   const d = e.target.closest('div[data-i]');
   if (!d) return;
-  gewaehlt = +d.dataset.i;
   el.hinweis.textContent = 'Lade …';
+  besetzung.style.display = 'none';
   try {
-    await spiel.ladeLied(gewaehlt);
-    start.disabled = false;
-    el.hinweis.textContent = 'Bereit. Mikrofon wird beim Start erfragt.';
+    const song = await spiel.ladeLied(+d.dataset.i);
+    // Namen der Mikrofone gibt der Browser erst nach einer Freigabe heraus.
+    if (mikrofone.length === 0) {
+      await spiel.frageFreigabe();
+      mikrofone = await spiel.listeMikrofone();
+    }
+    zeigeBesetzung(song);
+    el.hinweis.textContent = song.isDuet
+      ? 'Duett: beide Stimmen zuordnen und starten.'
+      : 'Bereit.';
   } catch (err) {
     el.hinweis.textContent = 'Lied lässt sich nicht laden: ' + err.message;
+    start.disabled = true;
   }
 });
 
-start.addEventListener('click', () => { start.disabled = true; spiel.start(); });
+start.addEventListener('click', async () => {
+  start.disabled = true;
+  besetzung.style.display = 'none';
+  const wahl = [...stimmen.querySelectorAll('select')].map((s) => ({
+    trackIndex: +s.dataset.track,
+    deviceId: s.value || null,
+  }));
+  try {
+    await spiel.start(wahl);
+  } catch (err) {
+    el.hinweis.textContent = err.message;
+    besetzung.style.display = 'block';
+    start.disabled = false;
+  }
+});
+
 sucheLieder();
 </script>
 </body>
