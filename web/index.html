@@ -165,18 +165,31 @@ function zeigeBesetzung(song) {
   $('stimmen').innerHTML = '';
   $('warnung').textContent = '';
 
-  const feld = (i) => {
-    const opts = ['<option value="">— nicht werten —</option>']
-      .concat(mikrofone.map((m, k) =>
-        `<option value="${esc(m.deviceId)}"${k === i ? ' selected' : ''}>` +
-        `${esc(m.label)}</option>`));
-    return `<select data-track="${i}">${opts.join('')}</select>`;
-  };
+  // Beim Duett gibt es zwei Stimmen mit eigenen Noten. Bei einem Sololied
+  // kann trotzdem zu zweit gesungen werden - dann singen beide DIESELBE
+  // Spur und werden getrennt gewertet, wie im Spiel. Der zweite Platz ist
+  // dabei freiwillig und bleibt leer, wenn niemand ihn belegt.
+  const plaetze = song.isDuet
+    ? song.tracks.map((tr, i) => ({ name: tr.name, track: i, pflicht: true }))
+    : [{ name: 'Sänger 1', track: 0, pflicht: true },
+       { name: 'Sänger 2', track: 0, pflicht: false }];
 
-  song.tracks.forEach((tr, i) => {
+  plaetze.forEach((platz, i) => {
+    const leer = platz.pflicht ? '— nicht werten —' : '— singt nicht mit —';
+    // Vorbelegt wird nur, was zwingend besetzt sein muss; der freiwillige
+    // Platz bleibt leer, sonst faende sich beim Solo unversehens eine
+    // zweite, stumme Bahn auf dem Bildschirm.
+    const vorgabe = platz.pflicht ? i : -1;
+    const opts = [`<option value="">${leer}</option>`]
+      .concat(mikrofone.map((m, k) =>
+        `<option value="${esc(m.deviceId)}"${k === vorgabe ? ' selected' : ''}>` +
+        `${esc(m.label)}</option>`));
+
     const zeile = document.createElement('div');
     zeile.className = 'stimme';
-    zeile.innerHTML = `<label>${esc(tr.name)}</label>${feld(i)}`;
+    zeile.innerHTML = `<label>${esc(platz.name)}</label>` +
+      `<select data-track="${platz.track}" ` +
+      `data-pflicht="${platz.pflicht ? 1 : 0}">${opts.join('')}</select>`;
     $('stimmen').appendChild(zeile);
   });
 
@@ -217,7 +230,8 @@ $('liste').addEventListener('click', async (e) => {
     }
     $('gewaehlt').textContent = `${song.artist} – ${song.title}`;
     $('gewaehlt_info').textContent = song.isDuet
-      ? 'Duett – beide Stimmen zuordnen' : 'Bereit';
+      ? 'Duett – beide Stimmen zuordnen'
+      : 'Zu zweit? Zweitem Sänger ein eigenes Mikrofon zuordnen.';
     zeigeBesetzung(song);
     $('vorbereitung').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } catch (err) {
@@ -234,9 +248,15 @@ $('anderes').addEventListener('click', () => {
 // ---------- Schritt 2: Singen ----------
 $('singen').addEventListener('click', async () => {
   $('singen').disabled = true;
-  besetzung = [...$('stimmen').querySelectorAll('select')].map((s) => ({
-    trackIndex: +s.dataset.track, deviceId: s.value || null,
-  }));
+  besetzung = [...$('stimmen').querySelectorAll('select')]
+    // Ein freiwilliger Platz ohne Mikrofon bekommt keine Bahn: Beim Solo
+    // waere das sonst eine zweite, stumme Anzeige derselben Noten.
+    .filter((s) => s.dataset.pflicht === '1' || s.value !== '')
+    .map((s) => ({
+      trackIndex: +s.dataset.track,
+      deviceId: s.value || null,
+      name: s.previousElementSibling.textContent,
+    }));
 
   auswahl.classList.add('aus');
   buehne.classList.remove('aus');

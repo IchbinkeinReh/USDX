@@ -211,6 +211,9 @@ export class Game {
     for (const b of besetzung) {
       const eintrag = {
         trackIndex: b.trackIndex,
+        // Beim Solo zu zweit singen beide dieselbe Spur; dann taugt der
+        // Spurname nicht als Beschriftung, weil beide Bahnen gleich hiessen.
+        name: b.name || null,
         scorer: new Scorer(this.song, b.trackIndex, schwierigkeit),
         analyser: null,
         puffer: null,
@@ -229,7 +232,8 @@ export class Game {
         } catch (e) {
           // Ohne Mikrofon laesst sich mitlesen - besser als gar nicht zu
           // starten, wenn jemand die Freigabe verweigert.
-          hinweise.push(`${eintrag.scorer.name || 'Stimme'}: kein Mikrofon`);
+          hinweise.push(
+            `${eintrag.name || eintrag.scorer.name || 'Stimme'}: kein Mikrofon`);
         }
       }
       this.saenger.push(eintrag);
@@ -302,7 +306,7 @@ export class Game {
         nextLine: nextLineAt(spur, beat),
         bars: s.scorer.bars,
         anteile,
-        name: s.scorer.name,
+        name: s.name || s.scorer.name,
         // Ohne Mikrofon keine Punktzahl, auch keine 0: Eine 0 hiesse
         // "danebengesungen", und das waere schlicht gelogen.
         score: s.analyser ? s.scorer.score : undefined,

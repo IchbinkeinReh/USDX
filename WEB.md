@@ -354,6 +354,22 @@ einer leeren 200-Antwort: Der Browser fragt immer erst an und fällt genau auf
 den 404 zurück; eine leere Antwort verstünde er als kaputtes Video und zeigte
 gar nichts.
 
+### Zu zweit
+
+Auch bei einem **Sololied** können zwei Menschen mitsingen. Dann singen beide
+dieselbe Spur und werden getrennt gewertet — wie im Spiel. Jeder bekommt
+seine eigene Bahn, seine eigene Farbe und seine eigenen Balken.
+
+Der zweite Platz ist freiwillig und bleibt vorbelegt leer. Ohne Mikrofon
+bekommt er gar keine Bahn: Eine zweite, stumme Anzeige derselben Noten wäre
+nur Platzverschwendung. Beim Duett ist das anders — dort gehören beide
+Stimmen zum Lied und werden auch dann gezeigt, wenn eine ungewertet
+mitläuft.
+
+Weil beide Bahnen bei einem Sololied denselben Spurnamen trügen, kommt die
+Beschriftung in diesem Fall aus der Zuordnung („Sänger 1"/„Sänger 2") statt
+aus dem Lied.
+
 ### Duette
 
 Duette werden ganz gesungen, nicht nur die erste Stimme. Jede Stimme bekommt

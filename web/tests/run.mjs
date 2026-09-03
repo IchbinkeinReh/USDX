@@ -554,6 +554,39 @@ E`);
   check('Balken aendern die Punkte nicht', w2.score >= 0);
 }
 
+console.log('Zu zweit bei einem Sololied');
+{
+  // Kein Duett - beide singen dieselbe Spur und werden getrennt gewertet,
+  // wie im Spiel.
+  const solo = parseSong(`#TITLE:x
+#BPM:120
+#GAP:0
+: 0 4 60 la
+: 4 4 62 la
+E`);
+  check('ist kein Duett', solo.isDuet === false);
+  check('hat nur eine Spur', solo.tracks.length === 1);
+
+  const a = new Scorer(solo, 0);
+  const b = new Scorer(solo, 0);
+  check('beide werten gegen dieselbe Hoechstsumme',
+        a.maxValue === b.maxValue && a.maxValue > 0);
+
+  // A singt richtig, B schweigt.
+  for (const n of solo.notes)
+    for (let i = 0; i < 5; i++) a.feed(solo.beatToTime(n.start + 0.5), n.pitch + 60);
+  for (const n of solo.notes)
+    for (let i = 0; i < 5; i++) b.feed(solo.beatToTime(n.start + 0.5), -1);
+
+  check('wer singt, bekommt die volle Punktzahl', a.score === MAX_SCORE,
+        String(a.score));
+  // Der Kern: Die Wertungen sind unabhaengig, obwohl es dieselben Noten sind.
+  check('wer schweigt, bekommt keine', b.score === 0, String(b.score));
+  check('und die Balken bleiben getrennt',
+        a.bars.length > 0 && b.bars.length === 0,
+        a.bars.length + '/' + b.bars.length);
+}
+
 console.log('Zeilenanzeiger');
 {
   // Nachgerechnet gegen SingDrawLyricHelper in src/base/UDraw.pas.
