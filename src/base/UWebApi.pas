@@ -29,6 +29,34 @@ uses
 const
   WEB_MAX_RESULTS = 200;
 
+  // Auslieferbare Dateien der Weboberflaeche, abschliessend aufgezaehlt.
+  //
+  // Bewusst eine Erlaubnisliste statt "alles unter web/": Damit kann keine
+  // noch so verdrehte URL etwas ausliefern, was nicht hier steht, und der
+  // uebliche Fehler - ein ../ das durch die Pruefung rutscht - kann gar nicht
+  // erst auftreten. Neue Datei im Ordner heisst: hier eintragen.
+  WEB_DATEIEN: array[0..5] of UTF8String = (
+    'index.html',
+    'js/song.js',
+    'js/pitch.js',
+    'js/score.js',
+    'js/render.js',
+    'js/game.js'
+  );
+
+type
+  // Wie eine Anfrage zu beantworten ist.
+  TWebAntwortArt = (
+    waNichts,   // keine Dateianfrage - HandleWebRequest uebernimmt
+    waDatei,    // FilePath ausliefern
+    waFehlt     // war eine Dateianfrage, aber es gibt sie nicht -> 404
+  );
+
+// Klaert, ob Path mit einer Datei zu beantworten ist, und liefert deren Pfad.
+// WebRoot ist der Ordner mit index.html und js/.
+function ResolveFileRequest(Bridge: TWebBridge; const Path, WebRoot: UTF8String;
+                            out FilePath, ContentType: UTF8String): TWebAntwortArt;
+
 // Beantwortet eine Anfrage. Rueckgabe ist der HTTP-Status; ContentType und
 // Body werden gesetzt. Query enthaelt die Parameter als Name=Wert.
 function HandleWebRequest(Bridge: TWebBridge; const Path: UTF8String;
@@ -36,6 +64,86 @@ function HandleWebRequest(Bridge: TWebBridge; const Path: UTF8String;
                           out ContentType, Body: UTF8String): integer;
 
 implementation
+
+function MimeTyp(const Datei: UTF8String): UTF8String;
+var
+  Endung: UTF8String;
+begin
+  Endung := LowerCase(ExtractFileExt(Datei));
+  if      (Endung = '.html') then Result := 'text/html; charset=utf-8'
+  else if (Endung = '.js')   then Result := 'text/javascript; charset=utf-8'
+  else if (Endung = '.css')  then Result := 'text/css; charset=utf-8'
+  else if (Endung = '.txt')  then Result := 'text/plain; charset=utf-8'
+  else if (Endung = '.mp3')  then Result := 'audio/mpeg'
+  else if (Endung = '.ogg')  then Result := 'audio/ogg'
+  else if (Endung = '.opus') then Result := 'audio/ogg'
+  else if (Endung = '.m4a')  then Result := 'audio/mp4'
+  else if (Endung = '.wav')  then Result := 'audio/wav'
+  else if (Endung = '.flac') then Result := 'audio/flac'
+  else Result := 'application/octet-stream';
+end;
+
+function ResolveFileRequest(Bridge: TWebBridge; const Path, WebRoot: UTF8String;
+                            out FilePath, ContentType: UTF8String): TWebAntwortArt;
+var
+  I, Index, Schraeg: integer;
+  Rest, Name: UTF8String;
+  Audio: boolean;
+begin
+  FilePath := '';
+  ContentType := '';
+  Result := waNichts;
+
+  // --- Liedateien: /api/song/<index>/txt bzw. /audio ---
+  if (Copy(Path, 1, 10) = '/api/song/') then
+  begin
+    Result := waFehlt;
+    Rest := Copy(Path, 11, Length(Path));
+    Schraeg := Pos('/', Rest);
+    if (Schraeg <= 1) then Exit;
+
+    Name := Copy(Rest, Schraeg + 1, Length(Rest));
+    if (Name = 'txt') then Audio := False
+    else if (Name = 'audio') then Audio := True
+    else Exit;
+
+    // -1 als Ausweichwert: StrToIntDef schluckt auch "3x" nicht, und ein
+    // negativer Index wird von SongPath ohnehin abgelehnt.
+    Index := StrToIntDef(Copy(Rest, 1, Schraeg - 1), -1);
+    if not Assigned(Bridge) then Exit;
+    if not Bridge.SongPath(Index, Audio, FilePath) then
+    begin
+      FilePath := '';
+      Exit;
+    end;
+    ContentType := MimeTyp(FilePath);
+    Result := waDatei;
+    Exit;
+  end;
+
+  // --- Oberflaeche selbst ---
+  if (Path = '') or (Path = '/') then
+    Name := 'index.html'
+  else
+    Name := Copy(Path, 2, Length(Path));
+
+  for I := Low(WEB_DATEIEN) to High(WEB_DATEIEN) do
+    if (Name = WEB_DATEIEN[I]) then
+    begin
+      if (WebRoot = '') then Exit;   // kein Ordner bekannt -> alte Seite
+      FilePath := IncludeTrailingPathDelimiter(WebRoot) +
+                  StringReplace(Name, '/', PathDelim, [rfReplaceAll]);
+      ContentType := MimeTyp(Name);
+      if FileExists(FilePath) then
+        Result := waDatei
+      else
+      begin
+        FilePath := '';
+        Result := waNichts;   // faellt auf die eingebaute Seite zurueck
+      end;
+      Exit;
+    end;
+end;
 
 function FilterFromName(const Name: UTF8String): TSongFilter;
 begin

@@ -27,6 +27,7 @@ var
   Q: TStringList;
   CT, Body: UTF8String;
   Status: integer;
+  Pfad: UTF8String;
   L: TWebSongArray;
   D: TJSONData;
   Cmd: TWebCommand;
@@ -53,6 +54,8 @@ begin
   L[0].Index := 5; L[0].Artist := 'ABBA';    L[0].Title := 'Dancing Queen'; L[0].Genre := 'Pop';    L[0].Year := 1976;
   L[1].Index := 6; L[1].Artist := 'Queen';   L[1].Title := 'Bohemian';      L[1].Genre := 'Rock';   L[1].Year := 1975;
   L[2].Index := 7; L[2].Artist := 'Nirvana'; L[2].Title := 'Smells';        L[2].Genre := 'Grunge'; L[2].Year := 1991;
+  L[0].TxtPath := '/lieder/abba.txt';  L[0].AudioPath := '/lieder/abba.mp3';
+  L[1].TxtPath := '/lieder/queen.txt'; L[1].AudioPath := '';   // ohne Ton
   B.PublishSongs(L);
 
   WriteLn('Seite und Status');
@@ -132,6 +135,46 @@ begin
 
   Status := HandleWebRequest(nil, '/api/status', Q, CT, Body);
   Check('ohne Bruecke: 503 statt Absturz', Status = 503, IntToStr(Status));
+
+  WriteLn;
+  WriteLn('Dateianfragen');
+  Check('Liedtext wird zugeordnet',
+        (ResolveFileRequest(B, '/api/song/0/txt', '', Pfad, CT) = waDatei) and
+        (Pfad = '/lieder/abba.txt'));
+  Check('und als Text ausgeliefert', Pos('text/plain', CT) = 1, CT);
+  Check('Ton wird zugeordnet',
+        (ResolveFileRequest(B, '/api/song/0/audio', '', Pfad, CT) = waDatei) and
+        (Pfad = '/lieder/abba.mp3'));
+  Check('mit passendem Typ', CT = 'audio/mpeg', CT);
+
+  Check('fehlender Ton: 404 statt leerer Pfad',
+        ResolveFileRequest(B, '/api/song/1/audio', '', Pfad, CT) = waFehlt);
+  Check('Index ausserhalb: 404',
+        ResolveFileRequest(B, '/api/song/99/txt', '', Pfad, CT) = waFehlt);
+  Check('negativer Index: 404',
+        ResolveFileRequest(B, '/api/song/-1/txt', '', Pfad, CT) = waFehlt);
+  Check('unlesbarer Index: 404',
+        ResolveFileRequest(B, '/api/song/x/txt', '', Pfad, CT) = waFehlt);
+  Check('unbekannte Datei am Lied: 404',
+        ResolveFileRequest(B, '/api/song/0/passwd', '', Pfad, CT) = waFehlt);
+  Check('kein Pfad bei Ablehnung', Pfad = '', Pfad);
+
+  // Der eigentliche Punkt: Aus der URL laesst sich kein Pfad steuern. Der
+  // Index wird nachgeschlagen, alles andere faellt durch.
+  Check('Punkt-Punkt im Index greift nicht',
+        ResolveFileRequest(B, '/api/song/..%2F..%2Fetc%2Fpasswd/txt', '',
+                           Pfad, CT) = waFehlt);
+  Check('Ausbruch ueber den Dateinamen greift nicht',
+        ResolveFileRequest(B, '/../etc/passwd', 'web', Pfad, CT) = waNichts);
+  Check('nicht aufgefuehrte Datei wird nicht geliefert',
+        ResolveFileRequest(B, '/js/../../etc/passwd', 'web', Pfad, CT) = waNichts);
+  Check('unbekanntes js wird nicht geliefert',
+        ResolveFileRequest(B, '/js/geheim.js', 'web', Pfad, CT) = waNichts);
+
+  Check('ohne Webordner faellt die Seite zurueck',
+        ResolveFileRequest(B, '/index.html', '', Pfad, CT) = waNichts);
+  Check('Api bleibt Api',
+        ResolveFileRequest(B, '/api/songs', 'web', Pfad, CT) = waNichts);
 
   B.Free; Q.Free;
   WriteLn;

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UltraStar Deluxe – Web</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#0d0f14;color:#e8e8ea;font-family:system-ui,sans-serif}
+  header{display:flex;gap:10px;align-items:center;padding:10px 14px;background:#171a22}
+  input{flex:1;font-size:16px;padding:9px;border-radius:8px;border:1px solid #333a48;
+        background:#0d0f14;color:#e8e8ea}
+  button{font-size:15px;padding:9px 16px;border-radius:8px;border:0;
+         background:#3d6ae0;color:#fff;cursor:pointer}
+  button:disabled{background:#333a48;cursor:default}
+  #liste{max-height:38vh;overflow:auto;border-bottom:1px solid #222733}
+  #liste div{padding:10px 14px;border-bottom:1px solid #1b1f29;cursor:pointer}
+  #liste div:active{background:#232936}
+  .a{font-weight:600}.t{color:#98a0b0;font-size:14px}
+  #buehne{padding:14px}
+  canvas{width:100%;height:46vh;background:#11131a;border-radius:12px;display:block}
+  #kopf{display:flex;justify-content:space-between;align-items:baseline;margin:10px 2px}
+  #punkte{font-size:26px;font-weight:700;color:#ffd978}
+  #hinweis{color:#98a0b0;font-size:14px;min-height:20px;margin:0 2px}
+</style>
+</head>
+<body>
+<header>
+  <input id="suche" placeholder="Suchen – abba OR queen, !live, 1990-1999">
+  <button id="start" disabled>Singen</button>
+</header>
+<div id="liste"></div>
+<div id="buehne">
+  <div id="kopf"><div id="titel">Kein Lied gewählt</div><div id="punkte">0</div></div>
+  <canvas id="buehnebild" width="1280" height="480"></canvas>
+  <p id="hinweis"></p>
+</div>
+<script type="module">
+import { Game } from './js/game.js';
+
+const el = {
+  titel: document.getElementById('titel'),
+  punkte: document.getElementById('punkte'),
+  hinweis: document.getElementById('hinweis'),
+};
+const canvas = document.getElementById('buehnebild');
+// Auf die tatsaechliche Groesse setzen, sonst wird das Bild weichgezeichnet.
+function passeAn() {
+  canvas.width = canvas.clientWidth * devicePixelRatio;
+  canvas.height = canvas.clientHeight * devicePixelRatio;
+}
+addEventListener('resize', passeAn); passeAn();
+
+const spiel = new Game(canvas, el);
+const suche = document.getElementById('suche');
+const liste = document.getElementById('liste');
+const start = document.getElementById('start');
+let gewaehlt = -1, t = null;
+
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+
+async function sucheLieder() {
+  const r = await fetch('/api/songs?max=100&q=' + encodeURIComponent(suche.value));
+  const d = await r.json();
+  liste.innerHTML = d.map(s =>
+    `<div data-i="${s.index}"><div class="a">${esc(s.artist)}</div>` +
+    `<div class="t">${esc(s.title)}${s.year ? ' · ' + s.year : ''}</div></div>`).join('');
+}
+suche.addEventListener('input', () => { clearTimeout(t); t = setTimeout(sucheLieder, 250); });
+
+liste.addEventListener('click', async (e) => {
+  const d = e.target.closest('div[data-i]');
+  if (!d) return;
+  gewaehlt = +d.dataset.i;
+  el.hinweis.textContent = 'Lade …';
+  try {
+    await spiel.ladeLied(gewaehlt);
+    start.disabled = false;
+    el.hinweis.textContent = 'Bereit. Mikrofon wird beim Start erfragt.';
+  } catch (err) {
+    el.hinweis.textContent = 'Lied lässt sich nicht laden: ' + err.message;
+  }
+});
+
+start.addEventListener('click', () => { start.disabled = true; spiel.start(); });
+sucheLieder();
+</script>
+</body>
+</html>

@@ -48,6 +48,11 @@ type
     Genre:    UTF8String;
     Language: UTF8String;
     Year:     integer;
+    // Dateien fuer die Weboberflaeche. Der Browser bekommt sie NIE zu sehen -
+    // er schickt nur den Index, und der Server schlaegt den Pfad hier nach.
+    // Damit ist ein Ausbruch aus dem Liedordner ueber die URL ausgeschlossen.
+    TxtPath:   UTF8String;
+    AudioPath: UTF8String;
   end;
   TWebSongArray = array of TWebSong;
 
@@ -79,6 +84,11 @@ type
       function  FindSongs(const Query: UTF8String; Filter: TSongFilter;
                           Max: integer): TWebSongArray;
       procedure PostCommand(Kind: TWebCommandKind; SongIndex: integer);
+
+      // Schlaegt den Dateipfad zu einem Index nach. false, wenn es den Index
+      // nicht gibt oder das Lied keine solche Datei hat.
+      function  SongPath(Index: integer; Audio: boolean;
+                         out Path: UTF8String): boolean;
 
       function  SongCount: integer;
       function  Stand: integer;
@@ -118,6 +128,28 @@ begin
     for I := 0 to High(Songs) do
       fSongs[I] := Songs[I];
     Inc(fStand);
+  finally
+    fLock.Release;
+  end;
+end;
+
+function TWebBridge.SongPath(Index: integer; Audio: boolean;
+                             out Path: UTF8String): boolean;
+begin
+  Path := '';
+  fLock.Acquire;
+  try
+    // Der Index zaehlt in der Abschrift, nicht in CatSongs: Beides kann
+    // auseinanderlaufen, wenn waehrenddessen neu eingelesen wurde.
+    Result := (Index >= 0) and (Index <= High(fSongs));
+    if Result then
+    begin
+      if Audio then
+        Path := fSongs[Index].AudioPath
+      else
+        Path := fSongs[Index].TxtPath;
+      Result := Path <> '';
+    end;
   finally
     fLock.Release;
   end;

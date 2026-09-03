@@ -139,6 +139,42 @@ begin
 end;
 
 // Uebergibt der Weboberflaeche eine frische Abschrift der Liederliste.
+// Reicht Meldungen des Webservers ins Spielprotokoll weiter. Der Server
+// kennt ULog absichtlich nicht, siehe WebLogHandler in UWebServer.
+procedure WebLog(const Nachricht: UTF8String; Fehler: boolean);
+begin
+  if Fehler then
+    Log.LogError(Nachricht, 'UWebServer')
+  else
+    Log.LogStatus(Nachricht, 'UWebServer');
+end;
+
+// Sucht den Ordner mit index.html an den Stellen, an denen er nach einem
+// Bau oder im Quellbaum liegt.
+function FindeWebOrdner: UTF8String;
+var
+  I: integer;
+  Kandidat: UTF8String;
+  Basis: UTF8String;
+begin
+  Result := '';
+  Basis := ExtractFilePath(ParamStr(0));
+  for I := 0 to 2 do
+  begin
+    Kandidat := Basis + StringOfChar('.', 0);
+    case I of
+      0: Kandidat := Basis + 'web' + PathDelim;
+      1: Kandidat := Basis + '..' + PathDelim + 'web' + PathDelim;
+      2: Kandidat := Basis + '..' + PathDelim + '..' + PathDelim + 'web' + PathDelim;
+    end;
+    if FileExists(Kandidat + 'index.html') then
+    begin
+      Result := Kandidat;
+      Exit;
+    end;
+  end;
+end;
+
 procedure PublishSongsToWeb;
 var
   I, Anzahl: integer;
@@ -159,6 +195,16 @@ begin
     Liste[Anzahl].Genre    := CatSongs.Song[I].Genre;
     Liste[Anzahl].Language := CatSongs.Song[I].Language;
     Liste[Anzahl].Year     := CatSongs.Song[I].Year;
+    // Pfade fuer die Weboberflaeche mitgeben. Path ist der Ordner, FileName
+    // und Audio jeweils nur der Name darin - erst zusammengesetzt ergibt das
+    // eine Datei, die sich oeffnen laesst.
+    Liste[Anzahl].TxtPath  := CatSongs.Song[I].Path.Append(
+                                CatSongs.Song[I].FileName).ToUTF8();
+    if CatSongs.Song[I].Audio.IsSet then
+      Liste[Anzahl].AudioPath := CatSongs.Song[I].Path.Append(
+                                   CatSongs.Song[I].Audio).ToUTF8()
+    else
+      Liste[Anzahl].AudioPath := '';
     Inc(Anzahl);
   end;
   SetLength(Liste, Anzahl);
@@ -312,7 +358,12 @@ begin
       Log.LogStatus('Web Interface', 'Initialization');
       WebBridge := TWebBridge.Create;
       PublishSongsToWeb;
-      WebServer := TWebServerThread.Create(WebBridge, WEB_DEFAULT_PORT);
+      // web/ liegt neben der ausfuehrbaren Datei bzw. im Quellbaum. Fehlt der
+      // Ordner, liefert der Server die eingebaute Fernbedienungsseite aus -
+      // das Spiel startet also auch ohne die Weboberflaeche.
+      WebLogHandler := WebLog;
+      WebServer := TWebServerThread.Create(WebBridge, WEB_DEFAULT_PORT,
+                                           FindeWebOrdner());
     end;
 
     Log.LogStatus('Main Loop', 'Initialization');

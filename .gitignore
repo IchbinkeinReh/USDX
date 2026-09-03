@@ -70,3 +70,8 @@ ppaslink.sh
 /usdx-dlls-i686.zip
 /game/*.dll
 /game/*.debug
+# Bauergebnisse der Tests
+tests/build/
+tests/build-make.log
+tests/test*
+!tests/test*.pas
