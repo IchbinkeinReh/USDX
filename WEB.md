@@ -252,6 +252,58 @@ Aus dem Netz kommt damit nie ein Pfad, sondern immer nur eine Zahl oder ein
 Name aus der Liste. Ein `../` kann also gar nicht erst irgendwo ankommen, wo
 es wirken könnte. Tests in `testwebapi` und `testwebserver` halten das fest.
 
+## Hinter einem Vorschalt-Server betreiben
+
+Soll die Oberfläche von außen erreichbar sein, gehört ein Server davor, der
+die Anmeldung prüft. Der Dienst selbst kennt keine.
+
+**HTTPS ist dabei Pflicht, nicht Kür.** `getUserMedia` gibt es nur im
+sicheren Kontext — über einfaches HTTP lädt die Seite zwar, aber das
+Mikrofon bleibt stumm und es lässt sich nichts werten.
+
+Als systemd-Dienst:
+
+```ini
+[Service]
+User=ultrastar
+ExecStart=/usr/local/lib/ultrastar-web/ultrastardx --web-only \
+    --webhost 127.0.0.1 --webport 8942 --songpath /pfad/zu/den/liedern
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/pfad/zu/den/liedern
+```
+
+Und davor, hier mit Apache:
+
+```apache
+<VirtualHost *:443>
+	ServerName ultrastar.example.org
+
+	ProxyPreserveHost On
+	ProxyPass        "/" "http://127.0.0.1:8942/" timeout=60
+	ProxyPassReverse "/" "http://127.0.0.1:8942/"
+
+	<Location "/">
+		AuthType Basic
+		AuthName "UltraStar"
+		AuthUserFile /etc/apache2/auth/ultrastar.htpasswd
+		Require valid-user
+	</Location>
+</VirtualHost>
+```
+
+Zwei Dinge, die dabei leicht untergehen:
+
+- `--webhost 127.0.0.1` ist der eigentliche Schutz. Fehlt es, lauscht der
+  Dienst auf allen Adressen und der Port ist an der Anmeldung vorbei direkt
+  erreichbar.
+- Die Anmeldung gehört an `/`, nicht nur an die Startseite. Sonst sind
+  `/api/songs` und die Lieddateien offen — und darüber lässt sich die ganze
+  Sammlung herunterladen.
+
+Ein `Range` reicht Apache unverändert durch; das Springen im Lied
+funktioniert also auch über den Proxy.
+
 ## Aufbau
 
 | Unit | Aufgabe |
