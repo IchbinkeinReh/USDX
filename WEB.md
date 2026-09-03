@@ -228,6 +228,12 @@ Drei Regeln, die man beim Nachbauen verliert:
 - Ein Fehlgriff wird **flacher** gezeichnet, im Spiel 65 %. Das unterscheidet
   Treffer und Fehlgriff ohne zweite Farbe.
 
+Die Note selbst wird **nicht** anteilig eingefärbt. Das war sie einmal, und
+zwar mit dem Verhältnis Treffer zu Versuchen — ein Verhältnis, das sinken
+kann: Wer erst traf und dann danebenlag, sah den Balken schrumpfen, obwohl er
+weitersang. Was tatsächlich gesungen wurde, zeigen die Balken, und die
+wachsen nur.
+
 Aufeinanderfolgende Schläge mit demselben Ton verlängern den Balken, statt
 einen zweiten danebenzusetzen — gerechnet wird in ganzen Schlägen wie im
 Spiel, sonst entstünden bei jedem Bild Splitter.
@@ -269,6 +275,20 @@ Abgedunkelt wird immer, nicht nur über Video: Auch die Notenfläche ist
 unruhig genug, dass Text darauf schlecht zu lesen ist. Passt eine Zeile nicht
 in die Breite, wird sie gestaucht statt abgeschnitten — eine halbe Silbe am
 Rand hilft niemandem.
+
+### Der Fortschrittsbalken
+
+Am unteren Rand liegt eine Leiste über die ganze Länge des Liedes, nachgebaut
+nach `DrawInfoLyricBar` (`UScreenSingView.pas`): darin je Zeile ein Kästchen
+von der ersten Note bis zum Ende der letzten. Man sieht damit auf einen Blick,
+**wann gesungen wird und wann Pause ist** — und wie lange es noch dauert.
+
+Das bereits Gesungene wird abgedunkelt, nicht nur die Marke gesetzt: Sonst
+ließe sich der Fortschritt nicht ablesen, wenn die Marke gerade in einer
+Pause steht.
+
+Beim Duett kommen die Abschnitte beider Stimmen zusammen; dass sie sich
+teils überschneiden, stört beim Zeichnen nicht.
 
 ### Wann die Zeile losgeht
 

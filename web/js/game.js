@@ -11,7 +11,7 @@
 // Aufbau laesst das deshalb gar nicht erst zu, statt hinterher Punkte zu
 // verteilen, die niemand nachvollziehen kann.
 
-import { parseSong, lineAt, nextLineAt } from './song.js';
+import { parseSong, lineAt, nextLineAt, singAbschnitte } from './song.js';
 import { detectMidi, maxVolume } from './pitch.js';
 import { Pegel } from './pegel.js';
 import { Scorer, LEICHT } from './score.js';
@@ -122,6 +122,8 @@ export class Game {
       return r.text();
     });
     this.song = parseSong(txt);   // wirft bei kaputten Spurwechseln
+    // Einmal berechnen, nicht je Bild - das sind alle Zeilen des Liedes.
+    this.abschnitte = singAbschnitte(this.song);
     this.audio.src = `/api/song/${index}/audio`;
     this.el.titel.textContent = `${this.song.artist} – ${this.song.title}`;
     this.bereiteHintergrund(index, this.song);
@@ -256,6 +258,12 @@ export class Game {
       if (s.strom) s.strom.getTracks().forEach((t) => t.stop());
   }
 
+  // Ende der letzten Note, als Ausweichwert fuer die Dauer.
+  liedEnde() {
+    const a = this.abschnitte;
+    return a && a.length ? a[a.length - 1].bis : 0;
+  }
+
   zeileBei(trackIndex, beat) {
     return lineAt(this.song.track(trackIndex), beat);
   }
@@ -294,18 +302,12 @@ export class Game {
         }
         s.scorer.feed(zeit, s.sungMidi);
       }
-      // Anteil je Note fuer die Einfaerbung.
-      const anteile = new Map();
-      for (const [note, z] of s.scorer.state)
-        anteile.set(note, z.tries > 0 ? z.hits / z.tries : 0);
-
       const spur = this.song.track(s.trackIndex);
       return {
         line: lineAt(spur, beat),
         // Die naechste Zeile wird mit angezeigt, damit man weiss, was kommt.
         nextLine: nextLineAt(spur, beat),
         bars: s.scorer.bars,
-        anteile,
         name: s.name || s.scorer.name,
         // Ohne Mikrofon keine Punktzahl, auch keine 0: Eine 0 hiesse
         // "danebengesungen", und das waere schlicht gelogen.
@@ -314,7 +316,13 @@ export class Game {
     });
 
     this.haltVideoNach(zeit);
-    this.renderer.draw(bahnen, beat, this.hatVideo || this.hatBild);
+    this.renderer.draw(bahnen, beat, this.hatVideo || this.hatBild, {
+      zeit,
+      // Solange die Dauer noch nicht bekannt ist, hilft das letzte Ende
+      // aus dem Lied - sonst bliebe die Leiste am Anfang leer.
+      dauer: this.audio.duration > 0 ? this.audio.duration : this.liedEnde(),
+      abschnitte: this.abschnitte,
+    });
     const stand = (s) => (s.analyser ? String(s.scorer.score) : '–');
     this.el.punkte.textContent = this.saenger.length > 1
       ? this.saenger.map(stand).join(' · ')

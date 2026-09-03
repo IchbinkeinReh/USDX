@@ -159,6 +159,29 @@ export function nextLineAt(track, beat) {
   return track.lines[i + 1] || null;
 }
 
+// Wann im Lied ueberhaupt gesungen wird - je Zeile ein Abschnitt in
+// Sekunden. Das ist die Vorlage aus DrawInfoLyricBar (UScreenSingView.pas),
+// wo je Zeile ein Kaestchen von der ersten Note bis zum Ende der letzten
+// gezeichnet wird.
+//
+// Beim Duett kommen die Abschnitte beider Stimmen zusammen; sie
+// ueberschneiden sich teils, was beim Zeichnen nicht stoert.
+export function singAbschnitte(song) {
+  const abschnitte = [];
+  if (!song || !song.tracks) return abschnitte;
+  for (const spur of song.tracks) {
+    for (const zeile of spur.lines) {
+      if (!zeile.notes || zeile.notes.length === 0) continue;
+      const letzte = zeile.notes[zeile.notes.length - 1];
+      abschnitte.push({
+        von: song.beatToTime(zeile.notes[0].start),
+        bis: song.beatToTime(letzte.start + letzte.length),
+      });
+    }
+  }
+  return abschnitte.sort((a, b) => a.von - b.von);
+}
+
 // Sekunden, bis die erste Note dieser Zeile faellig ist.
 // Negativ, wenn die Zeile schon laeuft. null, wenn es nichts zu warten gibt.
 export function secondsUntilLine(song, line, seconds) {

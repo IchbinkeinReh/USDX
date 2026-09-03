@@ -2,7 +2,7 @@
 // Zeichnen und Mikrofon bleiben aussen vor - dafuer braucht es einen Browser.
 
 import { parseSong, noteProgress, secondsUntilLine, lineAt, nextLineAt,
-         NOTE_FREESTYLE, NOTE_GOLDEN } from '../js/song.js';
+         singAbschnitte, NOTE_FREESTYLE, NOTE_GOLDEN } from '../js/song.js';
 import { detectFrequency, detectMidi, freqToMidi, sameTone, toneDistance,
          rms, maxVolume, verschiebungen,
          MIN_FREQ, MAX_FREQ } from '../js/pitch.js';
@@ -361,6 +361,46 @@ console.log('Pegelregelung');
         String(p.anzahl));
 }
 
+console.log('Fortschrittsbalken');
+{
+  // 120 BPM in der Datei sind intern 480, ein Schlag also 0,125 s.
+  const f = parseSong(`#TITLE:x
+#BPM:120
+#GAP:0
+- 0
+: 0 8 60 sing
+- 40
+: 48 8 60 wieder
+E`);
+  const a = singAbschnitte(f);
+  check('je Zeile ein Abschnitt', a.length === 2, String(a.length));
+  check('erster Abschnitt von der ersten bis zur letzten Note',
+        Math.abs(a[0].von - 0) < 1e-9 && Math.abs(a[0].bis - 1) < 1e-9,
+        JSON.stringify(a[0]));
+  check('zweiter Abschnitt liegt spaeter',
+        Math.abs(a[1].von - 6) < 1e-9 && Math.abs(a[1].bis - 7) < 1e-9,
+        JSON.stringify(a[1]));
+  check('dazwischen ist Pause', a[1].von > a[0].bis);
+
+  // Beim Duett kommen beide Stimmen zusammen, nach Zeit sortiert.
+  const d = parseSong(`#TITLE:x
+#BPM:120
+#GAP:0
+P1
+: 40 8 60 a
+P2
+: 0 8 60 b
+E`);
+  const ad = singAbschnitte(d);
+  check('Duett: Abschnitte beider Stimmen', ad.length === 2, String(ad.length));
+  check('und nach Zeit sortiert', ad[0].von < ad[1].von,
+        JSON.stringify(ad));
+
+  check('ohne Lied kein Absturz', singAbschnitte(null).length === 0);
+  const leer = parseSong('#TITLE:x\n#BPM:120\nE');
+  check('ohne Noten keine Abschnitte', singAbschnitte(leer).length === 0);
+}
+
 console.log('Zeichnen');
 {
   const lied = parseSong(`#TITLE:x
@@ -375,7 +415,7 @@ E`);
     const r = new Renderer({ width: 0, height: 0, getContext: () => ctx });
     r.passeGroesseAn(cssB, cssH, dpr);
     r.draw([{ line: lied.lines[0], nextLine: null, bars: [],
-              anteile: new Map(), name: '', score: 0 }], 5);
+              name: '', score: 0 }], 5);
     return ctx;
   };
 
@@ -413,7 +453,7 @@ E`);
     const r = new Renderer({ width: 0, height: 0, getContext: () => ctx });
     r.passeGroesseAn(844, 340, 3);
     r.draw([{ line: lied.lines[0], nextLine: lied.lines[0], bars: [],
-              anteile: new Map(), name: '', score: 0 }], 5);
+              name: '', score: 0 }], 5);
     const rr = ctx.ops.filter((o) => o[0] === 'roundRect');
     const anz = rr[rr.length - 1];
     const texte = ctx.ops.filter((o) => o[0] === 'fillText');
@@ -433,12 +473,32 @@ E`);
           'Text bei ' + iText);
   }
 
+  // Der Fortschrittsbalken wird nur gezeichnet, wenn er uebergeben wird -
+  // und dann ganz unten.
+  {
+    const ctx = stubKontext();
+    const r = new Renderer({ width: 0, height: 0, getContext: () => ctx });
+    r.passeGroesseAn(800, 400, 1);
+    r.draw([{ line: lied.lines[0], nextLine: null, bars: [],
+              name: '', score: 0 }], 5, false,
+           { zeit: 5, dauer: 20, abschnitte: [{ von: 2, bis: 6 }] });
+    const rechtecke = ctx.ops.filter((o) => o[0] === 'fillRect');
+    const unten = rechtecke.filter((o) => o[2] + o[4] >= 399);
+    check('Fortschrittsbalken liegt am unteren Rand', unten.length >= 3,
+          String(unten.length));
+    // Die Marke steht bei einem Viertel der Laenge.
+    const marke = rechtecke.find((o) => o[3] === 2);
+    check('Marke steht an der richtigen Stelle',
+          marke && Math.abs(marke[1] - (0.25 * 800 - 1)) < 1,
+          marke ? String(marke[1]) : 'keine');
+  }
+
   // Ohne passeGroesseAn muss es weiter gehen - sonst waeren diese Tests
   // nicht dieselbe Zeichenlogik wie im Browser.
   const ctx3 = stubKontext();
   const r3 = new Renderer({ width: 800, height: 300, getContext: () => ctx3 });
   r3.draw([{ line: lied.lines[0], nextLine: null, bars: [],
-             anteile: new Map(), name: '', score: 0 }], 5);
+             name: '', score: 0 }], 5);
   check('ohne Groessenangabe wird trotzdem gezeichnet',
         ctx3.ops.some((o) => o[0] === 'fillText'));
 }

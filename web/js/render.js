@@ -123,11 +123,13 @@ export class Renderer {
     this.h = cssHoehe;
   }
 
-  // bahnen: [{ line, bars, anteile, name, score }]
+  // bahnen: [{ line, nextLine, bars, name, score }]
   // beat:   aktueller Schlag, gilt fuer alle Bahnen
   // hintergrund: liegt Video oder Bild dahinter? Dann bleibt der Canvas
   //   durchsichtig, sonst verdeckte er beides.
-  draw(bahnen, beat, hintergrund = false) {
+  // fortschritt: { zeit, dauer, abschnitte } - wo im Lied wir stehen und
+  // wann ueberhaupt gesungen wird.
+  draw(bahnen, beat, hintergrund = false, fortschritt = null) {
     const { ctx, canvas } = this;
     // Ohne passeGroesseAn auf die rohen Canvas-Masse zurueckfallen - so
     // laesst sich das Zeichnen auch ohne Browser durchrechnen.
@@ -147,7 +149,12 @@ export class Renderer {
 
     if (!bahnen || bahnen.length === 0) return;
 
-    const hoehe = h / bahnen.length;
+    // Unten ein schmaler Streifen fuer den Fortschritt, der Rest fuer die
+    // Bahnen.
+    const leisteH = fortschritt ? Math.max(6, Math.min(14, h * 0.03)) : 0;
+    const bahnenH = h - leisteH;
+
+    const hoehe = bahnenH / bahnen.length;
     bahnen.forEach((bahn, i) => {
       this.zeichneBahn(bahn, beat, i, 0, i * hoehe, w, hoehe,
                        bahnen.length > 1);
@@ -160,6 +167,40 @@ export class Renderer {
         ctx.stroke();
       }
     });
+
+    if (fortschritt) this.leiste(fortschritt, 0, bahnenH, w, leisteH);
+  }
+
+  // Der Fortschrittsbalken am unteren Rand.
+  //
+  // Nachgebaut nach DrawInfoLyricBar (UScreenSingView.pas): eine Leiste ueber
+  // die ganze Laenge des Liedes, darin je Zeile ein Kaestchen von der ersten
+  // Note bis zum Ende der letzten. Man sieht damit auf einen Blick, wann
+  // gesungen wird und wann Pause ist - und wie lange es noch dauert.
+  leiste({ zeit, dauer, abschnitte }, x, y, w, h) {
+    const ctx = this.ctx;
+    if (!(dauer > 0)) return;
+
+    ctx.fillStyle = 'rgba(8, 10, 15, 0.85)';
+    ctx.fillRect(x, y, w, h);
+
+    // Die Singabschnitte.
+    ctx.fillStyle = 'rgba(127, 209, 255, 0.55)';
+    for (const a of abschnitte || []) {
+      const ax = x + (a.von / dauer) * w;
+      const aw = Math.max(1, ((a.bis - a.von) / dauer) * w);
+      ctx.fillRect(ax, y + 1, aw, h - 2);
+    }
+
+    // Das bereits Gesungene abdunkeln - so sieht man den Fortschritt auch
+    // dann, wenn die Marke gerade in einer Pause steht.
+    const px = x + Math.max(0, Math.min(1, zeit / dauer)) * w;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    ctx.fillRect(x, y, px - x, h);
+
+    // Die Marke selbst.
+    ctx.fillStyle = '#ffd978';
+    ctx.fillRect(px - 1, y, 2, h);
   }
 
   zeichneBahn(bahn, beat, index, ox, oy, w, h, mitNamen) {
@@ -250,12 +291,11 @@ export class Renderer {
                     : farbe.balken;
       this.balken(bx, by, bw, tonHoehe, Math.min(BALKEN_RUND, tonHoehe / 2));
 
-      const anteil = bahn.anteile ? bahn.anteile.get(note) : 0;
-      if (anteil > 0) {
-        ctx.fillStyle = note.type === 'golden' ? '#ffd978' : farbe.treffer;
-        this.balken(bx, by, bw * Math.min(1, anteil), tonHoehe,
-                    Math.min(BALKEN_RUND, tonHoehe / 2));
-      }
+      // Frueher wurde die Note anteilig eingefaerbt, und zwar mit dem
+      // Verhaeltnis Treffer zu Versuchen. Das ist ein VERHAELTNIS und kann
+      // sinken: Wer erst trifft und dann danebenliegt, sah den Balken
+      // schrumpfen, obwohl er weitersang. Was tatsaechlich gesungen wurde,
+      // zeigen die Balken weiter unten - und die wachsen nur.
     }
 
     // Was gesungen wurde, als Balken auf der erkannten Tonhoehe - wie im
