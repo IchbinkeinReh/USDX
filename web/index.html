@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>UltraStar Deluxe – Web</title>
+<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect x="12" y="3" width="8" height="15" rx="4" fill="%237fd1ff"/><path d="M8 15a8 8 0 0 0 16 0" fill="none" stroke="%237fd1ff" stroke-width="2.5" stroke-linecap="round"/><path d="M16 23v5M11 28h10" stroke="%237fd1ff" stroke-width="2.5" stroke-linecap="round"/></svg>'>
 <style>
   *{box-sizing:border-box}
   body{margin:0;background:#0d0f14;color:#e8e8ea;font-family:system-ui,sans-serif;
@@ -112,12 +113,13 @@ let mikrofone = [], t = null;
 
 // Canvas auf die tatsaechliche Groesse setzen, sonst wird das Bild
 // weichgezeichnet. Muss auch nach dem Drehen wieder passieren.
+//
+// Die Umrechnung uebernimmt der Renderer: Er zeichnet danach in CSS-Punkten,
+// nicht in Geraetepunkten. Ohne das waere auf einem Handy mit dreifacher
+// Aufloesung alles ein Drittel so gross.
 function passeAn() {
-  const b = canvas.clientWidth, h = canvas.clientHeight;
-  if (b > 0 && h > 0) {
-    canvas.width = Math.round(b * devicePixelRatio);
-    canvas.height = Math.round(h * devicePixelRatio);
-  }
+  spiel.renderer.passeGroesseAn(canvas.clientWidth, canvas.clientHeight,
+                                devicePixelRatio || 1);
 }
 addEventListener('resize', passeAn);
 addEventListener('orientationchange', () => setTimeout(passeAn, 250));

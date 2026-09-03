@@ -8,6 +8,25 @@ import { Scorer, MAX_SCORE, inOktave } from '../js/score.js';
 import { lyricHelper, helferBahn,
          HELFER_MIN_VORLAUF, HELFER_GRENZE } from '../js/render.js';
 import { istHandy, HANDY_BREITE } from '../js/vollbild.js';
+import { Renderer } from '../js/render.js';
+
+// Aufzeichnender Ersatz fuer den Zeichenkontext. Zeichnen laesst sich hier
+// nicht pruefen - WAS gezeichnet wird und WIE GROSS aber schon, und genau
+// daran lag es zuletzt zweimal.
+function stubKontext() {
+  const ops = [];
+  const c = { ops, globalAlpha: 1, fillStyle: '', strokeStyle: '', lineWidth: 1,
+              font: '', textAlign: 'left', textBaseline: 'top', lineJoin: '' };
+  for (const m of ['clearRect', 'fillRect', 'beginPath', 'moveTo', 'lineTo',
+                   'stroke', 'fill', 'save', 'restore', 'clip', 'rect',
+                   'translate', 'scale', 'strokeText', 'setTransform'])
+    c[m] = (...a) => ops.push([m, ...a]);
+  c.roundRect = (...a) => ops.push(['roundRect', ...a]);
+  c.fillText = (t, x, y) => ops.push(['fillText', t, x, y]);
+  c.measureText = (t) => ({ width: t.length * 10 });
+  c.createLinearGradient = () => ({ addColorStop() {} });
+  return c;
+}
 
 let bestanden = 0, fehlgeschlagen = 0;
 
@@ -39,6 +58,25 @@ E
 diese Zeile wird ignoriert`);
 
 check('Kopfdaten gelesen', s.title === 'Test' && s.artist === 'Jemand');
+
+// Im Format gehoert das Leerzeichen zur Silbe: ": 0 12 12 Bye " heisst "Bye"
+// mit folgendem Abstand. Wer die Zeile am Ende kuerzt, klebt den ganzen
+// Liedtext zusammen - in einer echten Datei betraf das 133 Zeilen.
+{
+  const l = parseSong('#TITLE:x\n#BPM:120\n: 0 4 60 Bye \n: 4 4 62 bye\nE');
+  check('Leerzeichen am Silbenende bleibt erhalten',
+        l.notes[0].text === 'Bye ', '[' + l.notes[0].text + ']');
+  check('Zeile ergibt lesbaren Text',
+        l.notes.map((n) => n.text).join('') === 'Bye bye',
+        l.notes.map((n) => n.text).join(''));
+}
+{
+  // Fuehrende Leerzeichen kommen ebenfalls vor - dann steht ein zweites
+  // Leerzeichen in der Datei, und genau eines davon trennt die Felder.
+  const l = parseSong('#TITLE:x\n#BPM:120\n: 0 4 60 Hal\n: 4 4 62  lo\nE');
+  check('fuehrendes Leerzeichen bleibt erhalten',
+        l.notes[1].text === ' lo', '[' + l.notes[1].text + ']');
+}
 check('Audiodatei gefunden', s.audio === 'a.mp3');
 check('BPM wird mit vier multipliziert', s.bpm === 480, String(s.bpm));
 check('GAP in Millisekunden', s.gap === 1000);
@@ -177,6 +215,62 @@ E`);
   // er auf die zweite herunter, nicht auf etwas Vergangenes.
   const rest = secondsUntilLine(z, lineAt(z.tracks[0], 6), z.beatToTime(6));
   check('der Vorlauf zeigt in die Zukunft', rest > 0, String(rest));
+}
+
+console.log('Zeichnen');
+{
+  const lied = parseSong(`#TITLE:x
+#BPM:120
+#GAP:0
+- 0
+: 40 4 60 hallo
+E`);
+
+  const male = (cssB, cssH, dpr) => {
+    const ctx = stubKontext();
+    const r = new Renderer({ width: 0, height: 0, getContext: () => ctx });
+    r.passeGroesseAn(cssB, cssH, dpr);
+    r.draw([{ line: lied.lines[0], nextLine: null, bars: [],
+              anteile: new Map(), name: '', score: 0 }], 5);
+    return ctx;
+  };
+
+  const rechner = male(1280, 480, 1);
+  const handyBild = male(844, 340, 3);
+
+  // Der Fehler, der den Anzeiger unsichtbar machte: Der Canvas wird mit
+  // devicePixelRatio vergroessert, feste Masse schrumpfen dadurch auf einem
+  // Handy auf ein Drittel. 24 muss ueberall 24 heissen.
+  const schrift = (c) => parseFloat(c.font.match(/(\d+(?:\.\d+)?)px/)[1]);
+  check('Schrift ist auf dem Rechner 24 Punkte', schrift(rechner) === 24,
+        rechner.font);
+  check('und auf dem Handy trotz dreifacher Aufloesung ebenso',
+        schrift(handyBild) === 24, handyBild.font);
+
+  const anzeiger = (c) => {
+    const rr = c.ops.filter((o) => o[0] === 'roundRect');
+    return rr[rr.length - 1];
+  };
+  check('der Anzeiger wird ueberhaupt gezeichnet', !!anzeiger(rechner));
+  check('und ist auf dem Handy hoch genug zum Sehen',
+        anzeiger(handyBild)[4] >= 8,
+        'Hoehe ' + Math.round(anzeiger(handyBild)[4]));
+  check('und breit genug', anzeiger(handyBild)[3] >= 30,
+        'Breite ' + Math.round(anzeiger(handyBild)[3]));
+  // Er muss im Bild liegen, nicht links daneben.
+  check('und liegt im Bild',
+        anzeiger(handyBild)[1] >= 0 &&
+        anzeiger(handyBild)[1] + anzeiger(handyBild)[3] <= 844,
+        'x ' + Math.round(anzeiger(handyBild)[1]));
+
+  // Ohne passeGroesseAn muss es weiter gehen - sonst waeren diese Tests
+  // nicht dieselbe Zeichenlogik wie im Browser.
+  const ctx3 = stubKontext();
+  const r3 = new Renderer({ width: 800, height: 300, getContext: () => ctx3 });
+  r3.draw([{ line: lied.lines[0], nextLine: null, bars: [],
+             anteile: new Map(), name: '', score: 0 }], 5);
+  check('ohne Groessenangabe wird trotzdem gezeichnet',
+        ctx3.ops.some((o) => o[0] === 'fillText'));
 }
 
 console.log('Handy erkennen');

@@ -101,6 +101,9 @@ gegeneinander, wenn man sie falsch nachbaut:
 - `#BPM` wird intern **mal vier** genommen (`USong.pas`), Schläge sind also
   Viertel-Beats.
 - Zeit und Schlag hängen so zusammen: `t = GAP/1000 + Beat * 60 / BPM`.
+- Das **Leerzeichen gehört zur Silbe**: `: 0 12 12 Bye ` heißt „Bye" mit
+  folgendem Abstand. Wer die Zeile am Ende kürzt, klebt den ganzen Liedtext
+  zusammen — in einer echten Datei betraf das 133 Zeilen.
 
 Beides steht in `web/js/song.js` und wird in `web/tests/run.mjs` gegen
 gerechnete Werte geprüft.
@@ -166,6 +169,10 @@ harte Kante quer durchs Bild geht. Darin stehen der Zeilenanzeiger und
 **zwei Zeilen**: die aktuelle und, gedämpft darunter, die nächste — wie im
 Spiel, wo man ebenfalls sieht, was als Nächstes kommt.
 
+Beide Zeilen sind weiß; die nächste wird über die kleinere Schrift abgesetzt,
+nicht über blasse Farbe — man liest sie im Voraus, um vorbereitet zu sein,
+und dafür muss sie gut lesbar sein.
+
 Abgedunkelt wird immer, nicht nur über Video: Auch die Notenfläche ist
 unruhig genug, dass Text darauf schlecht zu lesen ist. Passt eine Zeile nicht
 in die Breite, wird sie gestaucht statt abgeschnitten — eine halbe Silbe am
@@ -192,6 +199,13 @@ Zwei Feinheiten, die man beim Nachbauen verliert: Bei kurzen Pausen zwischen
 zwei Zeilen erscheint er **gar nicht** — er wäre nur ein Zucken und störte
 mehr, als er hilft. Und das Pulsieren rechnet mit dem *ungekürzten* Rest, weil
 es am Takt hängt und nicht am Weg des Balkens.
+
+Gezeichnet wird in **CSS-Punkten**, nicht in Gerätepunkten: `passeGroesseAn`
+vergrößert den Canvas um `devicePixelRatio` und rechnet den Kontext
+entsprechend um. Ohne das bedeutet jedes feste Maß hier etwas anderes je
+Gerät — auf einem Handy mit dreifacher Auflösung wären eine Schriftgröße von
+24 acht CSS-Punkte und der Anzeiger ein Haarstrich von drei. Genau daran war
+er zunächst nicht zu sehen.
 
 Der Anzeiger bekommt eine **eigene Reihe** über dem Text, statt neben ihm zu
 fahren. Im Spiel fährt er bis kurz vor den Textanfang; bei mittig gesetztem,

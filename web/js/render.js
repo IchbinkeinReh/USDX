@@ -33,18 +33,23 @@ const BALKEN_RUND = 6;
 export const HELFER_MIN_VORLAUF = 8;
 export const HELFER_GRENZE = 40;
 
-// Hoehe der Indikatorreihe in Bildpunkten.
-export const HELFER_HOEHE = 9;
-
 // Wo der Anzeiger faehrt: von links bis kurz vor den Textanfang.
 //
-// Der Mindestweg ist der Grund, warum das eine eigene Funktion ist: Ohne ihn
-// landete der Balken bei breiten, mittig gesetzten Zeilen links AUSSERHALB
-// des Bildes - er war schlicht nicht zu sehen. Ziel bleibt der Textanfang,
-// nur eben nie naeher als dieser Weg.
+// ALLE Masse sind Anteile der Breite, keine festen Punkte. Das ist kein
+// Schoenheitsgrund: Der Canvas ist mit devicePixelRatio vergroessert, und
+// alles andere hier rechnet ebenfalls in Canvas-Punkten relativ zur Groesse.
+// Eine feste Zahl schrumpft dagegen auf einem Handy mit dreifacher Aufloesung
+// auf ein Drittel - der Balken war 9 Punkte hoch und damit 3 CSS-Punkte, also
+// ein Haarstrich, den man schlicht uebersieht.
+//
+// Der Mindestweg ist der zweite Grund fuer diese Funktion: Ohne ihn landete
+// der Balken bei breiten, mittig gesetzten Zeilen links AUSSERHALB des
+// Bildes. Ziel bleibt der Textanfang, nur nie naeher als dieser Weg.
 export function helferBahn(textLinks, w) {
-  const breite = Math.max(28, Math.min(56, w * 0.045));
-  const start = 14;
+  // In CSS-Punkten, siehe passeGroesseAn. Nach unten begrenzt, damit der
+  // Balken auf schmalen Bildschirmen nicht zum Strich wird.
+  const breite = Math.max(30, Math.min(90, w * 0.055));
+  const start = Math.max(8, w * 0.012);
   const ziel = Math.max(start + w * 0.18, textLinks - breite - 8);
   return { start, ziel, breite };
 }
@@ -83,7 +88,10 @@ export function lyricHelper(line, beat) {
 const TEXT_GESUNGEN = '#8b93a4';   // liegt hinter uns
 const TEXT_AKTIV    = '#ffd978';   // gerade zu hoeren
 const TEXT_KOMMT    = '#e8e8ea';   // steht noch bevor
-const TEXT_VORSCHAU = '#7d8596';   // die naechste Zeile, noch nicht dran
+// Die naechste Zeile ist weiss, nicht grau: Man liest sie im Voraus, um
+// vorbereitet zu sein - dafuer muss sie gut lesbar sein. Abgesetzt wird sie
+// ueber die kleinere Schrift, nicht ueber blasse Farbe.
+const TEXT_VORSCHAU = '#ffffff';
 
 // Je Bahn eine Farbe, damit im Duett klar ist, wer wo singt.
 const FARBEN = [
@@ -95,6 +103,24 @@ export class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
+    this.w = 0;
+    this.h = 0;
+  }
+
+  // Setzt die Groesse und rechnet den Kontext auf CSS-Punkte um.
+  //
+  // Ohne das bedeuten alle festen Masse hier etwas anderes, je nach Geraet:
+  // Der Canvas wird mit devicePixelRatio vergroessert, damit das Bild scharf
+  // ist - eine Schriftgroesse von 24 waere auf einem Handy mit dreifacher
+  // Aufloesung dann 8 CSS-Punkte, also unlesbar. Mit dieser Umrechnung heisst
+  // 24 ueberall 24.
+  passeGroesseAn(cssBreite, cssHoehe, dpr = 1) {
+    if (!(cssBreite > 0) || !(cssHoehe > 0)) return;
+    this.canvas.width = Math.round(cssBreite * dpr);
+    this.canvas.height = Math.round(cssHoehe * dpr);
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.w = cssBreite;
+    this.h = cssHoehe;
   }
 
   // bahnen: [{ line, bars, anteile, name, score }]
@@ -103,7 +129,10 @@ export class Renderer {
   //   durchsichtig, sonst verdeckte er beides.
   draw(bahnen, beat, hintergrund = false) {
     const { ctx, canvas } = this;
-    const w = canvas.width, h = canvas.height;
+    // Ohne passeGroesseAn auf die rohen Canvas-Masse zurueckfallen - so
+    // laesst sich das Zeichnen auch ohne Browser durchrechnen.
+    const w = this.w || canvas.width;
+    const h = this.h || canvas.height;
 
     ctx.clearRect(0, 0, w, h);
     if (hintergrund) {
@@ -145,7 +174,10 @@ export class Renderer {
     // bekommen nur den Platz darueber - sonst ueberdeckten sich beide.
     const schrift = Math.max(14, Math.min(24, h * 0.075));
     const zeilenH = schrift * 1.45;
-    const bandH = HELFER_HOEHE + 10 + zeilenH * 2;
+    // Der Anzeiger waechst mit der Schrift mit, statt eine feste Hoehe zu
+    // haben - siehe helferBahn.
+    const helferH = Math.max(8, schrift * 0.45);
+    const bandH = helferH + schrift * 0.5 + zeilenH * 2;
     const bandY = h - bandH;
     const notenH = bandY;
 
@@ -251,7 +283,7 @@ export class Renderer {
       }
     }
 
-    this.textBand(bahn, beat, w, bandY, bandH, schrift, zeilenH);
+    this.textBand(bahn, beat, w, bandY, bandH, schrift, zeilenH, helferH);
     ctx.restore();
   }
 
@@ -260,7 +292,7 @@ export class Renderer {
   //
   // Abgedunkelt wird immer, nicht nur ueber Video: Auch die Notenflaeche
   // darunter ist unruhig genug, dass Text darauf schlecht zu lesen ist.
-  textBand(bahn, beat, w, bandY, bandH, schrift, zeilenH) {
+  textBand(bahn, beat, w, bandY, bandH, schrift, zeilenH, helferH) {
     const ctx = this.ctx;
 
     // Nach oben auslaufend, damit es keine harte Kante quer durchs Bild gibt.
@@ -274,14 +306,15 @@ export class Renderer {
 
     if (!bahn.line) return;
 
-    const y0 = bandY + HELFER_HOEHE + 10;
+    const y0 = bandY + helferH + schrift * 0.5;
     const textLinks = this.text(bahn.line, beat, w, y0 + zeilenH * 0.75,
                                 schrift, true);
     if (bahn.nextLine)
       this.text(bahn.nextLine, -Infinity, w, y0 + zeilenH * 1.75,
                 schrift * 0.85, false);
 
-    this.helfer(bahn.line, beat, textLinks, bandY + 4, w);
+    this.helfer(bahn.line, beat, textLinks, bandY + schrift * 0.18,
+                helferH, w);
   }
 
   balken(x, y, w, h, r) {
@@ -373,17 +406,22 @@ export class Renderer {
   //
   // Ziel bleibt der Textanfang, nur eben mit einem Mindestweg: So zeigt er
   // weiter auf die Stelle, an der es losgeht, und ist trotzdem immer sichtbar.
-  helfer(line, beat, textLinks, y, w) {
+  helfer(line, beat, textLinks, y, hoehe, w) {
     const stand = lyricHelper(line, beat);
     if (!stand) return;
 
     const ctx = this.ctx;
     const { start, ziel, breite } = helferBahn(textLinks, w);
-    const hoehe = Math.max(5, HELFER_HOEHE);
     const x = start + stand.fortschritt * (ziel - start);
 
     ctx.save();
     ctx.globalAlpha = stand.alpha;
+    // Dunkler Saum darunter: Der Balken liegt auf dem abgedunkelten Band,
+    // aber je nach Video ist das nicht dunkel genug.
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.beginPath();
+    ctx.roundRect(x - 2, y - 2, breite + 4, hoehe + 4, (hoehe + 4) / 2);
+    ctx.fill();
     ctx.fillStyle = '#7fd1ff';
     ctx.beginPath();
     ctx.roundRect(x, y, breite, hoehe, hoehe / 2);

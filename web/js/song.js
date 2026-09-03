@@ -199,8 +199,12 @@ export function parseSong(text) {
   };
 
   for (const raw of lines) {
-    const line = raw.trimEnd();
-    if (line === '') continue;
+    // NICHT am Ende kuerzen: Im Format gehoert das Leerzeichen zur Silbe.
+    // ": 0 12 12 Bye " heisst "Bye" mit folgendem Abstand. Wer hier trimmt,
+    // klebt den ganzen Liedtext zusammen - in einer echten Datei betraf das
+    // 133 von rund 200 Zeilen.
+    const line = raw.replace(/\r$/, '');
+    if (line.trim() === '') continue;
 
     if (line.startsWith('#')) {
       const sep = line.indexOf(':');
