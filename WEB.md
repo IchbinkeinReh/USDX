@@ -127,20 +127,35 @@ ein Test hält es fest.
 
 ### Wann die Zeile losgeht
 
-Vor dem Einsatz erscheinen sechs Stufen, die über drei Sekunden von rechts
-nach links erlöschen; die letzte verschwindet genau beim Einsatz.
+Vor dem Einsatz fährt ein Balken von links auf den Anfang des Liedtextes zu
+und ist genau dann dort, wenn die erste Note fällig ist. Dabei pulsiert er im
+Takt.
 
-**Das hat USDX so nicht.** Dort sieht man die kommende Zeile vorab am unteren
-Rand, mehr nicht. Auf einem Handybildschirm ist dafür kein Platz, und ohne
-irgendein Zeichen setzt man regelmäßig zu früh oder zu spät ein. Stufen statt
-eines gleitenden Balkens, weil man daran ablesen kann, *wann genau* es
-losgeht — ein gleitender Balken sagt nur „bald".
+Das ist `SingDrawLyricHelper` aus `src/base/UDraw.pas`, portiert samt seiner
+Regeln — die sind in **Schlägen** gemessen, nicht in Sekunden, und passen
+sich damit dem Tempo des Liedes an:
+
+| Wert im Spiel | Bedeutung |
+| --- | --- |
+| `FirstNoteDelta > 8` | erst ab so viel Vorlauf erscheint er überhaupt |
+| `BarMoveLimit = 40` | ab so viel Wartezeit bleibt er zunächst links stehen |
+| `BarProgress = 1 - BarMoveDelta / FirstNoteDelta` | wo er steht |
+| `BarAlpha = 0,75 + cos(BarMoveDelta/2) · 0,25` | das Pulsieren |
+
+Zwei Feinheiten, die man beim Nachbauen verliert: Bei kurzen Pausen zwischen
+zwei Zeilen erscheint er **gar nicht** — er wäre nur ein Zucken und störte
+mehr, als er hilft. Und das Pulsieren rechnet mit dem *ungekürzten* Rest, weil
+es am Takt hängt und nicht am Weg des Balkens.
+
+Die Größe ist angepasst: Im Spiel sind es feste 50 × 30 in einem
+800 × 600-Raster, was hier nichts hieße.
 
 Dazu gehört, welche Zeile überhaupt gilt: Ist eine Zeile ausgesungen, wird
 sofort auf die nächste umgeschaltet, auch wenn deren Einsatz noch bevorsteht.
 Nähme man schlicht „die letzte, die begonnen hat", bliebe der ausgesungene
-Text stehen und der Vorlauf zählte auf einen Einsatz herunter, der längst
-vorbei ist.
+Text stehen und der Anzeiger zeigte auf einen Einsatz, der längst vorbei ist.
+Weil dadurch — anders als im Spiel — der Balken kurz vor seinem Startpunkt
+liegen kann, wird der Fortschritt auf 0…1 begrenzt.
 
 ### Video und Hintergrundbild
 

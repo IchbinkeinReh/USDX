@@ -17,14 +17,50 @@ const BALKEN_RUND = 6;
 // Wie lange vor dem Einsatz der Indikator erscheint, und in wie vielen
 // Stufen. Stufen statt eines glatten Balkens, weil man daran ablesen kann,
 // WANN genau es losgeht - ein gleitender Balken sagt nur "bald".
-export const VORLAUF_SEK = 3.0;
-export const VORLAUF_STUFEN = 6;
+// Der Zeilenanzeiger ("lyric helper"), portiert aus SingDrawLyricHelper in
+// src/base/UDraw.pas. Er faehrt von links auf den Anfang des Liedtextes zu
+// und ist genau dann dort, wenn die erste Note faellig ist. Dabei pulsiert
+// er im Takt.
+//
+// Die Werte stammen aus dem Spiel und sind in SCHLAEGEN gemessen, nicht in
+// Sekunden - dadurch passt er sich dem Tempo des Liedes an:
+//
+//   BarMoveLimit = 40   ab so vielen Schlaegen Wartezeit bleibt er links
+//                       stehen, statt sich unmerklich langsam zu bewegen
+//   FirstNoteDelta > 8  erst ab so viel Vorlauf erscheint er ueberhaupt.
+//                       Bei kurzen Pausen zwischen zwei Zeilen waere er nur
+//                       ein Zucken und wuerde mehr stoeren als helfen.
+export const HELFER_MIN_VORLAUF = 8;
+export const HELFER_GRENZE = 40;
 
-// Wie viele Stufen noch leuchten. 0 heisst: nichts anzeigen - entweder ist
-// der Einsatz noch weit weg oder er ist da.
-export function vorlaufStufen(sekunden) {
-  if (!(sekunden > 0) || sekunden > VORLAUF_SEK) return 0;
-  return Math.ceil((sekunden / VORLAUF_SEK) * VORLAUF_STUFEN);
+// Wo steht der Anzeiger gerade? null, wenn er nicht zu sehen ist.
+// fortschritt 0 = ganz links, 1 = am Zeilenanfang angekommen.
+export function lyricHelper(line, beat) {
+  if (!line || !line.notes || line.notes.length === 0) return null;
+
+  const ersterSchlag = line.notes[0].start;
+  let vorlauf = ersterSchlag - line.startBeat;   // FirstNoteDelta
+  let rest = ersterSchlag - beat;                // BarMoveDelta
+
+  if (!(vorlauf > HELFER_MIN_VORLAUF)) return null;
+  if (!(rest > 0)) return null;   // die Note ist da - der Anzeiger hat fertig
+
+  // Das Pulsieren rechnet mit dem UNGEKUERZTEN Rest, so wie im Spiel: Es
+  // haengt am Takt, nicht am Weg des Balkens.
+  const alpha = 0.75 + Math.cos(rest / 2) * 0.25;
+
+  if (rest > HELFER_GRENZE) rest = HELFER_GRENZE;
+  if (vorlauf > HELFER_GRENZE) vorlauf = HELFER_GRENZE;
+
+  let fortschritt = 1 - rest / vorlauf;
+  // Im Spiel kann das nicht negativ werden, weil dort immer die schon
+  // begonnene Zeile gilt. Hier wird frueher auf die naechste umgeschaltet,
+  // damit der Text nicht stehenbleibt - dann liegt der Balken kurz vor
+  // seinem Startpunkt. Begrenzen statt ihn aus dem Bild laufen zu lassen.
+  if (fortschritt < 0) fortschritt = 0;
+  if (fortschritt > 1) fortschritt = 1;
+
+  return { fortschritt, alpha };
 }
 
 // Farben des Liedtextes.
@@ -181,8 +217,10 @@ export class Renderer {
     ctx.lineTo(x(beat), h);
     ctx.stroke();
 
-    this.text(line, beat, w, h);
-    this.vorlauf(bahn.startIn, w, h);
+    // Der Anzeiger faehrt auf den Textanfang zu - deshalb erst den Text
+    // zeichnen und dessen linken Rand als Ziel nehmen.
+    const textLinks = this.text(line, beat, w, h);
+    this.helfer(line, beat, textLinks, w, h);
     ctx.restore();
   }
 
@@ -208,7 +246,8 @@ export class Renderer {
 
     const breiten = line.notes.map((n) => ctx.measureText(n.text).width);
     const gesamt = breiten.reduce((a, b) => a + b, 0);
-    let cx = (w - gesamt) / 2;
+    const links = (w - gesamt) / 2;
+    let cx = links;
     const cy = h - groesse * 0.6;
 
     // Auf bewegtem Bild wandert staendig Helligkeit unter den Text. Ein
@@ -250,33 +289,37 @@ export class Renderer {
 
       cx += breite;
     });
+
+    return links;
   }
 
-  // Zeigt an, wann die Zeile losgeht.
+  // Zeichnet den Zeilenanzeiger.
   //
-  // Das hat USDX so nicht - dort sieht man die kommende Zeile vorab, mehr
-  // nicht. Auf einem Handybildschirm ist dafuer kein Platz, und ohne
-  // irgendein Zeichen setzt man regelmaessig zu frueh oder zu spaet ein.
-  vorlauf(sekunden, w, h) {
-    const offen = vorlaufStufen(sekunden);
-    if (offen === 0) return;
+  // textLinks ist der linke Rand des Liedtextes - dorthin faehrt er. Die
+  // Groesse ist an die Bahn angepasst; im Spiel sind es feste 50x30 in einem
+  // 800x600-Raster, was hier nichts hiesse.
+  helfer(line, beat, textLinks, w, h) {
+    const stand = lyricHelper(line, beat);
+    if (!stand) return;
 
     const ctx = this.ctx;
-    const breite = Math.min(w * 0.4, 240);
-    const stufe = breite / VORLAUF_STUFEN;
-    const x0 = (w - breite) / 2;
-    const y = h * 0.80;
-    const dick = Math.max(5, h * 0.022);
+    const breite = Math.max(24, Math.min(50, w * 0.04));
+    const hoehe = Math.max(6, h * 0.026);
+    const y = h - Math.max(15, Math.min(26, h * 0.09)) * 1.9;
 
-    for (let i = 0; i < VORLAUF_STUFEN; i++) {
-      // Die Stufen gehen von rechts nach links aus. Die letzte, die
-      // erlischt, steht damit direkt vor dem Einsatz.
-      const anStelle = i < offen;
-      ctx.fillStyle = anStelle ? 'rgba(127, 209, 255, 0.85)'
-                               : 'rgba(127, 209, 255, 0.15)';
-      ctx.beginPath();
-      ctx.roundRect(x0 + i * stufe + 2, y, stufe - 4, dick, dick / 2);
-      ctx.fill();
-    }
+    // Von links bis kurz vor den Text. Ist die Zeile so lang, dass davor
+    // kein Platz bleibt, faengt er entsprechend weiter links an - im Spiel
+    // steht dafuer dieselbe Fallunterscheidung.
+    const ziel = textLinks - breite - 6;
+    const start = Math.min(8, ziel);
+    const x = start + stand.fortschritt * (ziel - start);
+
+    ctx.save();
+    ctx.globalAlpha = stand.alpha;
+    ctx.fillStyle = '#7fd1ff';
+    ctx.beginPath();
+    ctx.roundRect(x, y, breite, hoehe, hoehe / 2);
+    ctx.fill();
+    ctx.restore();
   }
 }

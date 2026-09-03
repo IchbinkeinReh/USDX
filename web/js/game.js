@@ -11,7 +11,7 @@
 // Aufbau laesst das deshalb gar nicht erst zu, statt hinterher Punkte zu
 // verteilen, die niemand nachvollziehen kann.
 
-import { parseSong, secondsUntilLine, lineAt } from './song.js';
+import { parseSong, lineAt } from './song.js';
 import { detectFrequency, freqToMidi } from './pitch.js';
 import { Scorer } from './score.js';
 import { Renderer } from './render.js';
@@ -247,12 +247,8 @@ export class Game {
       for (const [note, z] of s.scorer.state)
         anteile.set(note, z.tries > 0 ? z.hits / z.tries : 0);
 
-      const zeile = this.zeileBei(s.trackIndex, beat);
       return {
-        line: zeile,
-        // Wie lange noch bis zum Einsatz. Die Anzeige entscheidet selbst, ab
-        // wann sie das zeigt.
-        startIn: secondsUntilLine(this.song, zeile, zeit),
+        line: this.zeileBei(s.trackIndex, beat),
         sungMidi: s.sungMidi,
         anteile,
         name: s.scorer.name,

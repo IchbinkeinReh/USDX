@@ -5,7 +5,7 @@ import { parseSong, noteProgress, secondsUntilLine, lineAt,
          NOTE_FREESTYLE, NOTE_GOLDEN } from '../js/song.js';
 import { detectFrequency, freqToMidi, sameTone, toneDistance, rms } from '../js/pitch.js';
 import { Scorer, MAX_SCORE } from '../js/score.js';
-import { vorlaufStufen, VORLAUF_SEK, VORLAUF_STUFEN } from '../js/render.js';
+import { lyricHelper, HELFER_MIN_VORLAUF, HELFER_GRENZE } from '../js/render.js';
 
 let bestanden = 0, fehlgeschlagen = 0;
 
@@ -171,18 +171,57 @@ E`);
   check('der Vorlauf zeigt in die Zukunft', rest > 0, String(rest));
 }
 
-console.log('Vorlaufanzeige');
-check('weit vor dem Einsatz nichts', vorlaufStufen(VORLAUF_SEK + 0.1) === 0);
-check('genau am Rand alle Stufen', vorlaufStufen(VORLAUF_SEK) === VORLAUF_STUFEN);
-check('kurz davor eine Stufe', vorlaufStufen(0.01) === 1);
-// Bei genau null ist der Einsatz da - dann darf nichts mehr stehenbleiben,
-// sonst sieht es aus, als haette man noch Zeit.
-check('beim Einsatz nichts mehr', vorlaufStufen(0) === 0);
-check('danach nichts mehr', vorlaufStufen(-1) === 0);
-check('ohne Wert nichts', vorlaufStufen(null) === 0);
-check('Stufen nehmen gleichmaessig ab',
-      vorlaufStufen(VORLAUF_SEK / 2) === VORLAUF_STUFEN / 2,
-      String(vorlaufStufen(VORLAUF_SEK / 2)));
+console.log('Zeilenanzeiger');
+{
+  // Nachgerechnet gegen SingDrawLyricHelper in src/base/UDraw.pas.
+  // Zeile beginnt bei Schlag 0, erste Note bei 20 - also 20 Schlaege Vorlauf.
+  const zeile = { startBeat: 0, notes: [{ start: 20, length: 4 }] };
+
+  check('am Zeilenanfang ganz links',
+        lyricHelper(zeile, 0).fortschritt === 0);
+  check('auf halbem Weg die Haelfte',
+        Math.abs(lyricHelper(zeile, 10).fortschritt - 0.5) < 1e-9,
+        String(lyricHelper(zeile, 10).fortschritt));
+  check('kurz vor der Note fast angekommen',
+        lyricHelper(zeile, 19).fortschritt > 0.9);
+  // Ist die Note da, hat der Anzeiger seine Aufgabe erfuellt.
+  check('bei der Note verschwindet er', lyricHelper(zeile, 20) === null);
+  check('danach ebenfalls', lyricHelper(zeile, 30) === null);
+
+  // Unter dem Mindestvorlauf erscheint er gar nicht - bei kurzen Pausen
+  // zwischen zwei Zeilen waere er nur ein Zucken.
+  const kurz = { startBeat: 0, notes: [{ start: HELFER_MIN_VORLAUF, length: 4 }] };
+  check('bei zu kurzem Vorlauf gar nicht', lyricHelper(kurz, 0) === null);
+  const knapp = { startBeat: 0,
+                  notes: [{ start: HELFER_MIN_VORLAUF + 1, length: 4 }] };
+  check('einen Schlag darueber schon', lyricHelper(knapp, 0) !== null);
+
+  // Bei sehr langer Wartezeit bleibt er links stehen, statt sich unmerklich
+  // langsam zu bewegen: Beide Werte werden auf die Grenze gekuerzt.
+  const lang = { startBeat: 0, notes: [{ start: 400, length: 4 }] };
+  check('bei langer Wartezeit steht er links',
+        lyricHelper(lang, 0).fortschritt === 0);
+  check('und setzt sich erst ab der Grenze in Bewegung',
+        lyricHelper(lang, 400 - HELFER_GRENZE).fortschritt === 0);
+  check('kurz danach bewegt er sich',
+        lyricHelper(lang, 400 - HELFER_GRENZE + 10).fortschritt > 0);
+  check('und kommt auch dann an',
+        lyricHelper(lang, 399).fortschritt > 0.9);
+
+  // Das Pulsieren haengt am Takt, nicht am Weg - deshalb rechnet es im Spiel
+  // mit dem ungekuerzten Rest.
+  const a1 = lyricHelper(zeile, 20 - Math.PI * 2).alpha;   // cos = 1
+  const a2 = lyricHelper(zeile, 20 - Math.PI * 2 * 0.5).alpha;
+  check('Helligkeit bleibt zwischen 0,5 und 1',
+        a1 <= 1.0001 && a1 >= 0.4999 && a2 <= 1.0001 && a2 >= 0.4999,
+        a1 + '/' + a2);
+  check('und schwankt tatsaechlich', Math.abs(a1 - a2) > 0.01,
+        String(Math.abs(a1 - a2)));
+
+  check('ohne Zeile kein Anzeiger', lyricHelper(null, 0) === null);
+  check('ohne Noten kein Anzeiger',
+        lyricHelper({ startBeat: 0, notes: [] }, 0) === null);
+}
 
 console.log('Video und Hintergrund');
 const v = parseSong(`#TITLE:Mit Bild
