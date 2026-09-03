@@ -159,6 +159,18 @@ Punktzahl sich nicht widersprechen. Sie ist strenger als in USDX: Dort gibt
 es ein Toleranzband (`Range = 2 - Schwierigkeit`), hier muss der Halbton
 stimmen.
 
+### Das Textband
+
+Unten liegt ein abgedunkelter Streifen, nach oben auslaufend, damit keine
+harte Kante quer durchs Bild geht. Darin stehen der Zeilenanzeiger und
+**zwei Zeilen**: die aktuelle und, gedämpft darunter, die nächste — wie im
+Spiel, wo man ebenfalls sieht, was als Nächstes kommt.
+
+Abgedunkelt wird immer, nicht nur über Video: Auch die Notenfläche ist
+unruhig genug, dass Text darauf schlecht zu lesen ist. Passt eine Zeile nicht
+in die Breite, wird sie gestaucht statt abgeschnitten — eine halbe Silbe am
+Rand hilft niemandem.
+
 ### Wann die Zeile losgeht
 
 Vor dem Einsatz fährt ein Balken von links auf den Anfang des Liedtextes zu
@@ -180,6 +192,13 @@ Zwei Feinheiten, die man beim Nachbauen verliert: Bei kurzen Pausen zwischen
 zwei Zeilen erscheint er **gar nicht** — er wäre nur ein Zucken und störte
 mehr, als er hilft. Und das Pulsieren rechnet mit dem *ungekürzten* Rest, weil
 es am Takt hängt und nicht am Weg des Balkens.
+
+Der Anzeiger bekommt eine **eigene Reihe** über dem Text, statt neben ihm zu
+fahren. Im Spiel fährt er bis kurz vor den Textanfang; bei mittig gesetztem,
+breitem Text bleibt links davon aber kein Platz, und dann landet er außerhalb
+des Bildes — genau daran war er zunächst nicht zu sehen. Ziel bleibt der
+Textanfang, nur nie näher als ein Mindestweg. `helferBahn` rechnet das, und
+Tests prüfen es für Textbreiten bis über die Bildbreite hinaus.
 
 Die Größe ist angepasst: Im Spiel sind es feste 50 × 30 in einem
 800 × 600-Raster, was hier nichts hieße.

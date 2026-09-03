@@ -1,11 +1,12 @@
 // Prueft den Kern der Weboberflaeche ohne Browser: Parser, Tonhoehe, Wertung.
 // Zeichnen und Mikrofon bleiben aussen vor - dafuer braucht es einen Browser.
 
-import { parseSong, noteProgress, secondsUntilLine, lineAt,
+import { parseSong, noteProgress, secondsUntilLine, lineAt, nextLineAt,
          NOTE_FREESTYLE, NOTE_GOLDEN } from '../js/song.js';
 import { detectFrequency, freqToMidi, sameTone, toneDistance, rms } from '../js/pitch.js';
 import { Scorer, MAX_SCORE, inOktave } from '../js/score.js';
-import { lyricHelper, HELFER_MIN_VORLAUF, HELFER_GRENZE } from '../js/render.js';
+import { lyricHelper, helferBahn,
+         HELFER_MIN_VORLAUF, HELFER_GRENZE } from '../js/render.js';
 
 let bestanden = 0, fehlgeschlagen = 0;
 
@@ -162,6 +163,12 @@ E`);
         'blieb auf der ersten stehen');
   check('waehrend der zweiten die zweite', lineAt(z.tracks[0], 25) === b);
   check('nach der letzten bleibt die letzte', lineAt(z.tracks[0], 999) === b);
+  // Zwei Zeilen werden angezeigt: die aktuelle und die naechste.
+  check('naechste Zeile waehrend der ersten', nextLineAt(z.tracks[0], 2) === b);
+  check('nach dem Weiterschalten gibt es keine mehr',
+        nextLineAt(z.tracks[0], 25) === null);
+  check('ohne Spur keine naechste Zeile', nextLineAt(null, 0) === null);
+
   check('ohne Zeilen kein Absturz', lineAt({ lines: [] }, 0) === null);
   check('ohne Spur kein Absturz', lineAt(null, 0) === null);
 
@@ -291,6 +298,25 @@ console.log('Zeilenanzeiger');
         a1 + '/' + a2);
   check('und schwankt tatsaechlich', Math.abs(a1 - a2) > 0.01,
         String(Math.abs(a1 - a2)));
+
+  // Der Fehler, der ihn unsichtbar machte: Bei breiter, mittig gesetzter
+  // Zeile bleibt links vom Text kein Platz - ohne Mindestweg fuhr der Balken
+  // aus dem Bild heraus.
+  const breit = 1280;
+  for (const textbreite of [200, 600, 1000, 1240, 1400]) {
+    const textLinks = (breit - textbreite) / 2;
+    const { start, ziel, breite } = helferBahn(textLinks, breit);
+    check('Anzeiger bleibt im Bild bei Textbreite ' + textbreite,
+          start >= 0 && ziel > start && ziel + breite <= breit,
+          `start=${Math.round(start)} ziel=${Math.round(ziel)}`);
+  }
+  {
+    // Bei viel Platz zeigt er weiterhin auf den Textanfang und faehrt nicht
+    // nur den Mindestweg.
+    const { ziel, breite } = helferBahn(540, 1280);
+    check('bei Platz endet er kurz vor dem Text',
+          Math.abs(ziel - (540 - breite - 8)) < 0.001, String(ziel));
+  }
 
   check('ohne Zeile kein Anzeiger', lyricHelper(null, 0) === null);
   check('ohne Noten kein Anzeiger',

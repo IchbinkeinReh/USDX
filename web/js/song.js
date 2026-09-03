@@ -129,9 +129,9 @@ export function noteProgress(note, beat) {
 // ausgesungen, wird auf die naechste umgeschaltet, auch wenn deren Einsatz
 // noch bevorsteht. Sonst bliebe der ausgesungene Text stehen und der
 // Vorlauf zaehlte auf einen Einsatz herunter, der laengst vorbei ist.
-export function lineAt(track, beat) {
+export function lineIndexAt(track, beat) {
   const lines = track && track.lines ? track.lines : [];
-  if (lines.length === 0) return null;
+  if (lines.length === 0) return -1;
 
   let index = 0;
   for (let i = 0; i < lines.length; i++) {
@@ -141,9 +141,22 @@ export function lineAt(track, beat) {
 
   const letzte = lines[index].notes[lines[index].notes.length - 1];
   if (letzte && beat >= letzte.start + letzte.length && index + 1 < lines.length)
-    return lines[index + 1];
+    return index + 1;
 
-  return lines[index];
+  return index;
+}
+
+export function lineAt(track, beat) {
+  const i = lineIndexAt(track, beat);
+  return i < 0 ? null : track.lines[i];
+}
+
+// Die Zeile danach - im Spiel steht sie unter der aktuellen, damit man
+// weiss, was als naechstes kommt. null am Ende des Liedes.
+export function nextLineAt(track, beat) {
+  const i = lineIndexAt(track, beat);
+  if (i < 0) return null;
+  return track.lines[i + 1] || null;
 }
 
 // Sekunden, bis die erste Note dieser Zeile faellig ist.

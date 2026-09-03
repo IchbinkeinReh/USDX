@@ -33,6 +33,22 @@ const BALKEN_RUND = 6;
 export const HELFER_MIN_VORLAUF = 8;
 export const HELFER_GRENZE = 40;
 
+// Hoehe der Indikatorreihe in Bildpunkten.
+export const HELFER_HOEHE = 9;
+
+// Wo der Anzeiger faehrt: von links bis kurz vor den Textanfang.
+//
+// Der Mindestweg ist der Grund, warum das eine eigene Funktion ist: Ohne ihn
+// landete der Balken bei breiten, mittig gesetzten Zeilen links AUSSERHALB
+// des Bildes - er war schlicht nicht zu sehen. Ziel bleibt der Textanfang,
+// nur eben nie naeher als dieser Weg.
+export function helferBahn(textLinks, w) {
+  const breite = Math.max(28, Math.min(56, w * 0.045));
+  const start = 14;
+  const ziel = Math.max(start + w * 0.18, textLinks - breite - 8);
+  return { start, ziel, breite };
+}
+
 // Wo steht der Anzeiger gerade? null, wenn er nicht zu sehen ist.
 // fortschritt 0 = ganz links, 1 = am Zeilenanfang angekommen.
 export function lyricHelper(line, beat) {
@@ -67,6 +83,7 @@ export function lyricHelper(line, beat) {
 const TEXT_GESUNGEN = '#8b93a4';   // liegt hinter uns
 const TEXT_AKTIV    = '#ffd978';   // gerade zu hoeren
 const TEXT_KOMMT    = '#e8e8ea';   // steht noch bevor
+const TEXT_VORSCHAU = '#7d8596';   // die naechste Zeile, noch nicht dran
 
 // Je Bahn eine Farbe, damit im Duett klar ist, wer wo singt.
 const FARBEN = [
@@ -124,6 +141,14 @@ export class Renderer {
     ctx.save();
     ctx.translate(ox, oy);
 
+    // Unten ein eigenes Band fuer Anzeiger und zwei Textzeilen. Die Noten
+    // bekommen nur den Platz darueber - sonst ueberdeckten sich beide.
+    const schrift = Math.max(14, Math.min(24, h * 0.075));
+    const zeilenH = schrift * 1.45;
+    const bandH = HELFER_HOEHE + 10 + zeilenH * 2;
+    const bandY = h - bandH;
+    const notenH = bandY;
+
     if (mitNamen && bahn.name) {
       ctx.font = '600 15px system-ui, sans-serif';
       ctx.textBaseline = 'top';
@@ -162,18 +187,22 @@ export class Renderer {
 
     // Notenhoehe aus dem Platz ableiten, nicht fest setzen: In der halben
     // Bahn eines Duetts waere ein fester Wert entweder winzig oder zu gross.
-    const nutzbar = h * 0.55;
+    const nutzbar = notenH * 0.62;
     const tonHoehe = Math.max(5, Math.min(14, nutzbar / umfang));
 
     const x = (b) => ((b - von) / spanne) * (w - 40) + 20;
-    const y = (p) => h * 0.45 - (p - mitte) * tonHoehe;
+    // Mitte des Notenbereichs, nicht der ganzen Bahn - der untere Teil
+    // gehoert dem Textband.
+    const y = (p) => notenH * 0.55 - (p - mitte) * tonHoehe;
 
     ctx.strokeStyle = this.hintergrund ? 'rgba(255,255,255,0.10)' : '#1e2230';
     ctx.lineWidth = 1;
     for (let p = -6; p <= 6; p += 2) {
+      const ly = y(mitte + p);
+      if (ly < 0 || ly > notenH) continue;
       ctx.beginPath();
-      ctx.moveTo(0, y(mitte + p));
-      ctx.lineTo(w, y(mitte + p));
+      ctx.moveTo(0, ly);
+      ctx.lineTo(w, ly);
       ctx.stroke();
     }
 
@@ -222,11 +251,37 @@ export class Renderer {
       }
     }
 
-    // Der Anzeiger faehrt auf den Textanfang zu - deshalb erst den Text
-    // zeichnen und dessen linken Rand als Ziel nehmen.
-    const textLinks = this.text(line, beat, w, h);
-    this.helfer(line, beat, textLinks, w, h);
+    this.textBand(bahn, beat, w, bandY, bandH, schrift, zeilenH);
     ctx.restore();
+  }
+
+  // Das Textband: abgedunkelter Streifen, darin der Anzeiger und zwei
+  // Zeilen - die aktuelle und die naechste.
+  //
+  // Abgedunkelt wird immer, nicht nur ueber Video: Auch die Notenflaeche
+  // darunter ist unruhig genug, dass Text darauf schlecht zu lesen ist.
+  textBand(bahn, beat, w, bandY, bandH, schrift, zeilenH) {
+    const ctx = this.ctx;
+
+    // Nach oben auslaufend, damit es keine harte Kante quer durchs Bild gibt.
+    const verlauf = ctx.createLinearGradient(0, bandY - schrift, 0, bandY + 8);
+    verlauf.addColorStop(0, 'rgba(8, 10, 15, 0)');
+    verlauf.addColorStop(1, 'rgba(8, 10, 15, 0.72)');
+    ctx.fillStyle = verlauf;
+    ctx.fillRect(0, bandY - schrift, w, schrift + 8);
+    ctx.fillStyle = 'rgba(8, 10, 15, 0.72)';
+    ctx.fillRect(0, bandY + 8, w, bandH - 8);
+
+    if (!bahn.line) return;
+
+    const y0 = bandY + HELFER_HOEHE + 10;
+    const textLinks = this.text(bahn.line, beat, w, y0 + zeilenH * 0.75,
+                                schrift, true);
+    if (bahn.nextLine)
+      this.text(bahn.nextLine, -Infinity, w, y0 + zeilenH * 1.75,
+                schrift * 0.85, false);
+
+    this.helfer(bahn.line, beat, textLinks, bandY + 4, w);
   }
 
   balken(x, y, w, h, r) {
@@ -236,42 +291,52 @@ export class Renderer {
     ctx.fill();
   }
 
-  // Der Liedtext.
+  // Eine Zeile Liedtext. Gibt den linken Rand zurueck - dorthin faehrt der
+  // Anzeiger.
   //
   // Die gerade zu hoerende Silbe wird nicht nur hervorgehoben, sondern
   // WAEHREND des Singens von links nach rechts eingefaerbt - derselbe Effekt
   // wie lfxSlide in ULyrics.pas: Die Silbe wird bei ihrem Fortschritt geteilt,
   // links "schon gesungen", rechts "kommt noch". Ohne das springt die Farbe
   // silbenweise und man sieht nicht, wo im Wort man gerade ist.
-  text(line, beat, w, h) {
+  //
+  // aktiv=false zeichnet die Vorschauzeile: gedaempft, ohne Einfaerbung.
+  text(line, beat, w, cy, groesse, aktiv) {
     const ctx = this.ctx;
-    const groesse = Math.max(15, Math.min(26, h * 0.09));
     ctx.font = `600 ${groesse}px system-ui, sans-serif`;
     ctx.textBaseline = 'alphabetic';
 
     const breiten = line.notes.map((n) => ctx.measureText(n.text).width);
     const gesamt = breiten.reduce((a, b) => a + b, 0);
-    const links = (w - gesamt) / 2;
+    // Passt die Zeile nicht, wird sie gestaucht statt abgeschnitten - eine
+    // halbe Silbe am Rand hilft niemandem.
+    const skal = gesamt > w - 24 ? (w - 24) / gesamt : 1;
+    const links = (w - gesamt * skal) / 2;
     let cx = links;
-    const cy = h - groesse * 0.6;
 
-    // Auf bewegtem Bild wandert staendig Helligkeit unter den Text. Ein
-    // Rand macht ihn unabhaengig davon lesbar; ohne ihn verschwinden einzelne
-    // Silben genau dann, wenn man sie braucht.
-    const mitRand = this.hintergrund;
-    if (mitRand) {
-      ctx.lineWidth = Math.max(3, groesse * 0.16);
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
-      ctx.lineJoin = 'round';
+    ctx.save();
+    if (skal < 1) {
+      ctx.translate(links, 0);
+      ctx.scale(skal, 1);
+      cx = 0;
+    }
+
+    if (!aktiv) {
+      // Vorschau: eine Farbe, kein Fortschritt. Sie ist noch nicht dran.
+      ctx.fillStyle = TEXT_VORSCHAU;
+      line.notes.forEach((note, i) => {
+        ctx.fillText(note.text, cx, cy);
+        cx += breiten[i];
+      });
+      ctx.restore();
+      return links;
     }
 
     line.notes.forEach((note, i) => {
       const breite = breiten[i];
-      const aktiv = beat >= note.start && beat < note.start + note.length;
+      const gerade = beat >= note.start && beat < note.start + note.length;
 
-      if (mitRand) ctx.strokeText(note.text, cx, cy);
-
-      if (aktiv) {
+      if (gerade) {
         // Erst ganz in der Farbe "kommt noch", dann den bereits gesungenen
         // Teil beschnitten darueber. Zwei Zeichnungen, ein Beschnitt.
         ctx.fillStyle = TEXT_KOMMT;
@@ -295,28 +360,26 @@ export class Renderer {
       cx += breite;
     });
 
+    ctx.restore();
     return links;
   }
 
   // Zeichnet den Zeilenanzeiger.
   //
-  // textLinks ist der linke Rand des Liedtextes - dorthin faehrt er. Die
-  // Groesse ist an die Bahn angepasst; im Spiel sind es feste 50x30 in einem
-  // 800x600-Raster, was hier nichts hiesse.
-  helfer(line, beat, textLinks, w, h) {
+  // Er bekommt eine EIGENE Reihe ueber dem Text, statt neben ihm zu fahren.
+  // Im Spiel faehrt er bis kurz vor den Textanfang - bei mittig gesetztem,
+  // breitem Text bleibt links davon aber kein Platz, und dann landete er
+  // ausserhalb des Bildes. Genau deshalb war er nicht zu sehen.
+  //
+  // Ziel bleibt der Textanfang, nur eben mit einem Mindestweg: So zeigt er
+  // weiter auf die Stelle, an der es losgeht, und ist trotzdem immer sichtbar.
+  helfer(line, beat, textLinks, y, w) {
     const stand = lyricHelper(line, beat);
     if (!stand) return;
 
     const ctx = this.ctx;
-    const breite = Math.max(24, Math.min(50, w * 0.04));
-    const hoehe = Math.max(6, h * 0.026);
-    const y = h - Math.max(15, Math.min(26, h * 0.09)) * 1.9;
-
-    // Von links bis kurz vor den Text. Ist die Zeile so lang, dass davor
-    // kein Platz bleibt, faengt er entsprechend weiter links an - im Spiel
-    // steht dafuer dieselbe Fallunterscheidung.
-    const ziel = textLinks - breite - 6;
-    const start = Math.min(8, ziel);
+    const { start, ziel, breite } = helferBahn(textLinks, w);
+    const hoehe = Math.max(5, HELFER_HOEHE);
     const x = start + stand.fortschritt * (ziel - start);
 
     ctx.save();

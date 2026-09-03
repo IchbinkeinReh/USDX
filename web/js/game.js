@@ -11,7 +11,7 @@
 // Aufbau laesst das deshalb gar nicht erst zu, statt hinterher Punkte zu
 // verteilen, die niemand nachvollziehen kann.
 
-import { parseSong, lineAt } from './song.js';
+import { parseSong, lineAt, nextLineAt } from './song.js';
 import { detectFrequency, freqToMidi } from './pitch.js';
 import { Scorer } from './score.js';
 import { Renderer } from './render.js';
@@ -247,8 +247,11 @@ export class Game {
       for (const [note, z] of s.scorer.state)
         anteile.set(note, z.tries > 0 ? z.hits / z.tries : 0);
 
+      const spur = this.song.track(s.trackIndex);
       return {
-        line: this.zeileBei(s.trackIndex, beat),
+        line: lineAt(spur, beat),
+        // Die naechste Zeile wird mit angezeigt, damit man weiss, was kommt.
+        nextLine: nextLineAt(spur, beat),
         bars: s.scorer.bars,
         anteile,
         name: s.scorer.name,
