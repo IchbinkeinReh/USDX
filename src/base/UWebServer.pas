@@ -74,6 +74,16 @@ type
 const
   WEB_DEFAULT_PORT = 8080;
 
+  // Groesste Menge, die eine einzelne Antwort in den Speicher legt.
+  //
+  // Ein Lied bringt schnell ein paar hundert MB Video mit. Wuerde davon
+  // jede Anfrage alles auf einmal einlesen, koennte eine Handvoll
+  // gleichzeitiger Zugriffe den Rechner leerraeumen - und bei einer von
+  // aussen erreichbaren Oberflaeche waere das ein Hebel, an dem jeder
+  // ziehen kann. Wird mehr angefordert, antwortet der Server mit weniger;
+  // das ist erlaubt (RFC 7233) und die uebliche Arbeitsweise beim Streamen.
+  WEB_MAX_STUECK = 8 * 1024 * 1024;
+
 var
   // Wohin der Server meldet. Bewusst ein Haken statt eines "uses ULog":
   // ULog zieht ueber UMain und UMusic ganz SDL herein, und dann liesse sich
@@ -173,6 +183,16 @@ begin
     // Ende ist erlaubt und meint schlicht "bis zum Schluss".
     if (Von < 0) or (Von > Gesamt - 1) then Von := 0;
     if (Bis > Gesamt - 1) or (Bis < Von) then Bis := Gesamt - 1;
+
+    // Zu grosse Stuecke kuerzen, siehe WEB_MAX_STUECK. Der Browser holt
+    // sich den Rest mit der naechsten Anfrage.
+    if (Bis - Von + 1 > WEB_MAX_STUECK) then
+    begin
+      Bis := Von + WEB_MAX_STUECK - 1;
+      // Ab jetzt ist es ein Teilstueck, auch wenn niemand danach gefragt
+      // hat - sonst behauptete die Antwort, die ganze Datei zu enthalten.
+      Gefragt := True;
+    end;
 
     // Ueber einen Stream, nicht ueber AResponse.Content: Content wird intern
     // als Zeilenliste gefuehrt und haengt beim Senden Zeilenenden an. Bei

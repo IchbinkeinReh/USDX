@@ -17,7 +17,8 @@ var
   Bestanden, Fehlgeschlagen: integer;
   B: TWebBridge;
   S: TWebServerThread;
-  Ordner, Lied, Ton, Roh: string;
+  Ordner, Lied, Ton, Roh, Gross: string;
+  I: integer;
   RohStrom: TFileStream;
   RohBytes: RawByteString;
   L: TWebSongArray;
@@ -132,11 +133,23 @@ begin
   RohStrom.Free;
 
   B := TWebBridge.Create;
-  SetLength(L, 2);
+  // Eine Datei ueber der Stueckelungsgrenze.
+  Gross := Ordner + 'gross.mp3';
+  RohStrom := TFileStream.Create(Gross, fmCreate);
+  SetLength(RohBytes, 64 * 1024);
+  FillChar(RohBytes[1], Length(RohBytes), Ord('x'));
+  for I := 1 to (WEB_MAX_STUECK div Length(RohBytes)) + 2 do
+    RohStrom.WriteBuffer(RohBytes[1], Length(RohBytes));
+  RohStrom.Free;
+  RohBytes := 'A'#0'B'#13'C'#10'D'#26'E';
+
+  SetLength(L, 3);
   L[0].Index := 0; L[0].Artist := 'A'; L[0].Title := 'T';
   L[0].TxtPath := Lied; L[0].AudioPath := Ton;
   L[1].Index := 1; L[1].Artist := 'B'; L[1].Title := 'R';
   L[1].TxtPath := Lied; L[1].AudioPath := Roh;
+  L[2].Index := 2; L[2].Artist := 'C'; L[2].Title := 'G';
+  L[2].TxtPath := Lied; L[2].AudioPath := Gross;
   B.PublishSongs(L);
 
   S := TWebServerThread.Create(B, 8099, Ordner);
@@ -181,6 +194,21 @@ begin
   Check('bytes=0- liefert 206, nicht 200',
         (Status = 206) and (Body = '0123456789'), IntToStr(Status));
 
+  WriteLn('Grosse Dateien');
+  // Eine Datei ueber der Grenze darf nicht am Stueck in den Speicher gehen.
+  // Geprueft wird ueber die Antwort: Sie muss gekuerzt sein und das auch
+  // sagen, statt die ganze Datei zu behaupten.
+  Status := Hole('/api/song/2/audio', Body);
+  Check('zu grosse Datei wird gestueckelt', Status = 206, IntToStr(Status));
+  Check('und zwar auf die Obergrenze',
+        Length(Body) = WEB_MAX_STUECK,
+        IntToStr(Length(Body)) + ' statt ' + IntToStr(WEB_MAX_STUECK));
+
+  Status := Hole('/api/song/2/audio', Body, 'bytes=0-');
+  Check('auch bei offenem Ende gekuerzt',
+        (Status = 206) and (Length(Body) = WEB_MAX_STUECK),
+        IntToStr(Length(Body)));
+
   WriteLn('Abweisen');
   Status := Hole('/api/song/9/txt', Body);
   Check('unbekanntes Lied: 404', Status = 404, IntToStr(Status));
@@ -201,7 +229,7 @@ begin
   S.Free;
   B.Free;
 
-  DeleteFile(Lied); DeleteFile(Ton); DeleteFile(Roh);
+  DeleteFile(Lied); DeleteFile(Ton); DeleteFile(Roh); DeleteFile(Gross);
   DeleteFile(Ordner + 'index.html');
   DeleteFile(Ordner + 'js' + PathDelim + 'song.js');
   RemoveDir(Ordner + 'js'); RemoveDir(Ordner);

@@ -352,6 +352,15 @@ vergleicht Byte für Byte.
 `Range` wird unterstützt. Ohne das zeigt der Browser bei längeren Aufnahmen
 keine Dauer an und kann nicht springen.
 
+Eine Antwort legt höchstens **8 MB** auf einmal in den Speicher
+(`WEB_MAX_STUECK`). Ein Lied bringt schnell ein paar hundert MB Video mit;
+würde davon jede Anfrage alles auf einmal einlesen, könnte eine Handvoll
+gleichzeitiger Zugriffe den Rechner leerräumen — bei einer von außen
+erreichbaren Oberfläche ein Hebel, an dem jeder ziehen kann. Wird mehr
+angefordert, antwortet der Server mit weniger und sagt das über
+`Content-Range`; das ist erlaubt (RFC 7233) und die übliche Arbeitsweise beim
+Streamen. Der Browser holt sich den Rest mit der nächsten Anfrage.
+
 ## API
 
 | Weg | Zweck |
