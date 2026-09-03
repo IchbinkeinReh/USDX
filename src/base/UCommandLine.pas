@@ -63,6 +63,11 @@ type
       CheckSongs: boolean;
       // --web: Weboberflaeche mitstarten, siehe UWebServer.
       Web:        boolean;
+      // --web-only: nur die Weboberflaeche, ohne Spiel, ohne Fenster.
+      // Fuer Rechner ohne Bildschirm, siehe UWebHeadless.
+      WebOnly:    boolean;
+      // --webport: Port der Weboberflaeche. 0 heisst "Voreinstellung".
+      WebPort:    word;
       ScreenMode: TScreenMode;
       Joypad:     boolean;
       Split:      TSplitMode;
@@ -148,6 +153,8 @@ begin
   Debug       := false;
   Benchmark   := False;
   Web         := False;
+  WebOnly     := False;
+  WebPort     := 0;
   NoLog       := false;
   CheckSongs  := false;
   ScreenMode  := scmDefault;
@@ -185,8 +192,14 @@ begin
     // check if the string is a parameter
     if (Length(Command) > 1) and (Command[1] = '-') then
     begin
-      // remove '-' from command
-      Command := LowerCase(Trim(Copy(Command, 2, Length(Command) - 1)));
+      // Fuehrende Bindestriche entfernen - ALLE, nicht nur einen.
+      // Vorher wurde genau einer abgeschnitten, womit "--web" als "-web"
+      // stehenblieb und auf keinen Schalter passte. Die uebliche Schreibweise
+      // mit zwei Strichen war damit wirkungslos, ohne dass es auffiel.
+      Command := Trim(Command);
+      while (Length(Command) > 0) and (Command[1] = '-') do
+        Delete(Command, 1, 1);
+      Command := LowerCase(Command);
       //Log.LogError('Command prepared: ' + Command);
 
       // check command
@@ -202,6 +215,13 @@ begin
         NoLog       := True
       else if (Command = 'web') then
         Web         := True
+      else if (Command = 'webonly') or (Command = 'web-only') then
+      begin
+        // Ohne Spiel gibt es nichts, wozu die Weboberflaeche "mitlaufen"
+        // koennte - web-only schliesst web mit ein.
+        WebOnly     := True;
+        Web         := True;
+      end
       else if (Command = 'fullscreen') then
         ScreenMode  := scmFullscreen
       else if (Command = 'window') then
@@ -246,6 +266,14 @@ begin
       end
 
       // pseudo integer values
+      else if (Command = 'webport') then
+      begin
+        if (PCount > I) then
+          // Ausserhalb des gueltigen Bereichs bleibt es bei der
+          // Voreinstellung, statt auf Port 0 zu lauschen.
+          WebPort := StrToIntDef(ParamStr(I + 1), 0);
+      end
+
       else if (Command = 'language') then
       begin
         // check if there is another parameter to get the value from

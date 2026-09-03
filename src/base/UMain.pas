@@ -363,8 +363,10 @@ begin
       // Ordner, liefert der Server die eingebaute Fernbedienungsseite aus -
       // das Spiel startet also auch ohne die Weboberflaeche.
       WebLogHandler := WebLog;
-      WebServer := TWebServerThread.Create(WebBridge, WEB_DEFAULT_PORT,
-                                           FindeWebOrdner());
+      // --webport schlaegt die Voreinstellung; 0 heisst "nicht angegeben".
+      WebServer := TWebServerThread.Create(WebBridge,
+        IfThen(Params.WebPort > 0, Params.WebPort, WEB_DEFAULT_PORT),
+        FindeWebOrdner());
     end;
 
     Log.LogStatus('Main Loop', 'Initialization');

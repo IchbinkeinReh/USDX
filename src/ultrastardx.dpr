@@ -201,6 +201,9 @@ uses
   UWebPage          in 'base\UWebPage.pas',
   UWebApi           in 'base\UWebApi.pas',
   UWebServer        in 'base\UWebServer.pas',
+  USongHeader       in 'base\USongHeader.pas',
+  USongScan         in 'base\USongScan.pas',
+  UWebHeadless      in 'base\UWebHeadless.pas',
   UScreenSongSearchLoad in 'screens\UScreenSongSearchLoad.pas',
   USongs            in 'base\USongs.pas',
   UIni              in 'base\UIni.pas',
@@ -385,6 +388,28 @@ begin
   //FreeConsole(); //hacky workaround to get a working GUI-only experience on windows 10 when using fpc 3.0.0 on windows
   {$ENDIF}
   {$ENDIF}
+
+  // --web-only: nur die Weboberflaeche, ohne Spiel.
+  //
+  // Diese Abzweigung muss VOR Main liegen. Main baut Fenster, OpenGL-Kontext
+  // und Tonausgabe auf - auf einem Rechner ohne Bildschirm scheitert das,
+  // und zwar bevor irgendetwas Nuetzliches passiert waere. Alles, was hier
+  // aufgerufen wird, kommt ohne SDL aus.
+  Params := TCMDParams.Create;
+  try
+    if Params.WebOnly then
+    begin
+      if (Params.WebPort > 0) then
+        ExitCode := RunHeadlessWeb(Params.WebPort)
+      else
+        ExitCode := RunHeadlessWeb(WEB_DEFAULT_PORT);
+      Halt(ExitCode);
+    end;
+  finally
+    Params.Free;
+    Params := nil;
+  end;
+
   Main;
   except
     on E : Exception do

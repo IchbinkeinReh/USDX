@@ -16,6 +16,53 @@ Es gibt sie in zwei Ausbaustufen:
   Dafür muss der Ordner `web/` neben der ausführbaren Datei liegen; fehlt er,
   liefert der Server stillschweigend nur die Fernbedienung aus.
 
+## Ohne Bildschirm: `--web-only`
+
+```
+ultrastardx --web-only --songpath ~/Lieder
+ultrastardx --web-only --webport 9000
+```
+
+Startet **nur** die Weboberfläche: kein Fenster, kein OpenGL, kein SDL.
+Gedacht für einen Rechner ohne Grafikausgabe — ein kleiner Server im
+Heimnetz, an dem gar kein Bildschirm hängt. Gesungen wird dann im Browser.
+
+Beendet wird mit Strg-C oder `SIGTERM`; der Server schließt dabei ordentlich,
+statt mitten in einer Antwort abzubrechen.
+
+Die Abzweigung liegt in `ultrastardx.dpr` **vor** `Main`. Das ist der ganze
+Trick: `Main` baut Fenster, OpenGL-Kontext und Tonausgabe auf und scheitert
+ohne Bildschirm, bevor irgendetwas Nützliches passiert wäre. Alles, was im
+kopflosen Zweig aufgerufen wird, kommt ohne SDL aus.
+
+### Woher die Lieder kommen
+
+In dieser Reihenfolge:
+
+1. `--songpath <Ordner>` (mehrfach möglich)
+2. `[Directories] SongDir*` aus der `config.ini` des Spiels
+3. `songs/` neben der ausführbaren Datei bzw. in `~/.ultrastardx/`
+
+Punkt 2 ist der Grund, warum überhaupt eine Ini gelesen wird: So sieht der
+kopflose Server **dieselbe** Sammlung wie das Spiel auf demselben Rechner,
+ohne dass man die Ordner doppelt pflegen muss. Findet sich gar nichts, sagt
+das Programm das und beendet sich mit Code 1, statt eine leere Liste
+auszuliefern.
+
+### Warum ein zweiter Leser für die Kopfdaten
+
+`TSongs` ist hier nicht zu gebrauchen: Es hängt über `USong` an `URenderer`
+und `UMusic`, also an der Grafik- und Tonkette — schon das Übersetzen
+scheitert an `sdl2_image`. `USongHeader` liest deshalb selbst, was in einer
+Liederliste sichtbar ist: Titel, Interpret, Genre, Sprache, Edition, Jahr,
+Tondatei, Duett-Kennzeichen. **Nichts davon betrifft Noten** — die liest der
+Browser aus derselben `.txt`, es gibt also keinen zweiten Notenparser.
+
+Die eine Regel, die dabei übereinstimmen muss: Ob ein Lied ein Duett ist,
+entscheidet die **erste** Zeile des Notenteils. Eine Kopfzeile dazu gibt es
+nicht. `testsongscan` hält das fest, samt Gegenprobe mit einem `P` weiter
+unten.
+
 ## Fernbedienung
 
 - Die Sammlung durchsuchen — mit derselben Syntax wie im Spiel:
@@ -125,6 +172,9 @@ es wirken könnte. Tests in `testwebapi` und `testwebserver` halten das fest.
 | `UWebApi` | Wegewahl, JSON, Zuordnung Index → Datei |
 | `UWebPage` | die Fernbedienung als eingebettete Zeichenkette |
 | `UWebServer` | HTTP-Thread, Ausliefern der Dateien |
+| `USongHeader` | Kopfdaten einer `.txt` lesen, ohne SDL |
+| `USongScan` | Liederordner finden und durchsuchen, ohne SDL |
+| `UWebHeadless` | der Betrieb ohne Spiel: `--web-only` |
 
 | Datei in `web/` | Aufgabe |
 | --- | --- |
@@ -175,7 +225,16 @@ keine Dauer an und kann nicht springen.
 
 ## Tests
 
-`tests/run.sh` baut das Spiel, führt die Pascal-Tests aus und startet danach
-`web/tests/run.mjs` unter node. `testwebserver` startet dabei einen echten
-Server auf Port 8099 und spricht ihn über einen rohen TCP-Anschluss an — mit
-einer HTTP-Bibliothek prüfte man am Ende die Bibliothek statt den Server.
+`tests/run.sh` baut das Spiel, führt die Pascal-Tests aus, startet dann
+`tests/headless.sh` und zuletzt `web/tests/run.mjs` unter node.
+
+`testwebserver` startet einen echten Server auf Port 8099 und spricht ihn
+über einen rohen TCP-Anschluss an — mit einer HTTP-Bibliothek prüfte man am
+Ende die Bibliothek statt den Server.
+
+`tests/headless.sh` startet die **gebaute Binärdatei** mit `--web-only` auf
+Port 8171 und ruft sie über HTTP ab. Das ist der einzige Test, der den ganzen
+Weg abdeckt: Befehlszeile, Abzweigung vor `Main`, Ordnersuche, Kopfdaten,
+Server, Dateien. Und er zeigt zugleich, was *nicht* passiert — liefe das
+Programm doch in die Grafikinitialisierung, käme es hier gar nicht bis zur
+ersten Antwort.

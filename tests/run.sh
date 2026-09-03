@@ -52,6 +52,11 @@ for QUELLE in tests/test*.pas; do
     "./$NAME" || FEHLER=1
 done
 
+# Das Ganze im Zusammenspiel: das gebaute Spiel kopflos starten und ueber
+# HTTP ansprechen. Deckt die Wege ab, die kein Einzeltest erreicht.
+echo "=== kopfloser Webbetrieb ==="
+sh tests/headless.sh || FEHLER=1
+
 # Der Spielkern der Weboberflaeche liegt in JavaScript und wird dort geprueft.
 echo "=== web (JavaScript) ==="
 if command -v node > /dev/null 2>&1; then
