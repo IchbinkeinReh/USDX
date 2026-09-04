@@ -606,6 +606,14 @@ Und davor, hier mit Apache:
 </VirtualHost>
 ```
 
+Der Dienst setzt an jede Antwort **`Connection: close`**. Er kann keine
+Wiederverwendung, und sagt er das nicht dazu, gilt bei HTTP/1.1 das
+Gegenteil: Der Vorschalt-Server legt die Verbindung in seinen Vorrat,
+schreibt beim nächsten Mal in einen längst geschlossenen Anschluss und meldet
+dem Browser einen Serverfehler. Genau das ist im Betrieb passiert —
+vereinzelte 500er beim Laden der Seite, im Apache-Protokoll
+`AH01102: error reading status line from remote server`.
+
 Zwei Dinge, die dabei leicht untergehen:
 
 - `--webhost 127.0.0.1` ist der eigentliche Schutz. Fehlt es, lauscht der

@@ -234,6 +234,19 @@ procedure TWebServerThread.HandleRequest(Sender: TObject;
 var
   ContentType, Body, Pfad: UTF8String;
 begin
+  // "Connection: close" gehoert an JEDE Antwort, und zwar zuerst, damit kein
+  // Weg hier unten sie vergisst.
+  //
+  // Der Server schliesst die Verbindung nach jeder Antwort - Wiederverwendung
+  // kann er nicht. Sagt er das nicht dazu, gilt bei HTTP/1.1 das Gegenteil:
+  // Die Verbindung waere wiederverwendbar. Ein Vorschalt-Server legt sie
+  // dann in seinen Vorrat, schreibt beim naechsten Mal in einen laengst
+  // geschlossenen Anschluss und meldet dem Browser einen Serverfehler.
+  //
+  // Genau das ist passiert: vereinzelte 500er beim Laden der Seite, im
+  // Protokoll "AH01102: error reading status line from remote server".
+  AResponse.Connection := 'close';
+
   try
     // Erst pruefen, ob eine Datei gefragt ist. Die Entscheidung faellt in
     // UWebApi, damit sie ohne laufenden Server pruefbar bleibt.

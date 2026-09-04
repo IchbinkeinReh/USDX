@@ -15,6 +15,9 @@ uses
 
 var
   Bestanden, Fehlgeschlagen: integer;
+  // Der Kopf der zuletzt geholten Antwort, damit sich Kopfzeilen pruefen
+  // lassen, ohne die Hole-Funktion umzubauen.
+  LetzterKopf: string;
   B: TWebBridge;
   S: TWebServerThread;
   Ordner, Lied, Ton, Roh, Gross: string;
@@ -86,6 +89,7 @@ begin
     Anschluss.Free;
   end;
 
+  Kopf := '';
   if (Copy(Antwort, 1, 5) <> 'HTTP/') then Exit;
   Result := StrToIntDef(Copy(Antwort, 10, 3), 0);
 
@@ -93,6 +97,7 @@ begin
   if (Leer > 0) then
   begin
     Kopf := Copy(Antwort, 1, Leer - 1);
+    LetzterKopf := Kopf;
     Body := Copy(Antwort, Leer + 4, Length(Antwort));
     // Der Kopf wird mitgeprueft, wo er zaehlt.
     if (Bereich <> '') and (Result = 206) and
@@ -193,6 +198,20 @@ begin
   Status := Hole('/api/song/0/audio', Body, 'bytes=0-');
   Check('bytes=0- liefert 206, nicht 200',
         (Status = 206) and (Body = '0123456789'), IntToStr(Status));
+
+  WriteLn('Verbindungen');
+  // Der Server schliesst nach jeder Antwort. Sagt er das nicht dazu, haelt
+  // ein Vorschalt-Server die Verbindung fuer wiederverwendbar, schreibt
+  // beim naechsten Mal in einen toten Anschluss und macht daraus einen
+  // Serverfehler. Das ist im Betrieb passiert.
+  Status := Hole('/api/status', Body);
+  Check('Antwort sagt, dass die Verbindung schliesst',
+        Pos('close', LowerCase(LetzterKopf)) > 0, LetzterKopf);
+  Hole('/gibtesnicht', Body);
+  Check('auch bei 404', Pos('close', LowerCase(LetzterKopf)) > 0, LetzterKopf);
+  Hole('/api/song/0/audio', Body);
+  Check('auch beim Ausliefern einer Datei',
+        Pos('close', LowerCase(LetzterKopf)) > 0, LetzterKopf);
 
   WriteLn('Grosse Dateien');
   // Eine Datei ueber der Grenze darf nicht am Stueck in den Speicher gehen.
