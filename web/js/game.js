@@ -303,7 +303,11 @@ export class Game {
         s.scorer.feed(zeit, s.sungMidi);
       }
       const spur = this.song.track(s.trackIndex);
+      // Die Bewertung der eben beendeten Zeile, samt ihrem Alter - die
+      // Anzeige entscheidet selbst, wie lange sie sie zeigt.
+      const lz = s.scorer.letzteZeile;
       return {
+        zeilenLob: lz ? { ...lz, alter: zeit - lz.zeit } : null,
         line: lineAt(spur, beat),
         // Die naechste Zeile wird mit angezeigt, damit man weiss, was kommt.
         nextLine: nextLineAt(spur, beat),

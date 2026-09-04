@@ -460,10 +460,47 @@ Stufen und Schwellen sind aus `ShowRating` in `src/screens/UScreenScore.pas`
 Die Grenzen sind krumm, weil sie es im Original sind; ein glattes Nachbauen
 hätte die Stufen verschoben. Tests prüfen jede Grenze von beiden Seiten.
 
-Aufgeschlüsselt wird nach gewöhnlichen und goldenen Noten. **Den Zeilenbonus
-gibt es nicht** — im Spiel sind dafür 1000 der 10000 Punkte reserviert
-(`MAX_SONG_LINE_BONUS`), hier kommen die vollen 10000 aus den Noten. Die
-Zahlen sind also mit sich selbst vergleichbar, nicht mit denen aus dem Spiel.
+Aufgeschlüsselt wird nach gewöhnlichen Noten, goldenen Noten und
+Zeilenbonus — dieselbe Dreiteilung wie im Spiel.
+
+### Zeilenbonus
+
+Von den 10000 Punkten sind **1000 für den Zeilenbonus** reserviert; aus den
+Noten kommen höchstens 9000 (`MAX_SONG_SCORE`, `MAX_SONG_LINE_BONUS` in
+`UNote.pas`). Gerechnet wird wie in `UScreenSingController.pas`:
+
+```
+MaxLineScore   = 9000 · (Zeilenwert / Gesamtwert)
+LineScore      = seit der letzten Zeile erreichte Punkte
+LinePerfection = LineScore / (MaxLineScore − 2),  begrenzt auf 0…1
+ScoreLine     += LineBonus · LinePerfection
+```
+
+Der Bonus je Zeile ist **für jede Zeile gleich groß**, egal wie lang sie ist:
+`1000 / Anzahl Zeilen mit Noten`. Wer eine kurze Zeile trifft, bekommt also
+genauso viel wie für eine lange.
+
+Die zwei Punkte Nachlass in `MaxLineScore − 2` sind im Original ausdrücklich
+als kleine Zugabe gedacht, damit man für die volle Stufe nicht ganz perfekt
+sein muss — deshalb hier ebenso.
+
+Zeilen **ohne** wertbare Noten zählen nicht mit. Im Spiel werden sie
+übersprungen (`Line.ScoreValue <= 0`), und sie dürfen den Bonus je Zeile
+nicht verwässern.
+
+Gutgeschrieben wird beim **Ende** der Zeile, nicht währenddessen.
+
+### Bewertung je Zeile
+
+Nach jeder Zeile blendet sich kurz ein Urteil ein — das Popup des Spiels.
+`Rating = round(LinePerfection · 8)`, die Bezeichnungen aus `German.ini`:
+
+| Stufe | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| | Grausam! | Grausam! | Mies! | Schlecht! | O.K.! | Gut! | Toll! | Cool! | Perfekt! |
+
+Dass Stufe 1 denselben Text hat wie Stufe 0, ist kein Versehen: So steht es
+in `UThemes.pas` (`LineBonusText[1] := LineBonusText[0]`).
 
 Gestartet wird **nicht automatisch**: Auf der Bühne liegt ein „Los geht's".
 Der Browser blendet beim Wechsel ins Vollbild unten einen Hinweis ein, der

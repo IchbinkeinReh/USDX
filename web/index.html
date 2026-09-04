@@ -371,7 +371,7 @@ function zeigeErgebnis(ergebnis) {
       `<div class="stufe">${esc(b.name)}</div>` +
       `<div class="sterne">${'★'.repeat(st)}${'☆'.repeat(STUFEN.length - 1 - st)}</div>` +
       `<div class="aufschluesselung">Noten ${e.normal} · ` +
-      `Goldene Noten ${e.golden}</div></div>`;
+      `Goldene Noten ${e.golden} · Zeilenbonus ${e.bonus}</div></div>`;
   }).join('');
 
   // Hochzaehlen wie im Spiel - das Ergebnis soll sich aufbauen, nicht

@@ -6,7 +6,8 @@ import { parseSong, noteProgress, secondsUntilLine, lineAt, nextLineAt,
 import { detectFrequency, detectMidi, freqToMidi, sameTone, toneDistance,
          rms, maxVolume, verschiebungen,
          MIN_FREQ, MAX_FREQ } from '../js/pitch.js';
-import { Scorer, MAX_SCORE, inOktave, toleranz,
+import { Scorer, MAX_SCORE, inOktave, toleranz, zeilenBewertung,
+         MAX_NOTE_SCORE, MAX_LINE_BONUS, MAX_LINE_RATING,
          LEICHT, MITTEL, SCHWER } from '../js/score.js';
 import { lyricHelper, helferBahn,
          HELFER_MIN_VORLAUF, HELFER_GRENZE } from '../js/render.js';
@@ -202,6 +203,9 @@ for (const n of s.notes) {
   if (n.type === NOTE_FREESTYLE) continue;
   for (let i = 0; i < 5; i++) w3.feed(s.beatToTime(n.start + 0.5), n.pitch + 60);
 }
+// Bis hinter das Lied weiterfuettern: Der Zeilenbonus wird beim ENDE einer
+// Zeile gutgeschrieben, und die letzte endet erst nach ihrer letzten Note.
+w3.feed(s.beatToTime(10000), -1);
 check('alles richtig ergibt die Hoechstpunktzahl', w3.score === MAX_SCORE, String(w3.score));
 
 const w4 = new Scorer(s);
@@ -279,6 +283,85 @@ E`);
   // er auf die zweite herunter, nicht auf etwas Vergangenes.
   const rest = secondsUntilLine(z, lineAt(z.tracks[0], 6), z.beatToTime(6));
   check('der Vorlauf zeigt in die Zukunft', rest > 0, String(rest));
+}
+
+console.log('Zeilenbonus');
+{
+  // 120 BPM in der Datei sind intern 480, ein Schlag also 0,125 s.
+  const z = parseSong(`#TITLE:x
+#BPM:120
+#GAP:0
+- 0
+: 0 8 60 eins
+- 16
+: 16 8 60 zwei
+E`);
+
+  // Alles perfekt gesungen: volle Notenpunkte UND voller Zeilenbonus.
+  const gut = new Scorer(z);
+  for (const n of z.notes)
+    for (let i = 0; i < 5; i++) gut.feed(z.beatToTime(n.start + 0.5), n.pitch + 60);
+  // Bis hinter die letzte Note, damit auch die zweite Zeile abschliesst.
+  gut.feed(z.beatToTime(100), -1);
+
+  check('perfekt ergibt die Hoechstpunktzahl', gut.score === MAX_SCORE,
+        String(gut.score));
+  const t = gut.teilwertung();
+  check('davon 9000 aus den Noten', t.normal + t.golden === MAX_NOTE_SCORE,
+        String(t.normal + t.golden));
+  check('und 1000 Zeilenbonus', t.bonus === MAX_LINE_BONUS, String(t.bonus));
+
+  // Gar nicht gesungen: keine Punkte, auch kein Bonus.
+  const nichts = new Scorer(z);
+  for (const n of z.notes)
+    for (let i = 0; i < 5; i++) nichts.feed(z.beatToTime(n.start + 0.5), -1);
+  nichts.feed(z.beatToTime(100), -1);
+  check('ohne Gesang keine Punkte', nichts.score === 0, String(nichts.score));
+  check('und kein Zeilenbonus', nichts.teilwertung().bonus === 0);
+
+  // Nur die erste Zeile gesungen: rund die Haelfte der Noten und genau der
+  // halbe Bonus, denn der Bonus zaehlt JE ZEILE gleich viel.
+  const halb = new Scorer(z);
+  for (const n of z.lines[0].notes)
+    for (let i = 0; i < 5; i++) halb.feed(z.beatToTime(n.start + 0.5), n.pitch + 60);
+  for (const n of z.lines[1].notes)
+    for (let i = 0; i < 5; i++) halb.feed(z.beatToTime(n.start + 0.5), -1);
+  halb.feed(z.beatToTime(100), -1);
+  check('eine von zwei Zeilen: halber Zeilenbonus',
+        Math.abs(halb.teilwertung().bonus - MAX_LINE_BONUS / 2) <= 1,
+        String(halb.teilwertung().bonus));
+
+  // Der Bonus wird beim ENDE der Zeile gutgeschrieben - vorher nicht.
+  const lauf = new Scorer(z);
+  for (const n of z.lines[0].notes)
+    for (let i = 0; i < 5; i++) lauf.feed(z.beatToTime(n.start + 0.5), n.pitch + 60);
+  check('waehrend der ersten Zeile noch kein Bonus',
+        lauf.teilwertung().bonus === 0, String(lauf.teilwertung().bonus));
+  // Der Fehler, der beim Einbau drinsteckte: In der Pause nach der Zeile
+  // stieg feed() vorzeitig aus, und der Bonus wurde nie gutgeschrieben.
+  lauf.feed(z.beatToTime(12), -1);   // Pause zwischen den Zeilen
+  check('in der Pause danach wird er gutgeschrieben',
+        lauf.teilwertung().bonus > 0, String(lauf.teilwertung().bonus));
+  check('und die Zeile ist bewertet',
+        lauf.letzteZeile && lauf.letzteZeile.name === 'Perfekt!',
+        lauf.letzteZeile ? lauf.letzteZeile.name : 'keine');
+}
+
+console.log('Bewertung je Zeile');
+{
+  // Rating := Round(LinePerfection * MAX_LINE_RATING), Texte aus German.ini.
+  check('perfekt', zeilenBewertung(1).name === 'Perfekt!');
+  check('gar nichts', zeilenBewertung(0).name === 'Grausam!');
+  check('hoechste Stufe ist 8', zeilenBewertung(1).stufe === MAX_LINE_RATING);
+  // Im Spiel hat Stufe 1 denselben Text wie Stufe 0 - Absicht, kein Versehen.
+  check('Stufe 1 heisst wie Stufe 0',
+        zeilenBewertung(1 / MAX_LINE_RATING).name === 'Grausam!');
+  check('die Haelfte ergibt die mittlere Stufe',
+        zeilenBewertung(0.5).stufe === 4 &&
+        zeilenBewertung(0.5).name === 'O.K.!');
+  check('wird auf 0..1 begrenzt',
+        zeilenBewertung(5).stufe === 8 && zeilenBewertung(-5).stufe === 0);
+  check('ohne Zahl kein Absturz', zeilenBewertung(undefined).stufe === 0);
 }
 
 console.log('Bewertung');
@@ -774,6 +857,8 @@ E`);
     for (let i = 0; i < 5; i++) a.feed(solo.beatToTime(n.start + 0.5), n.pitch + 60);
   for (const n of solo.notes)
     for (let i = 0; i < 5; i++) b.feed(solo.beatToTime(n.start + 0.5), -1);
+  a.feed(solo.beatToTime(10000), -1);
+  b.feed(solo.beatToTime(10000), -1);
 
   check('wer singt, bekommt die volle Punktzahl', a.score === MAX_SCORE,
         String(a.score));
@@ -1057,6 +1142,9 @@ for (const n of d.tracks[0].notes)
   for (let i = 0; i < 5; i++) wA.feed(d.beatToTime(n.start + 0.5), n.pitch + 60);
 for (const n of d.tracks[1].notes)
   for (let i = 0; i < 5; i++) wB.feed(d.beatToTime(n.start + 0.5), -1);
+// Bis hinter das Lied, damit auch die letzte Zeile abschliesst.
+wA.feed(d.beatToTime(10000), -1);
+wB.feed(d.beatToTime(10000), -1);
 check('wer singt, bekommt die volle Punktzahl', wA.score === MAX_SCORE,
       String(wA.score));
 check('wer schweigt, bekommt keine', wB.score === 0, String(wB.score));

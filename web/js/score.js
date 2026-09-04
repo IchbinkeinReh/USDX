@@ -13,6 +13,34 @@ import { countsForScore, noteFactor, NOTE_RAP, NOTE_RAP_GOLDEN } from './song.js
 
 export const MAX_SCORE = 10000;
 
+// Vom Gesamtwert sind 1000 fuer den Zeilenbonus reserviert; die Noten
+// koennen hoechstens die restlichen 9000 bringen. Beides steht so in
+// UNote.pas (MAX_SONG_SCORE, MAX_SONG_LINE_BONUS).
+export const MAX_LINE_BONUS = 1000;
+export const MAX_NOTE_SCORE = MAX_SCORE - MAX_LINE_BONUS;
+
+// Hoechste Bewertungsstufe einer Zeile (MAX_LINE_RATING in
+// UScreenSingController.pas). Der Wert 0..8 waehlt den Text aus.
+export const MAX_LINE_RATING = 8;
+
+// Bezeichnungen aus game/languages/German.ini. Stufe 1 hat im Spiel
+// denselben Text wie Stufe 0 - das ist dort kein Versehen, sondern Absicht
+// (LineBonusText[1] := LineBonusText[0] in UThemes.pas).
+export const ZEILEN_TEXTE = [
+  'Grausam!', 'Grausam!', 'Mies!', 'Schlecht!', 'O.K.!',
+  'Gut!', 'Toll!', 'Cool!', 'Perfekt!',
+];
+
+// Wie gut eine Zeile war, aus dem erreichten Anteil.
+//
+// Aus UScreenSingController.pas: Rating := Round(LinePerfection *
+// MAX_LINE_RATING).
+export function zeilenBewertung(guete) {
+  const g = Math.max(0, Math.min(1, Number.isFinite(guete) ? guete : 0));
+  const stufe = Math.round(g * MAX_LINE_RATING);
+  return { stufe, name: ZEILEN_TEXTE[stufe] };
+}
+
 // Schwierigkeitsstufen wie im Spiel (IDifficulty in UIni.pas).
 export const LEICHT = 0;
 export const MITTEL = 1;
@@ -53,6 +81,22 @@ export class Scorer {
     this.toleranz = toleranz(schwierigkeit);
     this.track = song.track ? song.track(trackIndex) : song;
     this.maxValue = this.track.maxNoteValue;
+    // Zeilen mit Notenwert - nur die zaehlen fuer den Bonus. Eine Zeile ohne
+    // wertbare Noten wird im Spiel uebersprungen (Line.ScoreValue <= 0), und
+    // sie darf den Bonus je Zeile auch nicht verwaessern.
+    this.zeilen = this.track.lines.map((z) => ({
+      zeile: z,
+      wert: z.notes.filter((n) => countsForScore(n.type))
+                   .reduce((sum, n) => sum + n.length * noteFactor(n.type), 0),
+      erledigt: false,
+    })).filter((e) => e.wert > 0);
+    // Bonus je Zeile, gleich viel fuer jede - egal wie lang sie ist.
+    this.bonusJeZeile = this.zeilen.length > 0
+      ? MAX_LINE_BONUS / this.zeilen.length : 0;
+    this.zeilenBonus = 0;
+    this.letzteWertung = 0;     // Notenpunkte beim Ende der letzten Zeile
+    // Die zuletzt abgeschlossene Zeile, fuer die Einblendung.
+    this.letzteZeile = null;
     // Je Note: wie viele Treffer und wie viele Versuche.
     this.state = new Map();
     // Was tatsaechlich gesungen wurde, als Balken zum Zeichnen:
@@ -67,6 +111,12 @@ export class Scorer {
   // Meldet eine gemessene Tonhoehe zu einem Zeitpunkt.
   // sungMidi < 0 bedeutet "nichts erkannt" - zaehlt als Versuch ohne Treffer.
   feed(seconds, sungMidi) {
+    // ZUERST die Zeilenenden pruefen, nicht erst nach der Abfrage unten:
+    // Eine Zeile endet mit ihrer letzten Note, danach ist Pause - und in
+    // einer Pause steigt diese Methode gleich wieder aus. Der Bonus waere
+    // sonst nie gutgeschrieben worden.
+    this.pruefeZeilenende(seconds);
+
     const note = this.noteAt(seconds);
     if (!note || !countsForScore(note.type)) return null;
 
@@ -81,6 +131,43 @@ export class Scorer {
 
     this.merkeBalken(seconds, sungMidi, note, treffer);
     return treffer;
+  }
+
+  // Schliesst Zeilen ab, deren letzte Note vorbei ist, und schreibt den
+  // Zeilenbonus gut.
+  //
+  // Aus UScreenSingController.pas:
+  //
+  //   MaxLineScore   = 9000 * (Zeilenwert / Gesamtwert)
+  //   LineScore      = erreichte Punkte seit der letzten Zeile
+  //   LinePerfection = LineScore / (MaxLineScore - 2), begrenzt auf 0..1
+  //   ScoreLine     += LineBonus * LinePerfection
+  //
+  // Die zwei Punkte Nachlass sind im Original ausdruecklich als kleine
+  // Zugabe gedacht, damit man fuer die volle Stufe nicht ganz perfekt sein
+  // muss - deshalb hier ebenso.
+  pruefeZeilenende(seconds) {
+    const beat = this.song.timeToBeat(seconds);
+    for (const e of this.zeilen) {
+      if (e.erledigt) continue;
+      const letzte = e.zeile.notes[e.zeile.notes.length - 1];
+      if (beat < letzte.start + letzte.length) continue;
+
+      e.erledigt = true;
+      const maxZeile = (e.wert / this.maxValue) * MAX_NOTE_SCORE;
+      const erreicht = this.notenPunkte - this.letzteWertung;
+      let guete = maxZeile <= 2 ? 1 : erreicht / (maxZeile - 2);
+      if (guete < 0) guete = 0;
+      if (guete > 1) guete = 1;
+
+      this.zeilenBonus += this.bonusJeZeile * guete;
+      this.letzteWertung = this.notenPunkte;
+      this.letzteZeile = {
+        guete,
+        ...zeilenBewertung(guete),
+        zeit: seconds,
+      };
+    }
   }
 
   // Die Trefferpruefung des Spiels (UNote.pas):
@@ -140,7 +227,8 @@ export class Scorer {
     return null;
   }
 
-  get score() {
+  // Punkte aus den Noten allein, hoechstens MAX_NOTE_SCORE.
+  get notenPunkte() {
     if (!(this.maxValue > 0)) return 0;
     let erreicht = 0;
     for (const [note, s] of this.state) {
@@ -148,28 +236,34 @@ export class Scorer {
       // Anteil der getroffenen Bloecke, gewichtet wie die Note selbst.
       erreicht += (s.hits / s.tries) * note.length * noteFactor(note.type);
     }
-    return Math.round((erreicht / this.maxValue) * MAX_SCORE);
+    return (erreicht / this.maxValue) * MAX_NOTE_SCORE;
   }
 
-  // Punkte getrennt nach gewoehnlichen und goldenen Noten - so schluesselt
-  // es auch die Ergebnisseite des Spiels auf.
-  //
-  // Was hier NICHT dabei ist: der Zeilenbonus. Im Spiel sind dafuer 1000 der
-  // 10000 Punkte reserviert (MAX_SONG_LINE_BONUS); hier gibt es ihn nicht,
-  // die vollen 10000 kommen aus den Noten. Die Zahlen sind also mit sich
-  // selbst vergleichbar, nicht mit denen aus dem Spiel.
+  // Gesamtpunktzahl: Noten plus Zeilenbonus, wie im Spiel
+  // (Score + ScoreGolden + ScoreLine).
+  get score() {
+    return Math.round(this.notenPunkte + this.zeilenBonus);
+  }
+
+  // Punkte getrennt nach gewoehnlichen Noten, goldenen Noten und
+  // Zeilenbonus - so schluesselt es auch die Ergebnisseite des Spiels auf.
   teilwertung() {
     let normal = 0;
     let golden = 0;
-    if (!(this.maxValue > 0)) return { normal: 0, golden: 0 };
-    for (const [note, s] of this.state) {
-      if (s.tries === 0) continue;
-      const wert = (s.hits / s.tries) * note.length * noteFactor(note.type)
-                   / this.maxValue * MAX_SCORE;
-      if (noteFactor(note.type) > 1) golden += wert;
-      else normal += wert;
+    if (this.maxValue > 0) {
+      for (const [note, s] of this.state) {
+        if (s.tries === 0) continue;
+        const wert = (s.hits / s.tries) * note.length * noteFactor(note.type)
+                     / this.maxValue * MAX_NOTE_SCORE;
+        if (noteFactor(note.type) > 1) golden += wert;
+        else normal += wert;
+      }
     }
-    return { normal: Math.round(normal), golden: Math.round(golden) };
+    return {
+      normal: Math.round(normal),
+      golden: Math.round(golden),
+      bonus: Math.round(this.zeilenBonus),
+    };
   }
 
   // Fuer die Anzeige: Anteil 0..1 der zuletzt gesungenen Note.

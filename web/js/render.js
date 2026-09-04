@@ -93,6 +93,9 @@ const TEXT_KOMMT    = '#e8e8ea';   // steht noch bevor
 // ueber die kleinere Schrift, nicht ueber blasse Farbe.
 const TEXT_VORSCHAU = '#ffffff';
 
+// Wie lange die Bewertung einer Zeile stehen bleibt.
+export const ZEILENLOB_SEK = 1.6;
+
 // Je Bahn eine Farbe, damit im Duett klar ist, wer wo singt.
 const FARBEN = [
   { balken: '#4a5570', treffer: '#6ee7a8', stimme: '#7fd1ff' },
@@ -346,6 +349,8 @@ export class Renderer {
       // zeigen die Balken weiter unten - und die wachsen nur.
     }
 
+    this.zeilenLob(bahn, w, notenY, notenH);
+
     // Was gesungen wurde, als Balken auf der erkannten Tonhoehe - wie im
     // Spiel (SingDrawPlayerLine). Es gibt sie nur dort, wo im Lied auch
     // Noten stehen; dafuer sorgt schon der Scorer, der nichts festhaelt,
@@ -503,6 +508,40 @@ export class Renderer {
 
     ctx.restore();
     return links;
+  }
+
+  // Die Bewertung der eben beendeten Zeile, kurz eingeblendet - im Spiel ist
+  // das das Popup, das nach jeder Zeile aufsteigt.
+  //
+  // Sie verblasst und steigt dabei ein Stueck: Bliebe sie einfach stehen und
+  // verschwaende dann, wuesste man nicht, ob sie zur letzten oder zur
+  // naechsten Zeile gehoert.
+  zeilenLob(bahn, w, notenY, notenH) {
+    const lob = bahn.zeilenLob;
+    if (!lob || !(lob.alter >= 0) || lob.alter > ZEILENLOB_SEK) return;
+
+    const ctx = this.ctx;
+    const t = lob.alter / ZEILENLOB_SEK;
+    const groesse = Math.max(18, Math.min(34, notenH * 0.18));
+    const y = notenY + notenH * 0.32 - t * notenH * 0.12;
+
+    ctx.save();
+    // Erst am Ende ausblenden, sonst ist sie zu kurz zu lesen.
+    ctx.globalAlpha = t < 0.7 ? 1 : (1 - t) / 0.3;
+    ctx.font = `700 ${groesse}px system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = Math.max(3, groesse * 0.18);
+    ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+    ctx.lineJoin = 'round';
+    ctx.strokeText(lob.name, w / 2, y);
+    // Farbe nach Stufe: von blass bei "Grausam!" bis golden bei "Perfekt!".
+    ctx.fillStyle = lob.stufe >= 7 ? '#ffd978'
+                  : lob.stufe >= 4 ? '#6ee7a8'
+                  : '#c3c9d6';
+    ctx.fillText(lob.name, w / 2, y);
+    ctx.restore();
+    ctx.textAlign = 'left';
   }
 
   // Zeichnet den Zeilenanzeiger.
