@@ -12,7 +12,8 @@ import { Scorer, MAX_SCORE, inOktave, toleranz, zeilenBewertung,
 import { lyricHelper, helferBahn,
          HELFER_MIN_VORLAUF, HELFER_GRENZE } from '../js/render.js';
 import { istHandy, HANDY_BREITE } from '../js/vollbild.js';
-import { pfad, basisOhneZugangsdaten } from '../js/game.js';
+import { pfad, basisOhneZugangsdaten, spulZiel,
+         SPUL_RESERVE } from '../js/game.js';
 import { Renderer } from '../js/render.js';
 import { Pegel, ZIEL_PEGEL, MAX_FAKTOR, MIN_FAKTOR,
          MIN_SCHWELLE, UEBER_RAUSCHEN } from '../js/pegel.js';
@@ -608,6 +609,22 @@ console.log('Adressen');
         pfad('/api/status', 'keine-adresse'));
 }
 
+console.log('Spulen');
+{
+  check('vorwaerts', spulZiel(30, 200, 10) === 40);
+  check('rueckwaerts', spulZiel(30, 200, -10) === 20);
+  check('nicht vor den Anfang', spulZiel(4, 200, -10) === 0,
+        String(spulZiel(4, 200, -10)));
+  // Ans aeusserste Ende darf es nicht gehen: Dort gilt das Lied sofort als
+  // beendet, und statt zu spulen kaeme die Ergebnisseite.
+  check('nicht ans Ende', spulZiel(198, 200, 10) === 200 - SPUL_RESERVE,
+        String(spulZiel(198, 200, 10)));
+  check('ohne Dauer passiert nichts', spulZiel(30, 0, 10) === 0);
+  check('unsinnige Werte stuerzen nicht ab',
+        spulZiel(NaN, 200, 10) === 10 && spulZiel(30, 200, NaN) === 30,
+        spulZiel(NaN, 200, 10) + '/' + spulZiel(30, 200, NaN));
+}
+
 console.log('Zeichnen');
 {
   const lied = parseSong(`#TITLE:x
@@ -725,6 +742,41 @@ E`);
               name: '', score: 4711 }], 5);
     check('Punktzahl wird in der Bahn gezeigt',
           ctx.ops.some((o) => o[0] === 'fillText' && o[1] === '4711'));
+  }
+
+  // Wird niemand gewertet, sind Notenlinien und Balken ohne Aussage.
+  {
+    const ohne = (score) => {
+      const ctx = stubKontext();
+      const r = new Renderer({ width: 0, height: 0, getContext: () => ctx });
+      r.passeGroesseAn(800, 400, 1);
+      r.draw([{ line: lied.lines[0], nextLine: null,
+                bars: [{ startBeat: 40, endBeat: 44, tone: 60, hit: true }],
+                name: '', score }], 41);
+      return ctx;
+    };
+    const gewertet = ohne(0);
+    const nicht = ohne(undefined);
+
+    check('mit Wertung werden Noten gezeichnet',
+          gewertet.ops.some((o) => o[0] === 'roundRect'));
+    check('ohne Wertung nicht',
+          !nicht.ops.some((o) => o[0] === 'roundRect'),
+          'es wurde doch gezeichnet');
+    // Der Text muss trotzdem stehen - darum geht es dann ja gerade.
+    check('der Liedtext bleibt aber',
+          nicht.ops.some((o) => o[0] === 'fillText' && o[1] === 'hallo'));
+
+    // Sobald AUCH NUR EINER gewertet wird, sind die Noten wieder da.
+    const ctx = stubKontext();
+    const r = new Renderer({ width: 0, height: 0, getContext: () => ctx });
+    r.passeGroesseAn(800, 400, 1);
+    r.draw([{ line: lied.lines[0], nextLine: null, bars: [], name: 'A',
+              score: undefined },
+            { line: lied.lines[0], nextLine: null, bars: [], name: 'B',
+              score: 100 }], 41);
+    check('einer gewertet genuegt fuer die Noten',
+          ctx.ops.some((o) => o[0] === 'roundRect'));
   }
 
   // Der Fortschrittsbalken wird nur gezeichnet, wenn er uebergeben wird -

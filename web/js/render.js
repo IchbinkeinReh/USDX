@@ -167,6 +167,13 @@ export class Renderer {
     // Singen dagegen alle dieselbe Spur, waere zweimal derselbe Text nur
     // Platzverschwendung. Dann bleiben die Bahnen textfrei und der Text
     // steht einmal unten.
+    // Wird niemand gewertet - alle ohne Mikrofon -, sind Notenlinien und
+    // Balken ohne Aussage: Es kann nichts getroffen und nichts verfehlt
+    // werden. Dann bleibt die Flaeche frei, und es geht nur um Text und
+    // Video. Sobald AUCH NUR EINER gewertet wird, sind sie wieder da.
+    const wirdGewertet = bahnen.some((b) => b.score !== undefined);
+    this.ohneNoten = !wirdGewertet;
+
     const gemeinsam = !duett;
     // Dieselben Masse zum Rechnen wie zum Zeichnen - vorher wurde die
     // Bandhoehe hier bestimmt und beim Zeichnen aus ihr zurueckgerechnet,
@@ -294,6 +301,13 @@ export class Renderer {
     }
 
     if (!line || line.notes.length === 0) {
+      if (hatBand)
+        this.textBand(bahn, beat, w, bandY, bandH, schrift, zeilenH, helferH);
+      ctx.restore();
+      return;
+    }
+
+    if (this.ohneNoten) {
       if (hatBand)
         this.textBand(bahn, beat, w, bandY, bandH, schrift, zeilenH, helferH);
       ctx.restore();

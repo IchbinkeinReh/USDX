@@ -291,6 +291,23 @@ unruhig genug, dass Text darauf schlecht zu lesen ist. Passt eine Zeile nicht
 in die Breite, wird sie gestaucht statt abgeschnitten — eine halbe Silbe am
 Rand hilft niemandem.
 
+### Wenn niemand gewertet wird
+
+Hat keiner der Sänger ein Mikrofon, bleiben Notenlinien und Balken weg: Es
+kann nichts getroffen und nichts verfehlt werden, die Fläche gehört dann
+Text und Video. Sobald **auch nur einer** gewertet wird, sind sie wieder da.
+
+### Spulen
+
+Doppeltippen springt zehn Sekunden — links zurück, rechts vor. Erkannt wird
+der Doppeltipp selbst statt über `dblclick`: Auf Berührbildschirmen kommt der
+spät oder gar nicht.
+
+Die Wertung zieht mit. Übersprungene Zeilen werden beim nächsten Bild als
+beendet verbucht und bringen keinen Bonus — was richtig ist, gesungen wurde
+dort nichts. Zurückgespulte Zeilen bleiben verbucht; ihren Bonus gibt es kein
+zweites Mal.
+
 ### Der Fortschrittsbalken
 
 Am unteren Rand liegt eine Leiste über die ganze Länge des Liedes, nachgebaut
@@ -440,7 +457,11 @@ Mikrofone — die braucht Ruhe und Platz, und auf der Bühne ist beides weg.
 
 ### Die Ergebnisseite
 
-Am Ende zeigt eine eigene Seite, wie gut es war — je Sänger eine Karte mit
+Sie erscheint am Ende des Liedes **und** wenn das Vollbild verlassen wird —
+wer es verlässt, will aufhören, und dann soll das Ergebnis kommen statt das
+Lied im Fenster weiterzulaufen. „Zurück" bricht dagegen ohne Ergebnis ab.
+
+Die Seite zeigt, wie gut es war — je Sänger eine Karte mit
 Punktzahl, Bewertung und Sternen. Die Punktzahl zählt hoch, wie im Spiel.
 
 Stufen und Schwellen sind aus `ShowRating` in `src/screens/UScreenScore.pas`

@@ -42,6 +42,19 @@ export function basisOhneZugangsdaten(href) {
   }
 }
 
+// Wohin gespult wird. Getrennt, weil sich hier leicht vertut, wer die
+// Grenzen von Hand hinschreibt: Vor den Anfang darf es nicht gehen, und ans
+// aeusserste Ende auch nicht - dort gilt das Lied sofort als beendet, und
+// statt zu spulen kaeme die Ergebnisseite.
+export const SPUL_RESERVE = 0.25;
+
+export function spulZiel(jetzt, dauer, delta) {
+  if (!(dauer > 0)) return 0;
+  const ziel = (Number.isFinite(jetzt) ? jetzt : 0) +
+               (Number.isFinite(delta) ? delta : 0);
+  return Math.max(0, Math.min(dauer - SPUL_RESERVE, ziel));
+}
+
 export function pfad(p, href) {
   const basis = basisOhneZugangsdaten(
     href !== undefined ? href
@@ -284,6 +297,45 @@ export class Game {
     requestAnimationFrame(() => this.schleife());
   }
 
+  // Was die Ergebnisseite braucht - die Oberflaeche soll nicht in den
+  // Wertungen herumsuchen muessen.
+  ergebnisListe() {
+    return this.saenger.map((s) => {
+      const teile = s.scorer.teilwertung();
+      return {
+        name: s.name || s.scorer.name,
+        gewertet: !!s.analyser,
+        punkte: s.analyser ? s.scorer.score : null,
+        normal: teile.normal,
+        golden: teile.golden,
+        bonus: teile.bonus,
+      };
+    });
+  }
+
+  // Beendet das Lied und meldet das Ergebnis. Wird sowohl am Ende des
+  // Stuecks aufgerufen als auch beim Abbrechen - beide Male soll das
+  // Ergebnis erscheinen.
+  beende() {
+    if (!this.laeuft) return;
+    this.laeuft = false;
+    this.audio.pause();
+    if (this.el.video) this.el.video.pause();
+    if (this.onEnde) this.onEnde(this.ergebnisListe());
+  }
+
+  // Vor- und zurueckspulen.
+  //
+  // Die Wertung zieht mit: Uebersprungene Zeilen werden beim naechsten Bild
+  // als beendet verbucht und bringen dann keinen Bonus - was richtig ist,
+  // gesungen wurde dort ja nichts. Zurueckgespulte Zeilen bleiben verbucht;
+  // ihren Bonus gibt es kein zweites Mal.
+  spulen(sekunden) {
+    if (!this.song || !(this.audio.duration > 0)) return;
+    this.audio.currentTime =
+      spulZiel(this.audio.currentTime, this.audio.duration, sekunden);
+  }
+
   stop() {
     this.laeuft = false;
     this.audio.pause();
@@ -348,7 +400,8 @@ export class Game {
         bars: s.scorer.bars,
         name: s.name || s.scorer.name,
         // Ohne Mikrofon keine Punktzahl, auch keine 0: Eine 0 hiesse
-        // "danebengesungen", und das waere schlicht gelogen.
+        // "danebengesungen", und das waere schlicht gelogen. Die Anzeige
+        // erkennt daran auch, dass sie die Noten ganz weglassen kann.
         score: s.analyser ? s.scorer.score : undefined,
       };
     });
@@ -363,15 +416,7 @@ export class Game {
     }, this.song.isDuet);
 
     if (this.audio.ended) {
-      this.laeuft = false;
-      if (this.el.video) this.el.video.pause();
-      const ergebnis = 'Fertig - ' + this.saenger
-        .map((s) => s.analyser
-          ? `${s.scorer.name}: ${s.scorer.score}`
-          : `${s.scorer.name}: nicht gewertet`)
-        .join(', ');
-      this.el.hinweis.textContent = ergebnis;
-      if (this.onEnde) this.onEnde(ergebnis);
+      this.beende();
       return;
     }
     requestAnimationFrame(() => this.schleife());
