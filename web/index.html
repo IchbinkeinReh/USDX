@@ -146,7 +146,7 @@
 </div>
 
 <script type="module">
-import { Game } from './js/game.js';
+import { Game, pfad } from './js/game.js';
 import { istHandy, vollbildAn, vollbildAus, imVollbild } from './js/vollbild.js';
 import { bewertung, sterne, STUFEN } from './js/bewertung.js';
 
@@ -191,7 +191,8 @@ function esc(s){const d=document.createElement('div');d.textContent=s;return d.i
 
 // ---------- Schritt 1: Lied waehlen ----------
 async function sucheLieder() {
-  const r = await fetch('/api/songs?max=100&q=' + encodeURIComponent($('suche').value));
+  const r = await fetch(pfad('/api/songs?max=100&q=' +
+                             encodeURIComponent($('suche').value)));
   const d = await r.json();
   $('liste').innerHTML = d.map(s =>
     `<div data-i="${s.index}"><div class="a">${esc(s.artist)}</div>` +

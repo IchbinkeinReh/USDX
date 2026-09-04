@@ -19,6 +19,40 @@ import { Renderer } from './render.js';
 
 const FFT_GROESSE = 4096;
 
+// Adressen ohne Zugangsdaten bauen.
+//
+// Wer die Seite mit Zugangsdaten in der Adresse aufruft - also
+// https://name:wort@rechner/ - vererbt die an jede relative Adresse. Chrome
+// verweigert dann sowohl fetch als auch das Laden von Ton, Video und Bild:
+// "Request cannot be constructed from a URL that includes credentials".
+// Die Seite blieb dadurch leer.
+//
+// Deshalb wird jede Adresse ausdruecklich gegen eine bereinigte Basis
+// aufgeloest. Ohne Zugangsdaten in der Adresse aendert das nichts.
+export function basisOhneZugangsdaten(href) {
+  try {
+    const u = new URL(href);
+    u.username = '';
+    u.password = '';
+    u.search = '';
+    u.hash = '';
+    return u.toString();
+  } catch (e) {
+    return href;
+  }
+}
+
+export function pfad(p, href) {
+  const basis = basisOhneZugangsdaten(
+    href !== undefined ? href
+      : (typeof location !== 'undefined' ? location.href : ''));
+  try {
+    return new URL(p, basis).toString();
+  } catch (e) {
+    return p;
+  }
+}
+
 // Ab wie viel Abweichung das Video nachgezogen wird. Jedes Bild neu zu
 // setzen laesst es ruckeln; gar nicht nachzuziehen laesst es davonlaufen.
 const VIDEO_TOLERANZ = 0.30;
@@ -60,7 +94,7 @@ export class Game {
           if (!this.hatVideo) bild.style.display = 'block';
         };
         bild.onerror = () => { this.hatBild = false; };
-        bild.src = `/api/song/${index}/background`;
+        bild.src = pfad(`/api/song/${index}/background`);
       } else {
         bild.removeAttribute('src');
       }
@@ -88,7 +122,7 @@ export class Game {
           video.style.display = 'none';
           if (bild && this.hatBild) bild.style.display = 'block';
         };
-        video.src = `/api/song/${index}/video`;
+        video.src = pfad(`/api/song/${index}/video`);
         video.load();
       }
     }
@@ -117,14 +151,14 @@ export class Game {
   }
 
   async ladeLied(index) {
-    const txt = await fetch(`/api/song/${index}/txt`).then((r) => {
+    const txt = await fetch(pfad(`/api/song/${index}/txt`)).then((r) => {
       if (!r.ok) throw new Error('Lied nicht ladbar');
       return r.text();
     });
     this.song = parseSong(txt);   // wirft bei kaputten Spurwechseln
     // Einmal berechnen, nicht je Bild - das sind alle Zeilen des Liedes.
     this.abschnitte = singAbschnitte(this.song);
-    this.audio.src = `/api/song/${index}/audio`;
+    this.audio.src = pfad(`/api/song/${index}/audio`);
     this.el.titel.textContent = `${this.song.artist} – ${this.song.title}`;
     this.bereiteHintergrund(index, this.song);
     return this.song;

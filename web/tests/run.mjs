@@ -12,6 +12,7 @@ import { Scorer, MAX_SCORE, inOktave, toleranz, zeilenBewertung,
 import { lyricHelper, helferBahn,
          HELFER_MIN_VORLAUF, HELFER_GRENZE } from '../js/render.js';
 import { istHandy, HANDY_BREITE } from '../js/vollbild.js';
+import { pfad, basisOhneZugangsdaten } from '../js/game.js';
 import { Renderer } from '../js/render.js';
 import { Pegel, ZIEL_PEGEL, MAX_FAKTOR, MIN_FAKTOR,
          MIN_SCHWELLE, UEBER_RAUSCHEN } from '../js/pegel.js';
@@ -567,6 +568,44 @@ E`);
   check('ohne Lied kein Absturz', singAbschnitte(null).length === 0);
   const leer = parseSong('#TITLE:x\n#BPM:120\nE');
   check('ohne Noten keine Abschnitte', singAbschnitte(leer).length === 0);
+}
+
+console.log('Adressen');
+{
+  // Wer die Seite mit Zugangsdaten in der Adresse aufruft, vererbt sie an
+  // jede relative Adresse - und Chrome verweigert dann fetch und das Laden
+  // von Ton, Video und Bild. Die Seite blieb dadurch leer.
+  const mitDaten = 'https://ibkr:geheim@rechner.example/';
+  check('Zugangsdaten werden entfernt',
+        basisOhneZugangsdaten(mitDaten) === 'https://rechner.example/',
+        basisOhneZugangsdaten(mitDaten));
+  check('und tauchen auch im fertigen Weg nicht auf',
+        pfad('/api/songs?q=a', mitDaten) ===
+          'https://rechner.example/api/songs?q=a',
+        pfad('/api/songs?q=a', mitDaten));
+
+  // Ohne Zugangsdaten darf sich nichts aendern.
+  check('ohne Zugangsdaten unveraendert',
+        pfad('/api/song/3/audio', 'https://rechner.example/irgendwo') ===
+          'https://rechner.example/api/song/3/audio',
+        pfad('/api/song/3/audio', 'https://rechner.example/irgendwo'));
+
+  // Abfrage und Sprungmarke der SEITE duerfen nicht in die Api-Adresse
+  // durchschlagen.
+  check('Abfrage der Seite faerbt nicht ab',
+        pfad('/api/status', 'https://r.example/?a=1#b') ===
+          'https://r.example/api/status',
+        pfad('/api/status', 'https://r.example/?a=1#b'));
+
+  check('anderer Port bleibt erhalten',
+        pfad('/api/status', 'https://ibkr:x@r.example:8443/') ===
+          'https://r.example:8443/api/status',
+        pfad('/api/status', 'https://ibkr:x@r.example:8443/'));
+
+  // Unsinn darf nicht abstuerzen - die Seite soll auch dann laden.
+  check('unbrauchbare Basis stuerzt nicht ab',
+        pfad('/api/status', 'keine-adresse') === '/api/status',
+        pfad('/api/status', 'keine-adresse'));
 }
 
 console.log('Zeichnen');

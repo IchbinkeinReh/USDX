@@ -606,6 +606,13 @@ Und davor, hier mit Apache:
 </VirtualHost>
 ```
 
+Alle Adressen im Browser werden gegen eine **bereinigte Basis** aufgelöst.
+Wer die Seite mit Zugangsdaten in der Adresse aufruft — also
+`https://name:wort@rechner/` —, vererbt sie sonst an jede relative Adresse,
+und Chrome verweigert dann sowohl `fetch` als auch das Laden von Ton, Video
+und Bild: *„Request cannot be constructed from a URL that includes
+credentials."* Die Seite bleibt dabei leer.
+
 Der Dienst setzt an jede Antwort **`Connection: close`**. Er kann keine
 Wiederverwendung, und sagt er das nicht dazu, gilt bei HTTP/1.1 das
 Gegenteil: Der Vorschalt-Server legt die Verbindung in seinen Vorrat,
