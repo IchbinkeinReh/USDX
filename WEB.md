@@ -299,9 +299,13 @@ Text und Video. Sobald **auch nur einer** gewertet wird, sind sie wieder da.
 
 ### Spulen
 
-Doppeltippen springt zehn Sekunden — links zurück, rechts vor. Erkannt wird
+Doppeltippen springt fünf Sekunden — links zurück, rechts vor. Erkannt wird
 der Doppeltipp selbst statt über `dblclick`: Auf Berührbildschirmen kommt der
 spät oder gar nicht.
+
+Angezeigt wird dabei nichts. Ein eingeblendetes Zeichen legte sich über das
+Bild und verdeckte genau das, wohin man gerade springt — dass der Sprung
+angekommen ist, sieht man ohnehin am Fortschrittsbalken und am Liedtext.
 
 Die Wertung zieht mit. Übersprungene Zeilen werden beim nächsten Bild als
 beendet verbucht und bringen keinen Bonus — was richtig ist, gesungen wurde

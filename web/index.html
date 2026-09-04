@@ -76,16 +76,6 @@
      losgesungen wird: Beim Wechsel ins Vollbild blendet der Browser unten
      einen Hinweis ein, der genau den Liedtext verdeckt. Der verschwindet
      nach ein paar Sekunden von selbst - bis dahin wartet man hier. */
-  /* Kurze Rueckmeldung beim Spulen - ohne sie weiss man nicht, ob das
-     Doppeltippen angekommen ist. */
-  .spulzeichen{position:absolute;top:50%;transform:translateY(-50%);z-index:4;
-               background:rgba(8,10,15,0.75);color:#7fd1ff;font-size:20px;
-               font-weight:600;padding:12px 18px;border-radius:12px;
-               opacity:0;transition:opacity .25s;pointer-events:none}
-  #spul_links{left:6%}
-  #spul_rechts{right:6%}
-  .spulzeichen.an{opacity:1;transition:none}
-
   #startflaeche{position:absolute;inset:0;display:flex;align-items:center;
                 justify-content:center;flex-direction:column;gap:14px;
                 background:rgba(13,15,20,0.82);z-index:5}
@@ -133,8 +123,6 @@
     <img id="hintergrund" alt="">
     <video id="video" muted playsinline preload="auto"></video>
     <canvas id="buehnebild" width="1280" height="480"></canvas>
-    <div id="spul_links" class="spulzeichen">&#8630; 10 s</div>
-    <div id="spul_rechts" class="spulzeichen">10 s &#8631;</div>
     <div id="startflaeche">
       <button id="losgehts">Los geht's</button>
       <div id="startnotiz">Antippen, sobald der Hinweis des Browsers weg ist.</div>
@@ -417,15 +405,9 @@ spiel.onEnde = async (ergebnis) => {
 //
 // Bewusst selbst erkannt statt ueber dblclick: Auf Beruehrbildschirmen kommt
 // dblclick spaet oder gar nicht, und ein Doppeltipp soll sofort wirken.
-const SPULWEITE = 10;
+const SPULWEITE = 5;
 const DOPPEL_MS = 350;
 let letzterTipp = 0, letzterX = 0;
-
-function zeigeSpulen(vor) {
-  const z = $(vor ? 'spul_rechts' : 'spul_links');
-  z.classList.add('an');
-  setTimeout(() => z.classList.remove('an'), 400);
-}
 
 $('bild_flaeche').addEventListener('pointerdown', (e) => {
   // Auf der Startflaeche nicht spulen - dort wird gestartet.
@@ -436,7 +418,6 @@ $('bild_flaeche').addEventListener('pointerdown', (e) => {
     const r = $('bild_flaeche').getBoundingClientRect();
     const vor = (e.clientX - r.left) > r.width / 2;
     spiel.spulen(vor ? SPULWEITE : -SPULWEITE);
-    zeigeSpulen(vor);
     letzterTipp = 0;   // nicht dreifach ausloesen
     return;
   }
