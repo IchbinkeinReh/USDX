@@ -60,6 +60,17 @@ type
 
   // Welche Datei eines Liedes gemeint ist.
   TWebFileKind = (wfkTxt, wfkAudio, wfkVideo, wfkBackground);
+
+  // Vorbereitete Suchtexte zu einem Lied: kleingeschrieben und ins
+  // ASCII-Alphabet umgeschrieben, damit "uber" auch "Über" findet.
+  //
+  // Bewusst NEBEN der Liederliste und nicht in TWebSong: Das Lied ist, was
+  // die Weboberflaeche zu sehen bekommt, dies hier ist ein Suchregister und
+  // geht sie nichts an. So bleiben auch die Kopien klein, die FindSongs
+  // zurueckgibt.
+  TSuchIndex = record
+    Alle, Title, Artist, Edition, Genre, Language, Year: UTF8String;
+  end;
   TWebSongArray = array of TWebSong;
 
   TWebCommandKind = (wckNone, wckStart);
@@ -73,6 +84,7 @@ type
     private
       fLock:     TCriticalSection;
       fSongs:    TWebSongArray;
+      fSuch:     array of TSuchIndex;
       fCommands: array of TWebCommand;
       fStand:    integer;   // steigt bei jeder Veroeffentlichung
     public
@@ -121,9 +133,16 @@ begin
   inherited;
 end;
 
+// Schreibt einen Text so um, wie die Suche ihn vergleicht.
+function SuchForm(const Text: UTF8String): UTF8String;
+begin
+  Result := LowerCase(TransliterateToASCII(Text));
+end;
+
 procedure TWebBridge.PublishSongs(const Songs: TWebSongArray);
 var
   I: integer;
+  Jahr: UTF8String;
 begin
   fLock.Acquire;
   try
@@ -131,8 +150,30 @@ begin
     // sich Spiel und Web dasselbe Array, und der Sinn der Abschrift waere
     // dahin.
     SetLength(fSongs, Length(Songs));
+    // Das Suchregister wird hier mit aufgebaut, nicht bei jeder Anfrage.
+    //
+    // Vorher schrieb FindSongs jeden Text je Anfrage neu klein und um. Bei
+    // gut zwanzig Liedern faellt das nicht auf; bei ueber neuntausend kostet
+    // eine Suche, die wenig trifft, dreiviertel Sekunden - und beim Tippen
+    // merkt man jede davon.
+    SetLength(fSuch, Length(Songs));
     for I := 0 to High(Songs) do
+    begin
       fSongs[I] := Songs[I];
+
+      Jahr := IntToStr(Songs[I].Year);
+      fSuch[I].Title    := SuchForm(Songs[I].Title);
+      fSuch[I].Artist   := SuchForm(Songs[I].Artist);
+      fSuch[I].Edition  := SuchForm(Songs[I].Edition);
+      fSuch[I].Genre    := SuchForm(Songs[I].Genre);
+      fSuch[I].Language := SuchForm(Songs[I].Language);
+      fSuch[I].Year     := Jahr;
+      // Der gemeinsame Heuhaufen aus den schon umgeschriebenen Teilen -
+      // nicht noch einmal umschreiben, das Ergebnis waere dasselbe.
+      fSuch[I].Alle := fSuch[I].Artist + ' ' + fSuch[I].Title + ' ' +
+                       fSuch[I].Edition + ' ' + fSuch[I].Genre + ' ' +
+                       fSuch[I].Language + ' ' + Jahr;
+    end;
     Inc(fStand);
   finally
     fLock.Release;
@@ -204,21 +245,16 @@ begin
       SetLength(Result, Length(fSongs));
       for I := 0 to High(fSongs) do
       begin
+        // Fertig vorbereitet aus dem Register, siehe PublishSongs.
         case Filter of
-          fltTitle:    Heuhaufen := fSongs[I].Title;
-          fltArtist:   Heuhaufen := fSongs[I].Artist;
-          fltEdition:  Heuhaufen := fSongs[I].Edition;
-          fltGenre:    Heuhaufen := fSongs[I].Genre;
-          fltLanguage: Heuhaufen := fSongs[I].Language;
-          fltYear:     Heuhaufen := IntToStr(fSongs[I].Year);
-          else
-            Heuhaufen := fSongs[I].Artist + ' ' + fSongs[I].Title + ' ' +
-                         fSongs[I].Edition + ' ' + fSongs[I].Genre + ' ' +
-                         fSongs[I].Language + ' ' + IntToStr(fSongs[I].Year);
+          fltTitle:    Heuhaufen := fSuch[I].Title;
+          fltArtist:   Heuhaufen := fSuch[I].Artist;
+          fltEdition:  Heuhaufen := fSuch[I].Edition;
+          fltGenre:    Heuhaufen := fSuch[I].Genre;
+          fltLanguage: Heuhaufen := fSuch[I].Language;
+          fltYear:     Heuhaufen := fSuch[I].Year;
+          else         Heuhaufen := fSuch[I].Alle;
         end;
-        // Kleinschreiben und Umschreiben wie in der Suche des Spiels, sonst
-        // faende "uber" kein "Über".
-        Heuhaufen := LowerCase(TransliterateToASCII(Heuhaufen));
 
         if EvalSearchNode(Baum, Heuhaufen, fSongs[I].Year) then
         begin

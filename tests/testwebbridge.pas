@@ -120,6 +120,60 @@ begin
   Treffer := Bruecke.FindSongs('!lied', fltTitle, 1000);
   Check('Ausschluss wirkt', Length(Treffer) = 0, IntToStr(Length(Treffer)));
 
+  WriteLn('Suchregister');
+  // Die Suchtexte werden beim Veroeffentlichen vorbereitet, nicht bei jeder
+  // Anfrage. Der Fehler, der dabei droht: ein Register, das noch zur alten
+  // Liste gehoert. Dann faende man Lieder, die es nicht mehr gibt - und die
+  // neuen nicht.
+  SetLength(Lieder, 1);
+  Lieder[0].Index := 99;
+  Lieder[0].Artist := 'Neuer';
+  Lieder[0].Title := 'Titel';
+  Lieder[0].Edition := '';
+  Lieder[0].Genre := '';
+  Lieder[0].Language := '';
+  Lieder[0].Year := 0;
+  Bruecke.PublishSongs(Lieder);
+
+  Check('das neue Lied wird gefunden',
+        Length(Bruecke.FindSongs('neuer', fltAll, 10)) = 1);
+  Check('die alten nicht mehr',
+        Length(Bruecke.FindSongs('lied', fltTitle, 10)) = 0,
+        IntToStr(Length(Bruecke.FindSongs('lied', fltTitle, 10))));
+
+  // Der gemeinsame Suchtext wird jetzt aus den schon vorbereiteten Feldern
+  // zusammengesetzt. Geht dabei ein Trennzeichen verloren, klebten Interpret
+  // und Titel aneinander und eine Suche ueber beide fiele aus.
+  SetLength(Lieder, 1);
+  Lieder[0].Index := 1;
+  Lieder[0].Artist := 'Rock';
+  Lieder[0].Title := 'Star';
+  Lieder[0].Edition := 'Beste';
+  Lieder[0].Genre := 'Pop';
+  Lieder[0].Language := 'Deutsch';
+  Lieder[0].Year := 1990;
+  Bruecke.PublishSongs(Lieder);
+
+  Check('Suche ueber zwei Felder hinweg',
+        Length(Bruecke.FindSongs('rock star', fltAll, 10)) = 1);
+  Check('Felder bleiben getrennt - kein zusammengeklebter Text',
+        Length(Bruecke.FindSongs('rockstar', fltAll, 10)) = 0);
+  Check('das Jahr steht im gemeinsamen Text',
+        Length(Bruecke.FindSongs('1990', fltAll, 10)) = 1);
+  Check('Sprache ebenso',
+        Length(Bruecke.FindSongs('deutsch', fltAll, 10)) = 1);
+
+  // Eine Feldsuche darf nicht in anderen Feldern fuendig werden.
+  Check('Titelsuche findet den Interpreten nicht',
+        Length(Bruecke.FindSongs('rock', fltTitle, 10)) = 0);
+  Check('Interpretensuche findet den Titel nicht',
+        Length(Bruecke.FindSongs('star', fltArtist, 10)) = 0);
+  Check('Genresuche wirkt', Length(Bruecke.FindSongs('pop', fltGenre, 10)) = 1);
+  Check('Jahresbereich wirkt weiterhin',
+        Length(Bruecke.FindSongs('1985-1995', fltYear, 10)) = 1);
+  Check('Grossschreibung ist egal',
+        Length(Bruecke.FindSongs('ROCK', fltArtist, 10)) = 1);
+
   WriteLn('Befehle');
   Check('anfangs kein Befehl', not Bruecke.NextCommand(Cmd));
   Bruecke.PostCommand(wckStart, 42);

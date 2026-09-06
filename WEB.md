@@ -679,6 +679,24 @@ funktioniert also auch über den Proxy.
 | `js/render.js` | Noten und Text auf Canvas, eine Bahn je Stimme |
 | `js/game.js` | Schleife, Ton, Video, Mikrofone, Besetzung |
 
+### Das Suchregister
+
+Die Suchtexte werden **beim Veröffentlichen** vorbereitet — kleingeschrieben
+und ins ASCII-Alphabet umgeschrieben —, nicht bei jeder Anfrage. Bei zwanzig
+Liedern fällt der Unterschied nicht auf; bei über neuntausend kostete eine
+Suche, die wenig trifft, dreiviertel Sekunden, und beim Tippen merkt man jede
+davon. Gemessen an 9146 Liedern: **0,75 s → 0,06 s**.
+
+Das Register liegt **neben** der Liederliste, nicht in `TWebSong`: Das Lied
+ist, was die Weboberfläche zu sehen bekommt, das Register ist eine interne
+Angelegenheit der Brücke. So bleiben auch die Kopien klein, die `FindSongs`
+zurückgibt.
+
+Der Fehler, der dabei droht, ist ein Register, das noch zur alten Liste
+gehört — dann fände man Lieder, die es nicht mehr gibt, und die neuen nicht.
+`PublishSongs` baut deshalb beides in einem Zug auf; ein Test veröffentlicht
+zweimal und prüft, dass die alten Treffer verschwinden.
+
 Der Webthread fasst **niemals** die Datenstrukturen des Spiels an.
 `CatSongs.Song` wird beim Einlesen, Sortieren und Filtern ständig verändert;
 ein Zugriff von außen läse halbfertige Zustände. Stattdessen veröffentlicht
