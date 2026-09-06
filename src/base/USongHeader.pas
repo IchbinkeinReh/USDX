@@ -61,6 +61,10 @@ const
   // davor, dass eine kaputte Datei ohne Zeilenumbrueche alles aufhaelt.
   MAX_KOPFZEILEN = 200;
 
+  // So viel wird vom Anfang gelesen. Der Kopf steht dort; 64 KB reichen fuer
+  // 200 Zeilen um ein Vielfaches.
+  KOPF_BYTES = 64 * 1024;
+
 // Schneidet ein BOM ab. Ohne das heisst die erste Kopfzeile nicht 'TITLE',
 // sondern enthaelt drei unsichtbare Bytes davor und wird nie erkannt.
 function OhneBOM(const S: UTF8String): UTF8String;
@@ -92,7 +96,10 @@ end;
 function ReadSongHeader(const FileName: UTF8String;
                         out Header: TSongHeader): boolean;
 var
-  Datei: TextFile;
+  Strom: TFileStream;
+  Zeilen: TStringList;
+  Anfang: RawByteString;
+  Menge: int64;
   Zeile, Schluessel, Wert: UTF8String;
   Trenner, Gelesen: integer;
   Ordner, TonName, VideoName, BildName: UTF8String;
@@ -129,21 +136,37 @@ begin
   VideoName := '';
   BildName := '';
 
-  AssignFile(Datei, FileName);
-  {$I-}
-  Reset(Datei);
-  {$I+}
-  if (IOResult <> 0) then
-    Exit;
-
+  // Ueber einen Datenstrom, NICHT ueber TextFile.
+  //
+  // FPCs TextFile legt den Dateinamen in einem array[0..255] of char ab. Ein
+  // laengerer Pfad passt dort nicht hinein, und Reset scheitert - lautlos,
+  // denn die Datei ist ja lesbar. In der Sammlung hier betraf das genau die
+  // sechs Lieder mit Pfaden ab 257 Zeichen, meist lange Interpretennamen aus
+  // Film-Soundtracks. Ein Datenstrom kennt diese Grenze nicht.
   try
+    Strom := TFileStream.Create(FileName, fmOpenRead or fmShareDenyNone);
+  except
+    Exit;   // wirklich nicht lesbar
+  end;
+  try
+    Menge := Strom.Size;
+    if (Menge > KOPF_BYTES) then Menge := KOPF_BYTES;
+    SetLength(Anfang, Menge);
+    if (Menge > 0) then
+      Strom.ReadBuffer(Anfang[1], Menge);
+  finally
+    Strom.Free;
+  end;
+
+  Zeilen := TStringList.Create;
+  try
+    // Text() zerlegt an Zeilenenden, egal ob mit oder ohne Wagenruecklauf.
+    Zeilen.Text := Anfang;
+
     Gelesen := 0;
-    while not Eof(Datei) and (Gelesen < MAX_KOPFZEILEN) do
+    while (Gelesen < Zeilen.Count) and (Gelesen < MAX_KOPFZEILEN) do
     begin
-      {$I-}
-      ReadLn(Datei, Zeile);
-      {$I+}
-      if (IOResult <> 0) then Break;
+      Zeile := Zeilen[Gelesen];
       Inc(Gelesen);
 
       if (Gelesen = 1) then
@@ -184,10 +207,7 @@ begin
       else if (Schluessel = 'MP3') and (TonName = '') then TonName := Wert;
     end;
   finally
-    {$I-}
-    CloseFile(Datei);
-    {$I+}
-    if (IOResult <> 0) then ;   // beim Schliessen ist ein Fehler egal
+    Zeilen.Free;
   end;
 
   Ordner := ExtractFilePath(FileName);

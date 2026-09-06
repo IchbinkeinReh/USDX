@@ -59,6 +59,13 @@ Liederliste sichtbar ist: Titel, Interpret, Genre, Sprache, Edition, Jahr,
 Tondatei, Duett-Kennzeichen. **Nichts davon betrifft Noten** — die liest der
 Browser aus derselben `.txt`, es gibt also keinen zweiten Notenparser.
 
+Gelesen wird über einen **Datenstrom**, nicht über `TextFile`. FPC legt den
+Dateinamen eines `TextFile` in einem `array[0..255] of char` ab; ein längerer
+Pfad passt dort nicht hinein und `Reset` scheitert — lautlos, denn die Datei
+ist ja lesbar. In der Sammlung hier betraf das genau die sechs Lieder mit
+Pfaden ab 257 Zeichen, meist lange Interpretennamen aus Film-Soundtracks. Sie
+fehlten ohne jede Meldung.
+
 Die eine Regel, die dabei übereinstimmen muss: Ob ein Lied ein Duett ist,
 entscheidet die **erste** Zeile des Notenteils. Eine Kopfzeile dazu gibt es
 nicht. `testsongscan` hält das fest, samt Gegenprobe mit einem `P` weiter

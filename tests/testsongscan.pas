@@ -49,6 +49,7 @@ end;
 
 var
   H: TSongHeader;
+  LangerOrdner, LangePfad: string;
   Ordner: TStringList;
   Lieder: TWebSongArray;
   I, Gefunden: integer;
@@ -173,6 +174,26 @@ begin
         H.VideoPath = '', H.VideoPath);
   Check('ohne Angabe kein VIDEOGAP', H.VideoGap = 0, FloatToStr(H.VideoGap));
 
+  // --- sehr langer Pfad ---
+  WriteLn('Langer Pfad');
+  // FPCs TextFile legt den Dateinamen in einem array[0..255] of char ab. Ein
+  // laengerer Pfad passt dort nicht hinein und Reset scheitert - lautlos,
+  // denn die Datei ist ja lesbar. In der echten Sammlung betraf das die
+  // Lieder mit langen Interpretennamen aus Film-Soundtracks; sie fehlten
+  // ohne jede Meldung. Gelesen wird deshalb ueber einen Datenstrom.
+  LangerOrdner := Basis + StringOfChar('L', 120) + PathDelim +
+                  StringOfChar('M', 120);
+  LangePfad := LangerOrdner + PathDelim + 'lied.txt';
+  SchreibeDatei(LangePfad,
+    '#TITLE:Weit hinten'#10'#ARTIST:Wer'#10'#MP3:t.mp3'#10': 0 4 60 a'#10);
+  SchreibeDatei(LangerOrdner + PathDelim + 't.mp3', 'TON');
+  Check('der Pfad ist laenger als 255 Zeichen', Length(LangePfad) > 255,
+        IntToStr(Length(LangePfad)));
+  Check('und wird trotzdem gelesen',
+        ReadSongHeader(LangePfad, H) and (H.Title = 'Weit hinten'), H.Title);
+  Check('auch die Tondatei daneben wird gefunden',
+        ExtractFileName(H.AudioPath) = 't.mp3', H.AudioPath);
+
   // --- keine Lieddatei ---
   WriteLn('Was kein Lied ist');
   SchreibeDatei(Basis + 'liesmich.txt', 'Hier steht nur Text.'#10);
@@ -189,7 +210,7 @@ begin
     Lieder := ScanSongs(Ordner);
 
     Gefunden := Length(Lieder);
-    Check('alle Lieder gefunden, die Liesmich nicht', Gefunden = 9,
+    Check('alle Lieder gefunden, die Liesmich nicht', Gefunden = 10,
           IntToStr(Gefunden));
 
     DuoIdx := -1; AbbaIdx := -1;
@@ -260,6 +281,10 @@ begin
   DeleteFile(Basis + 'g' + PathDelim + 'bild.jpg');
   DeleteFile(Basis + 'h' + PathDelim + 'lied.txt');
   DeleteFile(Basis + 'i' + PathDelim + 'lied.txt');
+  DeleteFile(LangePfad);
+  DeleteFile(LangerOrdner + PathDelim + 't.mp3');
+  RemoveDir(LangerOrdner);
+  RemoveDir(Basis + StringOfChar('L', 120));
   RemoveDir(Basis + 'a'); RemoveDir(Basis + 'b'); RemoveDir(Basis + 'c');
   RemoveDir(Basis + 'd'); RemoveDir(Basis + 'e'); RemoveDir(Basis + 'f');
   RemoveDir(Basis + 'g'); RemoveDir(Basis + 'h'); RemoveDir(Basis + 'i');
