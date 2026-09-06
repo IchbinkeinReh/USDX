@@ -131,6 +131,7 @@ begin
     else if (Name = 'audio')      then Art := wfkAudio
     else if (Name = 'video')      then Art := wfkVideo
     else if (Name = 'background') then Art := wfkBackground
+    else if (Name = 'cover')      then Art := wfkCover
     else Exit;
 
     // -1 als Ausweichwert: StrToIntDef schluckt auch "3x" nicht, und ein
@@ -198,6 +199,10 @@ begin
       Eintrag.Add('language', Treffer[I].Language);
       Eintrag.Add('year', Treffer[I].Year);
       Eintrag.Add('duet', Treffer[I].Duet);
+      // Ob es ein Titelbild gibt. Ohne diese Angabe muesste die Liste es bei
+      // jedem Lied auf gut Glueck anfordern - bei neuntausend Eintraegen
+      // waeren das tausende Fehlanfragen.
+      Eintrag.Add('cover', Treffer[I].CoverPath <> '');
       Liste.Add(Eintrag);
     end;
     Result := Liste.AsJSON;

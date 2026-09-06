@@ -216,6 +216,11 @@ begin
                                    CatSongs.Song[I].Video).ToUTF8()
     else
       Liste[Anzahl].VideoPath := '';
+    if CatSongs.Song[I].Cover.IsSet then
+      Liste[Anzahl].CoverPath := CatSongs.Song[I].Path.Append(
+                                   CatSongs.Song[I].Cover).ToUTF8()
+    else
+      Liste[Anzahl].CoverPath := '';
     if CatSongs.Song[I].Background.IsSet then
       Liste[Anzahl].BackgPath := CatSongs.Song[I].Path.Append(
                                    CatSongs.Song[I].Background).ToUTF8()

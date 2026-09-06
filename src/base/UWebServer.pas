@@ -254,6 +254,21 @@ begin
                             Pfad, ContentType) of
       waDatei:
         begin
+          // Lieddateien duerfen zwischengespeichert werden, die Oberflaeche
+          // nicht.
+          //
+          // Titelbilder sind im Schnitt eine Viertelmegabyte gross. Ohne
+          // diese Angabe holt der Browser jedes davon beim Zurueckblaettern
+          // erneut - bei einer Liste mit neuntausend Eintraegen laeppert
+          // sich das zu Hunderten von Megabyte. Die Dateien aendern sich
+          // praktisch nie; ein Tag ist reichlich vorsichtig.
+          //
+          // Fuer index.html und die Module gilt das ausdruecklich NICHT:
+          // Sonst liefe nach einer Aktualisierung tagelang die alte Fassung.
+          if (Copy(ARequest.PathInfo, 1, 10) = '/api/song/') then
+            AResponse.SetCustomHeader('Cache-Control', 'public, max-age=86400')
+          else
+            AResponse.SetCustomHeader('Cache-Control', 'no-cache');
           SendeDatei(Pfad, ContentType, ARequest, AResponse);
           Exit;
         end;

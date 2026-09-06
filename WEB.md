@@ -695,6 +695,12 @@ Reihenfolge nicht von der Spracheinstellung des Rechners abhängt. Bei
 gleichem Namen entscheidet die ursprüngliche Stelle, damit die Reihenfolge
 zwischen zwei Läufen gleich bleibt.
 
+Die Auswahl der Mikrofone liegt als **feste Leiste** am unteren Rand, sobald
+ein Lied angetippt wurde. Vorher stand sie hinter der Liederliste — und weil
+beim Blättern ständig Lieder nachgeladen werden, rutschte sie sofort wieder
+aus dem Bild. Ein Platzhalter hält unten den Raum frei, den die Leiste
+verdeckt, damit die letzten Lieder erreichbar bleiben.
+
 Geholt wird **seitenweise**: `GET /api/songs?…&offset=N` überspringt die
 ersten N **Treffer** (nicht Lieder). Die Oberfläche lädt 60 auf einmal und
 hängt nach, sobald das Ende in Sicht kommt. Bei über neuntausend Liedern
@@ -712,6 +718,26 @@ Der `index` eines Liedes zeigt auf seine Stelle in dieser sortierten Liste;
 braucht, steht getrennt in `SelectIndex`. Vorher war beides dasselbe Feld —
 sobald die Liederliste des Spiels Kategorieüberschriften enthielt, zeigten
 Dateiabruf und Auswahl damit auf verschiedene Lieder.
+
+### Titelbilder in der Liste
+
+Jede Zeile zeigt das Cover aus `#COVER`, sofern eines hinterlegt ist. Ob das
+der Fall ist, steht als `cover` in der Liste — sonst müsste die Oberfläche es
+bei jedem Lied auf gut Glück anfordern, und bei neuntausend Einträgen wären
+das tausende Fehlanfragen.
+
+Geladen wird mit `loading="lazy"`: Der Browser holt nur, was tatsächlich zu
+sehen ist. Das ist keine Feinheit — die Bilder sind im Median **249 KB** groß,
+das größte in dieser Sammlung 4,7 MB. Ohne das lüde eine Seite von sechzig
+Einträgen rund 14 MB.
+
+Der Platz für das Bild steht fest, auch bevor es da ist. Sonst springt die
+Liste beim Nachladen und die Zeile rutscht einem unter dem Finger weg.
+
+Lieddateien werden mit `Cache-Control: public, max-age=86400` ausgeliefert,
+die Oberfläche dagegen mit `no-cache`. Ohne das holte der Browser jedes
+Titelbild beim Zurückblättern erneut; mit einem Cache auf der Oberfläche
+liefe nach einer Aktualisierung tagelang die alte Fassung weiter.
 
 ### Das Suchregister
 

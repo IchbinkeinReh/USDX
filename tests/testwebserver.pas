@@ -213,6 +213,22 @@ begin
   Check('auch beim Ausliefern einer Datei',
         Pos('close', LowerCase(LetzterKopf)) > 0, LetzterKopf);
 
+  WriteLn('Zwischenspeichern');
+  // Lieddateien duerfen im Browser liegen bleiben - Titelbilder sind im
+  // Schnitt eine Viertelmegabyte gross und wuerden beim Zurueckblaettern
+  // sonst jedes Mal neu geholt.
+  Hole('/api/song/0/audio', Body);
+  Check('Lieddateien duerfen zwischengespeichert werden',
+        Pos('max-age', LowerCase(LetzterKopf)) > 0, LetzterKopf);
+  // Die Oberflaeche NICHT: Sonst liefe nach einer Aktualisierung tagelang
+  // die alte Fassung weiter.
+  Hole('/js/song.js', Body);
+  Check('die Oberflaeche dagegen nicht',
+        Pos('no-cache', LowerCase(LetzterKopf)) > 0, LetzterKopf);
+  Hole('/', Body);
+  Check('die Startseite auch nicht',
+        Pos('no-cache', LowerCase(LetzterKopf)) > 0, LetzterKopf);
+
   WriteLn('Grosse Dateien');
   // Eine Datei ueber der Grenze darf nicht am Stueck in den Speicher gehen.
   // Geprueft wird ueber die Antwort: Sie muss gekuerzt sein und das auch

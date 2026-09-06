@@ -65,10 +65,11 @@ type
     AudioPath: UTF8String;
     VideoPath: UTF8String;
     BackgPath: UTF8String;
+    CoverPath: UTF8String;
   end;
 
   // Welche Datei eines Liedes gemeint ist.
-  TWebFileKind = (wfkTxt, wfkAudio, wfkVideo, wfkBackground);
+  TWebFileKind = (wfkTxt, wfkAudio, wfkVideo, wfkBackground, wfkCover);
 
   // Vorbereitete Suchtexte zu einem Lied: kleingeschrieben und ins
   // ASCII-Alphabet umgeschrieben, damit "uber" auch "Über" findet.
@@ -279,6 +280,7 @@ begin
         wfkAudio:      Path := fSongs[Index].AudioPath;
         wfkVideo:      Path := fSongs[Index].VideoPath;
         wfkBackground: Path := fSongs[Index].BackgPath;
+        wfkCover:      Path := fSongs[Index].CoverPath;
       else
         Path := fSongs[Index].TxtPath;
       end;

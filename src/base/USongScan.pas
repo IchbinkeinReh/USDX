@@ -232,6 +232,7 @@ begin
       Result[Anzahl].AudioPath := Kopf.AudioPath;
       Result[Anzahl].VideoPath := Kopf.VideoPath;
       Result[Anzahl].BackgPath := Kopf.BackgPath;
+      Result[Anzahl].CoverPath := Kopf.CoverPath;
       Inc(Anzahl);
     end;
     SetLength(Result, Anzahl);

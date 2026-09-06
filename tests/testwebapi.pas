@@ -62,6 +62,7 @@ begin
   L[1].Duet := True;   // Queen-Eintrag als Duett
   L[1].TxtPath := '/lieder/queen.txt'; L[1].AudioPath := '';   // ohne Ton
   L[0].VideoPath := '/lieder/abba.mp4'; L[0].BackgPath := '/lieder/abba.jpg';
+  L[0].CoverPath := '/lieder/abba_cover.jpg';
   L[1].VideoPath := '';                 L[1].BackgPath := '/lieder/queen.png';
   B.PublishSongs(L);
 
@@ -235,6 +236,25 @@ begin
   // Ein Lied ohne Video muss 404 liefern. Der Browser fragt naemlich immer
   // erst an und faellt bei 404 auf das Bild zurueck - eine leere 200-Antwort
   // haette er als kaputtes Video verstanden.
+  Check('Titelbild wird zugeordnet',
+        (ResolveFileRequest(B, '/api/song/0/cover', '', Pfad, CT) = waDatei) and
+        (Pfad = '/lieder/abba_cover.jpg'), Pfad);
+  Check('fehlendes Titelbild: 404',
+        ResolveFileRequest(B, '/api/song/1/cover', '', Pfad, CT) = waFehlt);
+
+  Ruf('/api/songs', ['q', 'abba', 'mode', 'artist']);
+  D := GetJSON(Body);
+  try
+    Check('mit Titelbild wird gemeldet',
+          TJSONObject(TJSONArray(D)[0]).Booleans['cover']);
+  finally D.Free; end;
+  Ruf('/api/songs', ['q', 'queen', 'mode', 'artist']);
+  D := GetJSON(Body);
+  try
+    Check('ohne Titelbild ebenso',
+          not TJSONObject(TJSONArray(D)[0]).Booleans['cover']);
+  finally D.Free; end;
+
   Check('fehlendes Video: 404',
         ResolveFileRequest(B, '/api/song/1/video', '', Pfad, CT) = waFehlt);
 

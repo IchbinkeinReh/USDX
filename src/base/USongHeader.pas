@@ -38,6 +38,7 @@ type
     AudioPath: UTF8String;   // vollstaendiger Pfad der Tondatei, '' wenn keine
     VideoPath: UTF8String;   // #VIDEO, '' wenn keins
     BackgPath: UTF8String;   // #BACKGROUND, '' wenn keins
+    CoverPath: UTF8String;   // #COVER, '' wenn keins
     VideoGap:  double;       // #VIDEOGAP in Sekunden
     Artist:    UTF8String;
     Title:     UTF8String;
@@ -102,7 +103,7 @@ var
   Menge: int64;
   Zeile, Schluessel, Wert: UTF8String;
   Trenner, Gelesen: integer;
-  Ordner, TonName, VideoName, BildName: UTF8String;
+  Ordner, TonName, VideoName, BildName, CoverName: UTF8String;
 
   // Loest einen Dateinamen aus dem Kopf gegen den Ordner der .txt auf.
   // Leer, wenn nichts dasteht oder die Datei fehlt.
@@ -131,10 +132,12 @@ begin
   Header.Language := '';
   Header.VideoPath := '';
   Header.BackgPath := '';
+  Header.CoverPath := '';
   Header.VideoGap := 0;
   TonName := '';
   VideoName := '';
   BildName := '';
+  CoverName := '';
 
   // Ueber einen Datenstrom, NICHT ueber TextFile.
   //
@@ -199,6 +202,7 @@ begin
       else if (Schluessel = 'AUDIO')    then TonName   := Wert
       else if (Schluessel = 'VIDEO')    then VideoName := Wert
       else if (Schluessel = 'BACKGROUND') then BildName := Wert
+      else if (Schluessel = 'COVER') then CoverName := Wert
       // VIDEOGAP steht mal mit Punkt, mal mit Komma - wie alle Kommazahlen
       // im Format.
       else if (Schluessel = 'VIDEOGAP') then
@@ -214,6 +218,7 @@ begin
   Header.AudioPath := Daneben(TonName);
   Header.VideoPath := Daneben(VideoName);
   Header.BackgPath := Daneben(BildName);
+  Header.CoverPath := Daneben(CoverName);
 
   Result := (Header.Title <> '') or (Header.Artist <> '');
 end;
