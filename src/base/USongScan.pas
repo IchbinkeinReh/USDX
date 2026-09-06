@@ -217,7 +217,10 @@ begin
       if not ReadSongHeader(Dateien[I], Kopf) then
         Continue;   // keine Lieddatei - etwa eine Liesmich daneben
 
-      Result[Anzahl].Index     := Anzahl;
+      Result[Anzahl].Index       := Anzahl;
+      // Ohne Spiel gibt es nichts auszuwaehlen; der Wert bleibt trotzdem
+      // gesetzt, damit er nie zufaellig aus dem Speicher stammt.
+      Result[Anzahl].SelectIndex := Anzahl;
       Result[Anzahl].Artist    := Kopf.Artist;
       Result[Anzahl].Title     := Kopf.Title;
       Result[Anzahl].Edition   := Kopf.Edition;

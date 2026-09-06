@@ -188,7 +188,10 @@ begin
   begin
     if CatSongs.Song[I].Main then
       Continue;   // Kategorieueberschrift, kein Lied
-    Liste[Anzahl].Index    := I;
+    // Index vergibt PublishSongs neu (die Liste wird dort sortiert);
+    // fuer das Auswaehlen im Spiel zaehlt SelectIndex.
+    Liste[Anzahl].Index       := Anzahl;
+    Liste[Anzahl].SelectIndex := I;
     Liste[Anzahl].Artist   := CatSongs.Song[I].Artist;
     Liste[Anzahl].Title    := CatSongs.Song[I].Title;
     Liste[Anzahl].Edition  := CatSongs.Song[I].Edition;

@@ -174,6 +174,72 @@ begin
   Check('Grossschreibung ist egal',
         Length(Bruecke.FindSongs('ROCK', fltArtist, 10)) = 1);
 
+  WriteLn('Sortierung und Nachladen');
+  SetLength(Lieder, 5);
+  Lieder[0].Index := 0; Lieder[0].Artist := 'Zappa';   Lieder[0].Title := 'Alpha';
+  Lieder[1].Index := 0; Lieder[1].Artist := 'Anders';  Lieder[1].Title := 'Zulu';
+  Lieder[2].Index := 0; Lieder[2].Artist := 'Anders';  Lieder[2].Title := 'Alpha';
+  Lieder[3].Index := 0; Lieder[3].Artist := 'Meyer';   Lieder[3].Title := 'Beta';
+  Lieder[4].Index := 0; Lieder[4].Artist := 'anders';  Lieder[4].Title := 'Beta';
+  for I := 0 to 4 do
+  begin
+    Lieder[I].Edition := ''; Lieder[I].Genre := ''; Lieder[I].Language := '';
+    Lieder[I].Year := 2000;
+    Lieder[I].SelectIndex := 100 + I;   // Kennung fuer das Spiel
+  end;
+  Bruecke.PublishSongs(Lieder);
+
+  Treffer := Bruecke.FindSongs('', fltAll, 100);
+  Check('alle fuenf kommen zurueck', Length(Treffer) = 5, IntToStr(Length(Treffer)));
+  Check('nach Interpret sortiert',
+        (Treffer[0].Artist = 'Anders') and (Treffer[1].Artist = 'anders') and
+        (Treffer[3].Artist = 'Meyer') and (Treffer[4].Artist = 'Zappa'),
+        Treffer[0].Artist + ',' + Treffer[1].Artist + ',' + Treffer[2].Artist +
+        ',' + Treffer[3].Artist + ',' + Treffer[4].Artist);
+  Check('bei gleichem Interpreten nach Titel',
+        (Treffer[0].Title = 'Alpha') and (Treffer[2].Title = 'Zulu'),
+        Treffer[0].Title + ',' + Treffer[2].Title);
+
+  // Der Index muss auf die Stelle in der sortierten Liste zeigen - ueber ihn
+  // werden die Dateien nachgeschlagen.
+  Stoerung := False;
+  for I := 0 to High(Treffer) do
+    if (Treffer[I].Index <> I) then Stoerung := True;
+  Check('der Index zeigt auf die Stelle in der Liste', not Stoerung);
+
+  // Die Kennung fuers Spiel darf sich beim Sortieren NICHT verschieben -
+  // sonst startete das Spiel ein anderes Lied als angetippt.
+  Check('die Kennung fuers Spiel wandert mit',
+        (Treffer[4].SelectIndex = 100) and (Treffer[3].SelectIndex = 103),
+        IntToStr(Treffer[4].SelectIndex) + ',' + IntToStr(Treffer[3].SelectIndex));
+
+  // Nachladen: seitenweise geholt muss dasselbe herauskommen wie am Stueck.
+  Treffer := Bruecke.FindSongs('', fltAll, 2, 0);
+  Check('erste Seite hat zwei', Length(Treffer) = 2);
+  Check('und faengt vorne an', Treffer[0].Artist = 'Anders');
+  // Stelle 2 ist 'Anders / Zulu': Bei gleichem Interpreten entscheidet der
+  // Titel, und 'Beta' (Stelle 1) kommt vor 'Zulu'.
+  Treffer := Bruecke.FindSongs('', fltAll, 2, 2);
+  Check('zweite Seite setzt fort',
+        (Length(Treffer) = 2) and (Treffer[0].Title = 'Zulu') and
+        (Treffer[1].Artist = 'Meyer'),
+        Treffer[0].Artist + '/' + Treffer[0].Title + ',' + Treffer[1].Artist);
+  Treffer := Bruecke.FindSongs('', fltAll, 2, 4);
+  Check('letzte Seite hat den Rest',
+        (Length(Treffer) = 1) and (Treffer[0].Artist = 'Zappa'),
+        IntToStr(Length(Treffer)));
+  Treffer := Bruecke.FindSongs('', fltAll, 2, 99);
+  Check('hinter dem Ende kommt nichts', Length(Treffer) = 0);
+  Treffer := Bruecke.FindSongs('', fltAll, 2, -5);
+  Check('ein negativer Versatz zaehlt als null', Length(Treffer) = 2);
+
+  // Auch mit Suchbegriff muss der Versatz auf die TREFFER zaehlen, nicht auf
+  // alle Lieder.
+  Treffer := Bruecke.FindSongs('alpha', fltTitle, 10, 1);
+  Check('Versatz zaehlt die Treffer, nicht die Lieder',
+        (Length(Treffer) = 1) and (Treffer[0].Artist = 'Zappa'),
+        IntToStr(Length(Treffer)));
+
   WriteLn('Befehle');
   Check('anfangs kein Befehl', not Bruecke.NextCommand(Cmd));
   Bruecke.PostCommand(wckStart, 42);

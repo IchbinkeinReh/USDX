@@ -20,7 +20,9 @@
          background:#3d6ae0;color:#fff;cursor:pointer}
   button:disabled{background:#333a48;cursor:default}
   button.still{background:#2a3140}
+  #liste{max-height:none}
   #liste div{padding:12px 14px;border-bottom:1px solid #1b1f29;cursor:pointer}
+  #nachladen{padding:14px;text-align:center;color:#98a0b0;font-size:14px}
   #liste div:active{background:#232936}
   .a{font-weight:600}.t{color:#98a0b0;font-size:14px}
   .duett{color:#ffb27f;font-size:12px;margin-left:6px}
@@ -91,6 +93,7 @@
     <input id="suche" placeholder="Suchen – abba OR queen, !live, 1990-1999">
   </header>
   <div id="liste"></div>
+  <div id="nachladen" class="aus">lädt …</div>
 
   <div id="vorbereitung" class="aus">
     <div id="gewaehlt"></div>
@@ -174,6 +177,17 @@ const spiel = new Game(canvas, el);
 const handy = istHandy();
 let mikrofone = [], t = null, besetzung = [];
 
+// Nachladen beim Blaettern.
+//
+// Bei ueber neuntausend Liedern kann die Liste nicht am Stueck kommen: Der
+// Server liefert hoechstens 200 auf einmal, und der Browser haette an
+// tausenden Zeilen zu bauen. Geholt wird deshalb seitenweise, sobald das
+// Ende in Sicht kommt.
+const SEITE = 60;
+// Vorher nachladen, nicht erst am Rand - sonst stockt es sichtbar.
+const VORLAUF_PX = 600;
+let versatz = 0, laedt = false, amEnde = false, laufendeSuche = 0;
+
 // Canvas auf die tatsaechliche Groesse setzen, sonst wird das Bild
 // weichgezeichnet. Muss auch nach dem Drehen wieder passieren.
 //
@@ -190,15 +204,57 @@ addEventListener('orientationchange', () => setTimeout(passeAn, 250));
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
 
 // ---------- Schritt 1: Lied waehlen ----------
-async function sucheLieder() {
-  const r = await fetch(pfad('/api/songs?max=100&q=' +
-                             encodeURIComponent($('suche').value)));
-  const d = await r.json();
-  $('liste').innerHTML = d.map(s =>
-    `<div data-i="${s.index}"><div class="a">${esc(s.artist)}</div>` +
+function zeileFuer(s) {
+  return `<div data-i="${s.index}"><div class="a">${esc(s.artist)}</div>` +
     `<div class="t">${esc(s.title)}${s.year ? ' · ' + s.year : ''}` +
-    `${s.duet ? '<span class="duett">Duett</span>' : ''}</div></div>`).join('');
+    `${s.duet ? '<span class="duett">Duett</span>' : ''}</div></div>`;
 }
+
+// Faengt von vorne an: neue Suche, Liste leeren.
+async function sucheLieder() {
+  versatz = 0;
+  amEnde = false;
+  $('liste').innerHTML = '';
+  await holeSeite();
+}
+
+async function holeSeite() {
+  if (laedt || amEnde) return;
+  laedt = true;
+  $('nachladen').classList.remove('aus');
+  // Jede Suche bekommt eine Nummer. Trifft eine alte Antwort verspaetet
+  // ein, wird sie verworfen - sonst mischten sich Treffer zweier Suchen.
+  const meine = ++laufendeSuche;
+  try {
+    const r = await fetch(pfad(`/api/songs?max=${SEITE}&offset=${versatz}&q=` +
+                               encodeURIComponent($('suche').value)));
+    const d = await r.json();
+    if (meine !== laufendeSuche) return;
+    if (d.length < SEITE) amEnde = true;
+    versatz += d.length;
+    $('liste').insertAdjacentHTML('beforeend', d.map(zeileFuer).join(''));
+  } catch (e) {
+    amEnde = true;
+  } finally {
+    if (meine === laufendeSuche) {
+      laedt = false;
+      $('nachladen').classList.toggle('aus', amEnde);
+    }
+  }
+  // Fuellt die Seite noch nicht den Bildschirm, gleich weiterladen - sonst
+  // gaebe es nichts zu blaettern und das Nachladen kaeme nie in Gang.
+  if (meine === laufendeSuche && !amEnde &&
+      document.documentElement.scrollHeight <= window.innerHeight) {
+    await holeSeite();
+  }
+}
+
+addEventListener('scroll', () => {
+  const rest = document.documentElement.scrollHeight - window.scrollY
+               - window.innerHeight;
+  if (rest < VORLAUF_PX) holeSeite();
+}, { passive: true });
+
 $('suche').addEventListener('input', () => {
   clearTimeout(t); t = setTimeout(sucheLieder, 250);
 });

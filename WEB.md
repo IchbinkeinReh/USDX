@@ -686,6 +686,33 @@ funktioniert also auch über den Proxy.
 | `js/render.js` | Noten und Text auf Canvas, eine Bahn je Stimme |
 | `js/game.js` | Schleife, Ton, Video, Mikrofone, Besetzung |
 
+### Reihenfolge und Nachladen
+
+Die Liste ist **alphabetisch nach Interpret und Titel** sortiert, einmal beim
+Veröffentlichen. Sortiert wird über die schon umgeschriebenen Suchtexte,
+damit „Ärzte" bei „Arzte" steht und nicht hinter „Z" — und damit die
+Reihenfolge nicht von der Spracheinstellung des Rechners abhängt. Bei
+gleichem Namen entscheidet die ursprüngliche Stelle, damit die Reihenfolge
+zwischen zwei Läufen gleich bleibt.
+
+Geholt wird **seitenweise**: `GET /api/songs?…&offset=N` überspringt die
+ersten N **Treffer** (nicht Lieder). Die Oberfläche lädt 60 auf einmal und
+hängt nach, sobald das Ende in Sicht kommt. Bei über neuntausend Liedern
+ginge es anders nicht: Der Server liefert höchstens 200 auf einmal, und der
+Browser hätte an tausenden Zeilen zu bauen.
+
+Zwei Feinheiten, ohne die es hakt: Jede Suche bekommt eine Nummer, damit eine
+verspätete Antwort einer alten Suche verworfen wird statt sich unter die
+neuen Treffer zu mischen. Und füllt eine Seite den Bildschirm noch nicht,
+wird sofort weitergeladen — sonst gäbe es nichts zu blättern und das
+Nachladen käme nie in Gang.
+
+Der `index` eines Liedes zeigt auf seine Stelle in dieser sortierten Liste;
+über ihn werden die Dateien nachgeschlagen. Was das **Spiel** zum Auswählen
+braucht, steht getrennt in `SelectIndex`. Vorher war beides dasselbe Feld —
+sobald die Liederliste des Spiels Kategorieüberschriften enthielt, zeigten
+Dateiabruf und Auswahl damit auf verschiedene Lieder.
+
 ### Das Suchregister
 
 Die Suchtexte werden **beim Veröffentlichen** vorbereitet — kleingeschrieben

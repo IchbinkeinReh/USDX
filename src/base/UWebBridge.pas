@@ -41,7 +41,16 @@ type
   // Ein Lied, so wie die Weboberflaeche es braucht - eine Abschrift, kein
   // Verweis auf das Original.
   TWebSong = record
-    Index:    integer;      // Platz in CatSongs.Song, fuer spaetere Befehle
+    // Platz in der veroeffentlichten Liste. Wird von PublishSongs gesetzt,
+    // nicht vom Aufrufer - die Liste wird dort sortiert, und der Index muss
+    // danach zur tatsaechlichen Stelle passen. Ueber ihn werden die Dateien
+    // nachgeschlagen.
+    Index:    integer;
+    // Was das Spiel braucht, um dieses Lied auszuwaehlen: der Platz in
+    // CatSongs.Song. Frueher stand das im Index selbst - dadurch zeigten
+    // Dateiabruf und Auswahl auf verschiedene Lieder, sobald die Liste
+    // Kategorieueberschriften enthielt.
+    SelectIndex: integer;
     Artist:   UTF8String;
     Title:    UTF8String;
     Edition:  UTF8String;
@@ -87,6 +96,7 @@ type
       fSuch:     array of TSuchIndex;
       fCommands: array of TWebCommand;
       fStand:    integer;   // steigt bei jeder Veroeffentlichung
+      procedure Sortiere;
     public
       constructor Create;
       destructor Destroy; override;
@@ -99,14 +109,20 @@ type
       // --- vom Webthread ---
       // Sucht in der Abschrift. Query wird wie im Spiel ausgewertet, also
       // mit AND, OR, Klammern, Ausschluss und Jahresbereichen.
+      // Ab wieviel Treffer geliefert wird, steuert Offset - damit die
+      // Oberflaeche beim Blaettern nachladen kann, ohne alles neu zu holen.
       function  FindSongs(const Query: UTF8String; Filter: TSongFilter;
-                          Max: integer): TWebSongArray;
+                          Max: integer; Offset: integer = 0): TWebSongArray;
       procedure PostCommand(Kind: TWebCommandKind; SongIndex: integer);
 
       // Schlaegt den Dateipfad zu einem Index nach. false, wenn es den Index
       // nicht gibt oder das Lied keine solche Datei hat.
       function  SongPath(Index: integer; Art: TWebFileKind;
                          out Path: UTF8String): boolean;
+
+      // Uebersetzt einen Listenplatz in die Kennung, die das Spiel zum
+      // Auswaehlen braucht.
+      function  SelectIndexOf(Index: integer; out Sel: integer): boolean;
 
       function  SongCount: integer;
       function  Stand: integer;
@@ -149,6 +165,12 @@ begin
     // Elementweise kopieren statt die Referenz zu uebernehmen: Sonst teilten
     // sich Spiel und Web dasselbe Array, und der Sinn der Abschrift waere
     // dahin.
+    // Alphabetisch nach Interpret und Titel sortieren, EINMAL hier.
+    //
+    // Sortiert wird ueber die schon umgeschriebenen Texte, damit "Ärzte"
+    // bei "Arzte" steht und nicht hinter "Z". Danach wird der Index neu
+    // vergeben: Er zeigt auf die Stelle in dieser Liste, und ueber ihn
+    // werden die Dateien nachgeschlagen.
     SetLength(fSongs, Length(Songs));
     // Das Suchregister wird hier mit aufgebaut, nicht bei jeder Anfrage.
     //
@@ -174,7 +196,69 @@ begin
                        fSuch[I].Edition + ' ' + fSuch[I].Genre + ' ' +
                        fSuch[I].Language + ' ' + Jahr;
     end;
+
+    Sortiere;
+
     Inc(fStand);
+  finally
+    fLock.Release;
+  end;
+end;
+
+// Bringt Liederliste und Suchregister gemeinsam in alphabetische Ordnung.
+//
+// Ueber eine sortierte Zeichenkettenliste statt eines eigenen Sortierens:
+// Die Schluessel sind schon kleingeschrieben und ins ASCII-Alphabet
+// umgeschrieben, damit ist die Ordnung von der Spracheinstellung unabhaengig.
+procedure TWebBridge.Sortiere;
+var
+  Ordnung: TStringList;
+  AlteLieder: TWebSongArray;
+  AltesSuch: array of TSuchIndex;
+  I, Quelle: integer;
+begin
+  if (Length(fSongs) < 2) then
+  begin
+    if (Length(fSongs) = 1) then fSongs[0].Index := 0;
+    Exit;
+  end;
+
+  AlteLieder := Copy(fSongs, 0, Length(fSongs));
+  SetLength(AltesSuch, Length(fSuch));
+  for I := 0 to High(fSuch) do
+    AltesSuch[I] := fSuch[I];
+
+  Ordnung := TStringList.Create;
+  try
+    Ordnung.CaseSensitive := True;   // Schluessel sind ohnehin kleingeschrieben
+    Ordnung.Duplicates := dupAccept;
+    Ordnung.Sorted := True;
+    for I := 0 to High(AltesSuch) do
+      // Der Platz wird an den Schluessel gehaengt, damit gleiche Namen eine
+      // feste Reihenfolge behalten - sonst wechselte sie zwischen Laeufen.
+      Ordnung.AddObject(AltesSuch[I].Artist + #9 + AltesSuch[I].Title + #9 +
+                        Format('%.8d', [I]), TObject(PtrInt(I)));
+
+    for I := 0 to Ordnung.Count - 1 do
+    begin
+      Quelle := PtrInt(Ordnung.Objects[I]);
+      fSongs[I] := AlteLieder[Quelle];
+      fSongs[I].Index := I;
+      fSuch[I] := AltesSuch[Quelle];
+    end;
+  finally
+    Ordnung.Free;
+  end;
+end;
+
+function TWebBridge.SelectIndexOf(Index: integer; out Sel: integer): boolean;
+begin
+  Sel := -1;
+  fLock.Acquire;
+  try
+    Result := (Index >= 0) and (Index <= High(fSongs));
+    if Result then
+      Sel := fSongs[Index].SelectIndex;
   finally
     fLock.Release;
   end;
@@ -226,10 +310,10 @@ begin
 end;
 
 function TWebBridge.FindSongs(const Query: UTF8String; Filter: TSongFilter;
-                              Max: integer): TWebSongArray;
+                              Max: integer; Offset: integer = 0): TWebSongArray;
 var
   Baum: PSearchNode;
-  I, Anzahl: integer;
+  I, Anzahl, Uebersprungen: integer;
   Heuhaufen: UTF8String;
 begin
   SetLength(Result, 0);
@@ -242,6 +326,8 @@ begin
     fLock.Acquire;
     try
       Anzahl := 0;
+      Uebersprungen := 0;
+      if (Offset < 0) then Offset := 0;
       SetLength(Result, Length(fSongs));
       for I := 0 to High(fSongs) do
       begin
@@ -258,6 +344,13 @@ begin
 
         if EvalSearchNode(Baum, Heuhaufen, fSongs[I].Year) then
         begin
+          // Die ersten Offset Treffer ueberspringen - die hat die
+          // Oberflaeche schon.
+          if (Uebersprungen < Offset) then
+          begin
+            Inc(Uebersprungen);
+            Continue;
+          end;
           Result[Anzahl] := fSongs[I];
           Inc(Anzahl);
           if (Anzahl >= Max) then

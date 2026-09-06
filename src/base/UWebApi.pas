@@ -210,7 +210,7 @@ function HandleWebRequest(Bridge: TWebBridge; const Path: UTF8String;
                           Query: TStrings;
                           out ContentType, Body: UTF8String): integer;
 var
-  Max, Index: integer;
+  Max, Index, Sel: integer;
   Antwort: TJSONObject;
 begin
   ContentType := 'text/plain; charset=utf-8';
@@ -255,7 +255,8 @@ begin
       Max := WEB_MAX_RESULTS;
     Body := SongsToJSON(Bridge.FindSongs(Query.Values['q'],
                                          FilterFromName(Query.Values['mode']),
-                                         Max));
+                                         Max,
+                                         StrToIntDef(Query.Values['offset'], 0)));
     ContentType := 'application/json; charset=utf-8';
     Result := 200;
     Exit;
@@ -271,10 +272,18 @@ begin
         Antwort.Add('error', 'index fehlt oder ist ungueltig');
         Result := 400;
       end
+      else if not Bridge.SelectIndexOf(Index, Sel) then
+      begin
+        Antwort.Add('error', 'unbekanntes Lied');
+        Result := 404;
+      end
       else
       begin
-        // Nur einreihen - ausgefuehrt wird im Spielthread.
-        Bridge.PostCommand(wckStart, Index);
+        // Nur einreihen - ausgefuehrt wird im Spielthread. Uebergeben wird
+        // die Kennung, die das Spiel kennt, nicht der Listenplatz: Die
+        // Liste ist alphabetisch sortiert und stimmt mit der Reihenfolge im
+        // Spiel nicht ueberein.
+        Bridge.PostCommand(wckStart, Sel);
         Antwort.Add('queued', true);
         Result := 200;
       end;
