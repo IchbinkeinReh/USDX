@@ -199,6 +199,10 @@ const canvas = $('buehnebild');
 const spiel = new Game(canvas, el);
 const handy = istHandy();
 let mikrofone = [], t = null, besetzung = [];
+// Welches Lied gerade geladen ist und was zuletzt tatsaechlich gesucht wurde -
+// beides haelt fest, was schon umgesetzt ist, damit anwendenZustand() nicht
+// doppelt sucht oder doppelt laedt, wenn sich an der URL nichts Neues zeigt.
+let aktuellGeladen = null, aktuelleSucheText = null;
 
 // Nachladen beim Blaettern.
 //
@@ -239,6 +243,72 @@ if (window.ResizeObserver) {
       $('platzhalter').style.height = $('vorbereitung').offsetHeight + 'px';
   }).observe($('vorbereitung'));
 }
+
+// ---------- Zustand in der URL ----------
+//
+// Drei Dinge sollen sich in der Adresszeile wiederfinden: was gesucht wird,
+// welches Lied ausgewaehlt ist, und ob gerade gesungen wird. Damit lassen
+// sich Lieder verlinken, und die Zurueck-Taste (auch die des Handys) fuehrt
+// durch die Schritte zurueck statt die Seite ganz zu verlassen.
+//
+// Was NICHT geht: Singen selbst laesst sich ueber die URL nicht wieder
+// aufnehmen - dafuer fehlt nach einem Neuladen die Mikrofonfreigabe und die
+// Nutzergeste, die der Browser fuer Vollbild verlangt. Trifft die URL trotzdem
+// auf singen=1 (Neuladen mitten im Lied, oder ein geteilter Link), landet man
+// stattdessen auf der Auswahl mit dem passenden Lied - keine Ueberraschung,
+// aber auch kein Fehler.
+function leseZustandAusURL() {
+  const p = new URLSearchParams(location.search);
+  return {
+    q: p.get('q') || '',
+    lied: p.has('lied') ? +p.get('lied') : null,
+    singen: p.get('singen') === '1',
+  };
+}
+
+function syncURL(patch, { push }) {
+  const p = new URLSearchParams(location.search);
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === null || v === undefined || v === '') p.delete(k);
+    else p.set(k, v);
+  }
+  const qs = p.toString();
+  const url = location.pathname + (qs ? '?' + qs : '') + location.hash;
+  if (push) history.pushState(null, '', url);
+  else history.replaceState(null, '', url);
+}
+
+// Bringt die Oberflaeche in den Zustand, den die URL beschreibt - beim ersten
+// Laden genauso wie nach Vor/Zurueck. Was schon passt, wird nicht angefasst,
+// damit dabei nicht unnoetig neu gesucht oder neu geladen wird.
+async function anwendenZustand(z) {
+  if (!buehne.classList.contains('aus') || !ergebnisseite.classList.contains('aus')) {
+    await verlasseBuehne();
+    ergebnisseite.classList.add('aus');
+    auswahl.classList.remove('aus');
+    $('singen').disabled = false;
+  }
+
+  if (aktuelleSucheText !== z.q) {
+    $('suche').value = z.q;
+    aktuelleSucheText = z.q;
+    await sucheLieder();
+  }
+
+  if (z.lied != null) {
+    if (aktuellGeladen !== z.lied) await waehleLied(z.lied);
+    else zeigeLeiste(true);
+  } else {
+    zeigeLeiste(false);
+    aktuellGeladen = null;
+  }
+
+  // Singen liess sich nicht wiederaufnehmen (siehe oben) - die URL soll das
+  // dann auch zeigen, statt einen Zustand vorzutaeuschen, der nicht stimmt.
+  if (z.singen) syncURL({ singen: null }, { push: false });
+}
+
+addEventListener('popstate', () => { anwendenZustand(leseZustandAusURL()); });
 
 // ---------- Schritt 1: Lied waehlen ----------
 function zeileFuer(s) {
@@ -300,7 +370,11 @@ addEventListener('scroll', () => {
 }, { passive: true });
 
 $('suche').addEventListener('input', () => {
-  clearTimeout(t); t = setTimeout(sucheLieder, 250);
+  clearTimeout(t); t = setTimeout(async () => {
+    aktuelleSucheText = $('suche').value;
+    await sucheLieder();
+    syncURL({ q: aktuelleSucheText }, { push: false });
+  }, 250);
 });
 
 function zeigeBesetzung(song) {
@@ -357,14 +431,13 @@ function pruefeDoppelt() {
 }
 $('stimmen').addEventListener('change', pruefeDoppelt);
 
-$('liste').addEventListener('click', async (e) => {
-  const d = e.target.closest('div[data-i]');
-  if (!d) return;
+async function waehleLied(index) {
   $('gewaehlt').textContent = 'Lade …';
   $('gewaehlt_info').textContent = '';
   zeigeLeiste(true);
+  aktuellGeladen = index;
   try {
-    const song = await spiel.ladeLied(+d.dataset.i);
+    const song = await spiel.ladeLied(index);
     // Namen der Mikrofone gibt der Browser erst nach einer Freigabe heraus.
     if (mikrofone.length === 0) {
       await spiel.frageFreigabe();
@@ -382,9 +455,21 @@ $('liste').addEventListener('click', async (e) => {
     $('gewaehlt_info').textContent = err.message;
     $('singen').disabled = true;
   }
+}
+
+$('liste').addEventListener('click', async (e) => {
+  const d = e.target.closest('div[data-i]');
+  if (!d) return;
+  const index = +d.dataset.i;
+  await waehleLied(index);
+  syncURL({ lied: index, singen: null }, { push: true });
 });
 
-$('anderes').addEventListener('click', () => zeigeLeiste(false));
+$('anderes').addEventListener('click', () => {
+  zeigeLeiste(false);
+  aktuellGeladen = null;
+  syncURL({ lied: null, singen: null }, { push: true });
+});
 
 // ---------- Schritt 2: Singen ----------
 $('singen').addEventListener('click', async () => {
@@ -404,6 +489,7 @@ $('singen').addEventListener('click', async () => {
   buehne.classList.remove('aus');
   $('startflaeche').style.display = 'flex';
   el.hinweis.textContent = '';
+  syncURL({ singen: 1 }, { push: true });
 
   // Vollbild MUSS aus dieser Klickbehandlung heraus angefordert werden -
   // spaeter fehlt die Nutzergeste und der Browser lehnt ab. Das gilt auf
@@ -441,6 +527,9 @@ async function zurueckZurAuswahl() {
   auswahl.classList.remove('aus');
   $('singen').disabled = false;
   el.hinweis.textContent = '';
+  zeigeLeiste(false);
+  aktuellGeladen = null;
+  syncURL({ lied: null, singen: null }, { push: true });
 }
 $('zurueck').addEventListener('click', zurueckZurAuswahl);
 $('zurueck_zur_liste').addEventListener('click', zurueckZurAuswahl);
@@ -537,7 +626,7 @@ document.addEventListener('fullscreenchange', () => {
   setTimeout(passeAn, 100);
 });
 
-sucheLieder();
+anwendenZustand(leseZustandAusURL());
 passeAn();
 </script>
 </body>

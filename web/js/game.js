@@ -204,7 +204,7 @@ export class Game {
     // eigene Stimme weg, Rauschunterdrueckung und Pegelregelung verbiegen die
     // Tonhoehe. Fuer ein Telefonat ist das richtig, fuers Singen nicht.
     const wunsch = {
-      echoCancellation: false,
+      echoCancellation: true,
       noiseSuppression: false,
       autoGainControl: false,
     };
@@ -292,6 +292,10 @@ export class Game {
       ? hinweise.join(' · ') + ' - wird nicht gewertet.'
       : '';
 
+    // Von vorne beginnen - sonst haengt bei "Nochmal singen" die Zeit vom
+    // vorigen Durchlauf noch am Audioelement, etwa weil zuvor mitten im
+    // Lied das Vollbild verlassen wurde.
+    this.audio.currentTime = 0;
     await this.audio.play();
     this.laeuft = true;
     requestAnimationFrame(() => this.schleife());

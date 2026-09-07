@@ -47,7 +47,7 @@ export const MAX_FAKTOR = 40;
 // Ueber lauter Musik aus dem Lautsprecher ist der Rauschboden nicht mehr das
 // Zimmer, sondern das Lied selbst. Wer da das Zweieinhalbfache verlangt,
 // verlangt, dass der Saenger die Anlage uebertoent - deshalb knapp bemessen.
-export const UEBER_RAUSCHEN = 1.5;
+export const UEBER_RAUSCHEN = 1.05;
 
 // Unterste Schwelle, auch wenn es vollkommen still war. Ohne sie wuerde in
 // absoluter Stille der Rauschboden zu null und jedes Knistern zaehlte.
