@@ -49,6 +49,13 @@ begin
   Result := HandleWebRequest(B, Pfad, Q, CT, Body);
 end;
 
+// /api/songs liefert {"total": N, "songs": [...]} - die Liederliste steckt
+// darin, nicht als nacktes Array wie frueher.
+function Liedliste(D: TJSONData): TJSONArray;
+begin
+  Result := TJSONArray(TJSONObject(D).Arrays['songs']);
+end;
+
 begin
   Bestanden := 0; Fehlgeschlagen := 0;
   B := TWebBridge.Create;
@@ -88,41 +95,49 @@ begin
   D := GetJSON(Body);
   try
     // "queen" trifft ABBA (Titel) und Queen (Interpret)
-    Check('ueber alles gesucht', TJSONArray(D).Count = 2, IntToStr(TJSONArray(D).Count));
+    Check('ueber alles gesucht', Liedliste(D).Count = 2, IntToStr(Liedliste(D).Count));
+    Check('Gesamtzahl steht dabei', TJSONObject(D).Integers['total'] = 2);
   finally D.Free; end;
 
   Ruf('/api/songs', ['q', 'queen', 'mode', 'artist']);
   D := GetJSON(Body);
   try
-    Check('Modus wird beachtet', TJSONArray(D).Count = 1, IntToStr(TJSONArray(D).Count));
+    Check('Modus wird beachtet', Liedliste(D).Count = 1, IntToStr(Liedliste(D).Count));
     Check('und liefert den richtigen',
-          TJSONObject(TJSONArray(D)[0]).Strings['artist'] = 'Queen');
+          TJSONObject(Liedliste(D)[0]).Strings['artist'] = 'Queen');
   finally D.Free; end;
 
   // Die Suchsyntax des Spiels muss auch hier gelten.
   Ruf('/api/songs', ['q', 'abba OR nirvana']);
   D := GetJSON(Body);
-  try Check('OR wirkt', TJSONArray(D).Count = 2, IntToStr(TJSONArray(D).Count));
+  try Check('OR wirkt', Liedliste(D).Count = 2, IntToStr(Liedliste(D).Count));
   finally D.Free; end;
 
   Ruf('/api/songs', ['q', '1970-1980']);
   D := GetJSON(Body);
-  try Check('Jahresbereich wirkt', TJSONArray(D).Count = 2, IntToStr(TJSONArray(D).Count));
+  try Check('Jahresbereich wirkt', Liedliste(D).Count = 2, IntToStr(Liedliste(D).Count));
   finally D.Free; end;
 
   Ruf('/api/songs', ['q', '!queen']);
   D := GetJSON(Body);
-  try Check('Ausschluss wirkt', TJSONArray(D).Count = 1, IntToStr(TJSONArray(D).Count));
+  try Check('Ausschluss wirkt', Liedliste(D).Count = 1, IntToStr(Liedliste(D).Count));
   finally D.Free; end;
 
   // Eine Anfrage darf nicht das ganze Verzeichnis in eine Antwort giessen.
+  // Die Gesamtzahl darf die Begrenzung aber nicht mitmachen - sonst wuerfelt
+  // das Zufallslied nur noch unter den ersten WEB_MAX_RESULTS Treffern.
   Ruf('/api/songs', ['q', '', 'max', '1000000']);
   D := GetJSON(Body);
-  try Check('Obergrenze wird erzwungen', TJSONArray(D).Count <= WEB_MAX_RESULTS);
+  try
+    Check('Obergrenze wird erzwungen', Liedliste(D).Count <= WEB_MAX_RESULTS);
+    Check('Gesamtzahl bleibt echt', TJSONObject(D).Integers['total'] = 3,
+          IntToStr(TJSONObject(D).Integers['total']));
   finally D.Free; end;
   Ruf('/api/songs', ['q', '', 'max', '1']);
   D := GetJSON(Body);
-  try Check('kleines max wird beachtet', TJSONArray(D).Count = 1);
+  try
+    Check('kleines max wird beachtet', Liedliste(D).Count = 1);
+    Check('Gesamtzahl bleibt trotzdem 3', TJSONObject(D).Integers['total'] = 3);
   finally D.Free; end;
 
   WriteLn('Auswaehlen');
@@ -148,15 +163,15 @@ begin
   D := GetJSON(Body);
   try
     Check('Duett wird gemeldet',
-          (TJSONArray(D).Count = 1) and
-          TJSONObject(TJSONArray(D)[0]).Booleans['duet']);
+          (Liedliste(D).Count = 1) and
+          TJSONObject(Liedliste(D)[0]).Booleans['duet']);
   finally D.Free; end;
   Ruf('/api/songs', ['q', 'abba', 'mode', 'artist']);
   D := GetJSON(Body);
   try
     Check('Sololied wird nicht als Duett gemeldet',
-          (TJSONArray(D).Count = 1) and
-          (not TJSONObject(TJSONArray(D)[0]).Booleans['duet']));
+          (Liedliste(D).Count = 1) and
+          (not TJSONObject(Liedliste(D)[0]).Booleans['duet']));
   finally D.Free; end;
 
   WriteLn;
@@ -246,13 +261,13 @@ begin
   D := GetJSON(Body);
   try
     Check('mit Titelbild wird gemeldet',
-          TJSONObject(TJSONArray(D)[0]).Booleans['cover']);
+          TJSONObject(Liedliste(D)[0]).Booleans['cover']);
   finally D.Free; end;
   Ruf('/api/songs', ['q', 'queen', 'mode', 'artist']);
   D := GetJSON(Body);
   try
     Check('ohne Titelbild ebenso',
-          not TJSONObject(TJSONArray(D)[0]).Booleans['cover']);
+          not TJSONObject(Liedliste(D)[0]).Booleans['cover']);
   finally D.Free; end;
 
   Check('fehlendes Video: 404',

@@ -11,7 +11,7 @@
 // Aufbau laesst das deshalb gar nicht erst zu, statt hinterher Punkte zu
 // verteilen, die niemand nachvollziehen kann.
 
-import { parseSong, lineAt, nextLineAt, singAbschnitte } from './song.js';
+import { parseSong, lineAt, nextLineAt, singAbschnitte, previewRange } from './song.js';
 import { detectMidi, maxVolume } from './pitch.js';
 import { Pegel } from './pegel.js';
 import { Scorer, LEICHT } from './score.js';
@@ -70,12 +70,41 @@ export function pfad(p, href) {
 // setzen laesst es ruckeln; gar nicht nachzuziehen laesst es davonlaufen.
 const VIDEO_TOLERANZ = 0.30;
 
+// Lautstaerke der Vorschau in der Liedauswahl - Ini.PreviewVolume steht im
+// Original standardmaessig auf 30% (UIni.pas: ReadVolumePercent(..., 30)).
+export const VORSCHAU_LAUTSTAERKE = 0.30;
+export const VORSCHAU_FADE_MS = 1000;
+
+// Wie weit eine Blende zwischen 0 (Anfang) und 1 (Ende) fortgeschritten ist.
+//
+// Eigene, pruefbare Funktion, weil genau hier ein fehlender unterer Anschlag
+// zu einer leicht negativen Lautstaerke gefuehrt hat: audio.volume wies das
+// mit einer IndexSizeError zurueck, und weil das in einem
+// requestAnimationFrame-Callback geschah, blieb der Fehler stumm - die
+// Vorschau setzte beim Liedwechsel einfach aus. Der Grund: Der Zeitstempel,
+// den requestAnimationFrame liefert, ist der Beginn des Bildes und kann vor
+// dem performance.now() liegen, das synchron kurz zuvor lief.
+export function blendFortschritt(jetzt, beginn, dauerMs) {
+  if (!(dauerMs > 0)) return 1;
+  return Math.max(0, Math.min(1, (jetzt - beginn) / dauerMs));
+}
+
 export class Game {
   constructor(canvas, elemente) {
     this.renderer = new Renderer(canvas);
     this.el = elemente;
     this.audio = new Audio();
     this.audio.preload = 'auto';
+    // Eigenes Element fuer die Vorschau in der Liedauswahl - getrennt von
+    // this.audio, das dem eigentlichen Singen gehoert. Zusammen auf einem
+    // Element liesse sich beim Liedwechsel nicht erst ausblenden: Sobald
+    // src sich aendert, verstummt der Ton sofort, kein Uebergang mehr
+    // moeglich.
+    this.vorschauAudio = new Audio();
+    this.vorschauAudio.preload = 'auto';
+    this.vorschauAudio.volume = 0;
+    this._vorschauGen = 0;
+    this._vorschauWaechterAbmelden = null;
     this.song = null;
     this.saenger = [];      // [{ trackIndex, scorer, analyser, puffer, sungMidi }]
     this.ctx = null;
@@ -175,6 +204,134 @@ export class Game {
     this.el.titel.textContent = `${this.song.artist} – ${this.song.title}`;
     this.bereiteHintergrund(index, this.song);
     return this.song;
+  }
+
+  // Blendet die Lautstaerke der Vorschau ueber DAUER Millisekunden auf ZIEL.
+  // Generation dient dem Abbruch: Wechselt waehrenddessen das Lied noch
+  // einmal, bricht diese Schleife sich selbst ab, statt gegen eine neuere
+  // Ein-/Ausblendung anzuarbeiten.
+  _vorschauUeberblenden(ziel, dauerMs, generation) {
+    return new Promise((resolve) => {
+      const audio = this.vorschauAudio;
+      const start = audio.volume;
+      if (dauerMs <= 0 || start === ziel) {
+        audio.volume = ziel;
+        resolve();
+        return;
+      }
+      const beginn = performance.now();
+      const schritt = (jetzt) => {
+        if (generation !== this._vorschauGen) { resolve(); return; }
+        const t = blendFortschritt(jetzt, beginn, dauerMs);
+        audio.volume = start + (ziel - start) * t;
+        if (t < 1) requestAnimationFrame(schritt);
+        else resolve();
+      };
+      requestAnimationFrame(schritt);
+    });
+  }
+
+  // Wartet, bis die Dauer der Vorschau-Audiodatei bekannt ist - erst dann
+  // laesst sich previewRange() berechnen.
+  _vorschauDauerAbwarten(audio) {
+    return new Promise((resolve, reject) => {
+      if (audio.readyState >= 1 && audio.duration > 0) { resolve(); return; }
+      const weg = () => {
+        audio.removeEventListener('loadedmetadata', weg);
+        audio.removeEventListener('error', fehler);
+        resolve();
+      };
+      const fehler = () => {
+        audio.removeEventListener('loadedmetadata', weg);
+        audio.removeEventListener('error', fehler);
+        reject(new Error('Vorschau nicht ladbar'));
+      };
+      audio.addEventListener('loadedmetadata', weg);
+      audio.addEventListener('error', fehler);
+    });
+  }
+
+  _vorschauEndeAbmelden() {
+    if (this._vorschauWaechterAbmelden) {
+      this._vorschauWaechterAbmelden();
+      this._vorschauWaechterAbmelden = null;
+    }
+  }
+
+  // Wie PreviewEnd im Spiel (TScreenSong.Draw): sobald die Abspielposition
+  // das Ende der Vorschau erreicht, wird angehalten statt in den Rest des
+  // Liedes weiterzulaufen.
+  _vorschauEndeUeberwachen(ende, generation) {
+    this._vorschauEndeAbmelden();
+    const audio = this.vorschauAudio;
+    const pruefen = () => {
+      if (generation !== this._vorschauGen) return;
+      if (ende > 0 && audio.currentTime >= ende) this.vorschauStop();
+    };
+    audio.addEventListener('timeupdate', pruefen);
+    this._vorschauWaechterAbmelden =
+      () => audio.removeEventListener('timeupdate', pruefen);
+  }
+
+  // Spielt die Vorschau eines ausgewaehlten Liedes an - wie im Spiel
+  // (TScreenSong.StartMusicPreview): nicht von vorne, sondern ab
+  // previewRange() (song.js), und leiser als beim eigentlichen Singen.
+  //
+  // Anders als im Original wird eine laufende Vorschau erst ausgeblendet,
+  // bevor die naechste einblendet - dort wird nur hart umgeschaltet, aber
+  // zwei Lieder ohne jeden Uebergang klingt auf einer Auswahlseite falsch,
+  // auf der man schneller weiterklickt als im Spiel selbst.
+  async vorschauStarten(index, song) {
+    const gen = ++this._vorschauGen;
+    await this.vorschauAusblenden(gen);
+    if (gen !== this._vorschauGen) return;
+
+    const audio = this.vorschauAudio;
+    this._vorschauEndeAbmelden();
+    audio.pause();
+    audio.src = pfad(`/api/song/${index}/audio`);
+    audio.volume = 0;
+    audio.load();
+
+    try {
+      await this._vorschauDauerAbwarten(audio);
+    } catch (e) {
+      return;
+    }
+    if (gen !== this._vorschauGen) return;
+
+    const bereich = previewRange(song, audio.duration || 0);
+    audio.currentTime = bereich.start;
+    this._vorschauEndeUeberwachen(bereich.end, gen);
+
+    try {
+      await audio.play();
+    } catch (e) {
+      return;   // Autoplay verweigert - kein Grund, die Auswahl zu stoeren.
+    }
+    if (gen !== this._vorschauGen) return;
+    await this._vorschauUeberblenden(VORSCHAU_LAUTSTAERKE, VORSCHAU_FADE_MS, gen);
+  }
+
+  // Blendet eine laufende Vorschau aus. vorGen ist die Generation, gegen die
+  // ein Abbruch geprueft wird - beim Aufruf aus vorschauStarten() ist das
+  // schon die NEUE Generation, damit eine dritte Auswahl mitten im Ausblenden
+  // auch dieses Ausblenden noch abbricht.
+  async vorschauAusblenden(vorGen) {
+    const audio = this.vorschauAudio;
+    if (audio.paused || audio.volume === 0) { audio.pause(); return; }
+    await this._vorschauUeberblenden(0, VORSCHAU_FADE_MS,
+                                     vorGen === undefined ? this._vorschauGen : vorGen);
+    audio.pause();
+  }
+
+  // Sofortiges Ende ohne Ausblenden - wenn tatsaechlich gesungen wird, soll
+  // nicht noch eine Sekunde lang leise die Vorschau mitlaufen.
+  vorschauStop() {
+    this._vorschauGen++;   // laufende Ein-/Ausblendungen brechen sich selbst ab
+    this._vorschauEndeAbmelden();
+    this.vorschauAudio.pause();
+    this.vorschauAudio.volume = 0;
   }
 
   // Die verfuegbaren Mikrofone. Namen gibt der Browser erst nach einer

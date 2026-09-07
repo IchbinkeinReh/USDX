@@ -80,6 +80,13 @@ export class Song {
   // gegen den Ton, ohne dass sonst etwas auffiele.
   get videoGap() { return parseNumber(this.headers.VIDEOGAP); }
 
+  // Wo im Lied gesungen wird, in Sekunden - #START schneidet vorne ab,
+  // #END (in Millisekunden!) hinten. Beides zusammen mit #PREVIEWSTART
+  // braucht previewRange() unten fuer die Vorschau in der Liedauswahl.
+  get start() { return parseNumber(this.headers.START); }
+  get finish() { return parseNumber(this.headers.END); }
+  get previewStart() { return parseNumber(this.headers.PREVIEWSTART); }
+
   // Die Namen der Stimmen, in der Reihenfolge der Spuren.
   get singerNames() { return this.tracks.map((t) => t.name); }
 
@@ -180,6 +187,30 @@ export function singAbschnitte(song) {
     }
   }
   return abschnitte.sort((a, b) => a.von - b.von);
+}
+
+// Wo die Vorschau in der Liedauswahl anfaengt und aufhoert - Uebernahme aus
+// TSong.GetPreviewRange (USong.pas). Ohne eigenen #PREVIEWSTART faengt sie
+// NICHT am Anfang an, sondern ein Viertel in den Song hinein (bei sehr
+// langen Liedern hoechstens 60 Sekunden rein) - der Anfang ist bei vielen
+// Liedern nur ein stummes Intro, das nichts von Refrain oder Stimme zeigt.
+export function previewRange(song, audioLength) {
+  if (!(audioLength > 0)) return { start: 0, end: 0 };
+
+  let effStart = Math.min(Math.max(song.start, 0), audioLength);
+  let effEnd = song.finish > 0
+    ? Math.min(Math.max(song.finish / 1000, 0), audioLength)
+    : audioLength;
+  if (effEnd <= effStart) { effStart = 0; effEnd = audioLength; }
+
+  if (song.previewStart > 0 &&
+      song.previewStart >= effStart && song.previewStart < effEnd)
+    return { start: song.previewStart, end: effEnd };
+
+  const effLength = effEnd - effStart;
+  let offset = effLength / 4;
+  if (offset > 120) offset = 60;
+  return { start: effStart + offset, end: effEnd };
 }
 
 // Sekunden, bis die erste Note dieser Zeile faellig ist.

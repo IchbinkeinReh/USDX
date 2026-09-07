@@ -35,8 +35,9 @@ const
   // noch so verdrehte URL etwas ausliefern, was nicht hier steht, und der
   // uebliche Fehler - ein ../ das durch die Pruefung rutscht - kann gar nicht
   // erst auftreten. Neue Datei im Ordner heisst: hier eintragen.
-  WEB_DATEIEN: array[0..8] of UTF8String = (
+  WEB_DATEIEN: array[0..9] of UTF8String = (
     'index.html',
+    'favicon.png',
     'js/song.js',
     'js/pitch.js',
     'js/score.js',
@@ -181,33 +182,29 @@ begin
     Result := fltAll;
 end;
 
-function SongsToJSON(const Treffer: TWebSongArray): UTF8String;
+// Das Array gehoert danach dem Aufrufer - genau wie TJSONObject.Add es mit
+// jedem TJSONData haelt, das man ihm uebergibt.
+function SongsToJSON(const Treffer: TWebSongArray): TJSONArray;
 var
-  Liste: TJSONArray;
   Eintrag: TJSONObject;
   I: integer;
 begin
-  Liste := TJSONArray.Create;
-  try
-    for I := 0 to High(Treffer) do
-    begin
-      Eintrag := TJSONObject.Create;
-      Eintrag.Add('index', Treffer[I].Index);
-      Eintrag.Add('artist', Treffer[I].Artist);
-      Eintrag.Add('title', Treffer[I].Title);
-      Eintrag.Add('genre', Treffer[I].Genre);
-      Eintrag.Add('language', Treffer[I].Language);
-      Eintrag.Add('year', Treffer[I].Year);
-      Eintrag.Add('duet', Treffer[I].Duet);
-      // Ob es ein Titelbild gibt. Ohne diese Angabe muesste die Liste es bei
-      // jedem Lied auf gut Glueck anfordern - bei neuntausend Eintraegen
-      // waeren das tausende Fehlanfragen.
-      Eintrag.Add('cover', Treffer[I].CoverPath <> '');
-      Liste.Add(Eintrag);
-    end;
-    Result := Liste.AsJSON;
-  finally
-    Liste.Free;
+  Result := TJSONArray.Create;
+  for I := 0 to High(Treffer) do
+  begin
+    Eintrag := TJSONObject.Create;
+    Eintrag.Add('index', Treffer[I].Index);
+    Eintrag.Add('artist', Treffer[I].Artist);
+    Eintrag.Add('title', Treffer[I].Title);
+    Eintrag.Add('genre', Treffer[I].Genre);
+    Eintrag.Add('language', Treffer[I].Language);
+    Eintrag.Add('year', Treffer[I].Year);
+    Eintrag.Add('duet', Treffer[I].Duet);
+    // Ob es ein Titelbild gibt. Ohne diese Angabe muesste die Liste es bei
+    // jedem Lied auf gut Glueck anfordern - bei neuntausend Eintraegen
+    // waeren das tausende Fehlanfragen.
+    Eintrag.Add('cover', Treffer[I].CoverPath <> '');
+    Result.Add(Eintrag);
   end;
 end;
 
@@ -215,8 +212,9 @@ function HandleWebRequest(Bridge: TWebBridge; const Path: UTF8String;
                           Query: TStrings;
                           out ContentType, Body: UTF8String): integer;
 var
-  Max, Index, Sel: integer;
+  Max, Index, Sel, Gesamt: integer;
   Antwort: TJSONObject;
+  Treffer: TWebSongArray;
 begin
   ContentType := 'text/plain; charset=utf-8';
   Body := '';
@@ -258,10 +256,22 @@ begin
     // ganze Verzeichnis in eine Antwort giessen.
     if (Max <= 0) or (Max > WEB_MAX_RESULTS) then
       Max := WEB_MAX_RESULTS;
-    Body := SongsToJSON(Bridge.FindSongs(Query.Values['q'],
-                                         FilterFromName(Query.Values['mode']),
-                                         Max,
-                                         StrToIntDef(Query.Values['offset'], 0)));
+    Treffer := Bridge.FindSongs(Query.Values['q'],
+                                FilterFromName(Query.Values['mode']),
+                                Max,
+                                StrToIntDef(Query.Values['offset'], 0),
+                                Gesamt);
+    // Gesamtzahl mit ausliefern, nicht nur die Seite: Die Oberflaeche zeigt
+    // "N gefunden" an und wuerfelt beim Zufallslied ueber alle Treffer, nicht
+    // nur ueber die schon geladene Seite.
+    Antwort := TJSONObject.Create;
+    try
+      Antwort.Add('total', Gesamt);
+      Antwort.Add('songs', SongsToJSON(Treffer));
+      Body := Antwort.AsJSON;
+    finally
+      Antwort.Free;
+    end;
     ContentType := 'application/json; charset=utf-8';
     Result := 200;
     Exit;

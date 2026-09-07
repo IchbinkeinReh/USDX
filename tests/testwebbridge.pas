@@ -81,7 +81,7 @@ end;
 var
   Lieder, Treffer: TWebSongArray;
   Cmd: TWebCommand;
-  I: integer;
+  I, Gesamt: integer;
   Sucher: array[0..3] of TSucher;
 
 begin
@@ -239,6 +239,18 @@ begin
   Check('Versatz zaehlt die Treffer, nicht die Lieder',
         (Length(Treffer) = 1) and (Treffer[0].Artist = 'Zappa'),
         IntToStr(Length(Treffer)));
+
+  // Gesamtzahl: zaehlt ALLE Treffer, nicht nur die Seite - sonst wuerfelte
+  // das Zufallslied nur unter den ersten Max Treffern.
+  Treffer := Bruecke.FindSongs('', fltAll, 2, 0, Gesamt);
+  Check('Gesamtzahl zaehlt trotz kleiner Seite alle',
+        Gesamt = 5, IntToStr(Gesamt));
+  Check('die Seite selbst bleibt trotzdem klein', Length(Treffer) = 2);
+  Treffer := Bruecke.FindSongs('alpha', fltTitle, 10, 0, Gesamt);
+  Check('Gesamtzahl gilt fuer die Treffer, nicht fuer alle Lieder',
+        Gesamt = 2, IntToStr(Gesamt));
+  Treffer := Bruecke.FindSongs('gibtesnicht', fltAll, 10, 0, Gesamt);
+  Check('ohne Treffer ist auch die Gesamtzahl null', Gesamt = 0);
 
   WriteLn('Befehle');
   Check('anfangs kein Befehl', not Bruecke.NextCommand(Cmd));

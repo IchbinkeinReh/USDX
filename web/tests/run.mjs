@@ -2,7 +2,8 @@
 // Zeichnen und Mikrofon bleiben aussen vor - dafuer braucht es einen Browser.
 
 import { parseSong, noteProgress, secondsUntilLine, lineAt, nextLineAt,
-         singAbschnitte, NOTE_FREESTYLE, NOTE_GOLDEN } from '../js/song.js';
+         singAbschnitte, previewRange,
+         NOTE_FREESTYLE, NOTE_GOLDEN } from '../js/song.js';
 import { detectFrequency, detectMidi, freqToMidi, sameTone, toneDistance,
          rms, maxVolume, verschiebungen,
          MIN_FREQ, MAX_FREQ } from '../js/pitch.js';
@@ -13,7 +14,7 @@ import { lyricHelper, helferBahn,
          HELFER_MIN_VORLAUF, HELFER_GRENZE } from '../js/render.js';
 import { istHandy, HANDY_BREITE } from '../js/vollbild.js';
 import { pfad, basisOhneZugangsdaten, spulZiel,
-         SPUL_RESERVE } from '../js/game.js';
+         SPUL_RESERVE, blendFortschritt } from '../js/game.js';
 import { Renderer } from '../js/render.js';
 import { Pegel, ZIEL_PEGEL, MAX_FAKTOR, MIN_FAKTOR,
          MIN_SCHWELLE, UEBER_RAUSCHEN } from '../js/pegel.js';
@@ -625,6 +626,26 @@ console.log('Spulen');
         spulZiel(NaN, 200, 10) + '/' + spulZiel(30, 200, NaN));
 }
 
+console.log('Vorschau ueberblenden (blendFortschritt)');
+{
+  // Der eigentliche Fehler: requestAnimationFrame liefert den Zeitstempel
+  // des BEGINNS eines Bildes - der kann vor dem performance.now() liegen,
+  // das synchron kurz zuvor lief. Ohne die untere Schranke wurde t negativ,
+  // audio.volume warf eine IndexSizeError, und weil die in einem
+  // rAF-Callback auftrat, blieb sie stumm - die Vorschau setzte beim
+  // Liedwechsel einfach aus.
+  check('negative Zeitspanne bleibt bei 0 stehen',
+        blendFortschritt(-5, 0, 1000) === 0, String(blendFortschritt(-5, 0, 1000)));
+  check('am Anfang ist der Fortschritt 0',
+        blendFortschritt(0, 0, 1000) === 0);
+  check('auf halbem Weg die Haelfte',
+        blendFortschritt(500, 0, 1000) === 0.5);
+  check('am Ende genau 1', blendFortschritt(1000, 0, 1000) === 1);
+  check('darueber hinaus bleibt bei 1 stehen',
+        blendFortschritt(5000, 0, 1000) === 1);
+  check('ohne Dauer ist sofort fertig', blendFortschritt(0, 0, 0) === 1);
+}
+
 console.log('Zeichnen');
 {
   const lied = parseSong(`#TITLE:x
@@ -1054,6 +1075,59 @@ const v3 = parseSong('#TITLE:x\n#BPM:120\n: 0 4 60 a\nE');
 check('ohne Angabe ist der Versatz null', v3.videoGap === 0, String(v3.videoGap));
 check('ohne Angabe kein Video und kein Bild',
       v3.video === '' && v3.background === '');
+
+console.log('Vorschau (previewRange)');
+{
+  const ohne = parseSong('#TITLE:x\n#BPM:120\n: 0 4 60 a\nE');
+  // Ohne eigenen Vorschaupunkt: ein Viertel rein, nicht am Anfang.
+  const p1 = previewRange(ohne, 200);
+  check('ein Viertel rein ohne PREVIEWSTART',
+        p1.start === 50 && p1.end === 200, JSON.stringify(p1));
+
+  // Sehr lange Lieder: hoechstens 60 Sekunden rein, nicht ein Viertel.
+  const p2 = previewRange(ohne, 1000);
+  check('bei langen Liedern nur 60 Sekunden rein statt ein Viertel',
+        p2.start === 60, String(p2.start));
+
+  const mit = parseSong(
+    '#TITLE:x\n#BPM:120\n#PREVIEWSTART:42\n: 0 4 60 a\nE');
+  check('eigener Vorschaupunkt wird uebernommen',
+        previewRange(mit, 200).start === 42);
+
+  // PREVIEWSTART:0 gilt als "nicht gesetzt" - genau wie in USong.pas, wo
+  // HasPreview nur bei PreviewStart > 0 gesetzt wird.
+  const null_ = parseSong(
+    '#TITLE:x\n#BPM:120\n#PREVIEWSTART:0\n: 0 4 60 a\nE');
+  check('PREVIEWSTART:0 zaehlt nicht als gesetzt',
+        previewRange(null_, 200).start === 50);
+
+  // Liegt der eigene Vorschaupunkt ausserhalb des gueltigen Bereichs, faellt
+  // er auf das Viertel zurueck statt eine Stelle ausserhalb abzuspielen.
+  const ausserhalb = parseSong(
+    '#TITLE:x\n#BPM:120\n#PREVIEWSTART:500\n: 0 4 60 a\nE');
+  check('Vorschaupunkt ausserhalb des Bereichs wird verworfen',
+        previewRange(ausserhalb, 200).start === 50);
+
+  // #START schneidet vorne, #END (in MILLISEKUNDEN) hinten ab - beides muss
+  // in die Berechnung des Viertels eingehen, nicht in die volle Laenge.
+  const geschnitten = parseSong(
+    '#TITLE:x\n#BPM:120\n#START:20\n#END:120000\n: 0 4 60 a\nE');
+  const p3 = previewRange(geschnitten, 200);
+  check('END steht in Millisekunden', p3.end === 120, String(p3.end));
+  check('das Viertel bezieht sich auf den beschnittenen Bereich',
+        p3.start === 20 + (120 - 20) / 4, String(p3.start));
+
+  // Ergibt START/END einen leeren oder verkehrten Bereich, gilt wieder das
+  // ganze Stueck - sonst gaebe es gar nichts abzuspielen.
+  const verkehrt = parseSong(
+    '#TITLE:x\n#BPM:120\n#START:150\n#END:50000\n: 0 4 60 a\nE');
+  const p4 = previewRange(verkehrt, 200);
+  check('verkehrter Bereich faellt auf das ganze Stueck zurueck',
+        p4.start === 50 && p4.end === 200, JSON.stringify(p4));
+
+  check('ohne bekannte Laenge nichts zum Abspielen',
+        previewRange(ohne, 0).start === 0 && previewRange(ohne, 0).end === 0);
+}
 
 console.log('Duett');
 

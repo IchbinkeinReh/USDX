@@ -113,7 +113,14 @@ type
       // Ab wieviel Treffer geliefert wird, steuert Offset - damit die
       // Oberflaeche beim Blaettern nachladen kann, ohne alles neu zu holen.
       function  FindSongs(const Query: UTF8String; Filter: TSongFilter;
-                          Max: integer; Offset: integer = 0): TWebSongArray;
+                          Max: integer; Offset: integer = 0): TWebSongArray; overload;
+      // Wie oben, meldet zusaetzlich die GESAMTZAHL der Treffer - nicht nur
+      // der auf dieser Seite. Die Oberflaeche braucht das fuer "N gefunden"
+      // und um beim Zufallslied einen Platz ueber die ganze Trefferliste zu
+      // wuerfeln, nicht nur ueber die schon geladene Seite.
+      function  FindSongs(const Query: UTF8String; Filter: TSongFilter;
+                          Max: integer; Offset: integer;
+                          out Total: integer): TWebSongArray; overload;
       procedure PostCommand(Kind: TWebCommandKind; SongIndex: integer);
 
       // Schlaegt den Dateipfad zu einem Index nach. false, wenn es den Index
@@ -312,13 +319,15 @@ begin
 end;
 
 function TWebBridge.FindSongs(const Query: UTF8String; Filter: TSongFilter;
-                              Max: integer; Offset: integer = 0): TWebSongArray;
+                              Max: integer; Offset: integer;
+                              out Total: integer): TWebSongArray;
 var
   Baum: PSearchNode;
   I, Anzahl, Uebersprungen: integer;
   Heuhaufen: UTF8String;
 begin
   SetLength(Result, 0);
+  Total := 0;
   if (Max <= 0) then
     Exit;
 
@@ -346,6 +355,10 @@ begin
 
         if EvalSearchNode(Baum, Heuhaufen, fSongs[I].Year) then
         begin
+          // Weiterzaehlen fuer Total, auch nachdem die Seite (Max) voll ist -
+          // deshalb hier kein Break mehr, das gaebe andernfalls die Seitengroesse
+          // als Gesamtzahl aus.
+          Inc(Total);
           // Die ersten Offset Treffer ueberspringen - die hat die
           // Oberflaeche schon.
           if (Uebersprungen < Offset) then
@@ -353,10 +366,11 @@ begin
             Inc(Uebersprungen);
             Continue;
           end;
-          Result[Anzahl] := fSongs[I];
-          Inc(Anzahl);
-          if (Anzahl >= Max) then
-            Break;
+          if (Anzahl < Max) then
+          begin
+            Result[Anzahl] := fSongs[I];
+            Inc(Anzahl);
+          end;
         end;
       end;
       SetLength(Result, Anzahl);
@@ -366,6 +380,14 @@ begin
   finally
     FreeSearchNode(Baum);
   end;
+end;
+
+function TWebBridge.FindSongs(const Query: UTF8String; Filter: TSongFilter;
+                              Max: integer; Offset: integer = 0): TWebSongArray;
+var
+  Verworfen: integer;
+begin
+  Result := FindSongs(Query, Filter, Max, Offset, Verworfen);
 end;
 
 procedure TWebBridge.PostCommand(Kind: TWebCommandKind; SongIndex: integer);
