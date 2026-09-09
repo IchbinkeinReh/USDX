@@ -24,6 +24,7 @@ uses
   USongFilter,
   USearchStore,
   UWebBridge,
+  UWebLobby,
   UWebPage;
 
 const
@@ -35,7 +36,7 @@ const
   // noch so verdrehte URL etwas ausliefern, was nicht hier steht, und der
   // uebliche Fehler - ein ../ das durch die Pruefung rutscht - kann gar nicht
   // erst auftreten. Neue Datei im Ordner heisst: hier eintragen.
-  WEB_DATEIEN: array[0..9] of UTF8String = (
+  WEB_DATEIEN: array[0..10] of UTF8String = (
     'index.html',
     'favicon.png',
     'js/song.js',
@@ -45,7 +46,8 @@ const
     'js/game.js',
     'js/vollbild.js',
     'js/pegel.js',
-    'js/bewertung.js'
+    'js/bewertung.js',
+    'js/lobby.js'
   );
 
 type
@@ -63,8 +65,8 @@ function ResolveFileRequest(Bridge: TWebBridge; const Path, WebRoot: UTF8String;
 
 // Beantwortet eine Anfrage. Rueckgabe ist der HTTP-Status; ContentType und
 // Body werden gesetzt. Query enthaelt die Parameter als Name=Wert.
-function HandleWebRequest(Bridge: TWebBridge; const Path: UTF8String;
-                          Query: TStrings;
+function HandleWebRequest(Bridge: TWebBridge; Lobby: TLobbyRegistry;
+                          const Path: UTF8String; Query: TStrings;
                           out ContentType, Body: UTF8String): integer;
 
 implementation
@@ -208,18 +210,129 @@ begin
   end;
 end;
 
-function HandleWebRequest(Bridge: TWebBridge; const Path: UTF8String;
-                          Query: TStrings;
+function PhaseName(Phase: TLobbyPhase): UTF8String;
+begin
+  case Phase of
+    lphSingt: Result := 'singt';
+  else
+    Result := 'wartet';
+  end;
+end;
+
+function ZielName(Ziel: TLobbyZiel): UTF8String;
+begin
+  case Ziel of
+    lzBuehne:   Result := 'buehne';
+    lzErgebnis: Result := 'ergebnis';
+  else
+    Result := 'auswahl';
+  end;
+end;
+
+function ZielVonName(const Name: UTF8String; out Ziel: TLobbyZiel): boolean;
+begin
+  Result := True;
+  if      (Name = 'auswahl')  then Ziel := lzAuswahl
+  else if (Name = 'buehne')   then Ziel := lzBuehne
+  else if (Name = 'ergebnis') then Ziel := lzErgebnis
+  else
+  begin
+    Ziel := lzAuswahl;
+    Result := False;
+  end;
+end;
+
+function ReaktionsArtName(Art: TReaktionsArt): UTF8String;
+begin
+  case Art of
+    rkRunter: Result := 'runter';
+  else
+    Result := 'hoch';
+  end;
+end;
+
+function ReaktionsArtVonName(const Name: UTF8String): TReaktionsArt;
+begin
+  if (Name = 'runter') then Result := rkRunter else Result := rkHoch;
+end;
+
+// Baut die Zustands-Antwort. NIE die eigentlichen Tokens hinein - nur
+// serverseitig aus MeinToken berechnete isHost/isYou. So sieht kein Gast
+// je den Host-Token oder den eines anderen Gasts.
+//
+// Since filtert die Reaktionsliste: nur Eintraege mit Seq > Since kommen
+// mit - der Aufrufer hat die davor schon gesehen (siehe /state-Route).
+function LobbyToJSON(const Z: TLobbyZustand; const MeinToken: UTF8String;
+                     Since: int64): TJSONObject;
+var
+  SpielerListe, ReaktionsListe: TJSONArray;
+  SpielerEintrag, ReaktionsEintrag: TJSONObject;
+  I: integer;
+begin
+  Result := TJSONObject.Create;
+  Result.Add('code', Z.Code);
+  Result.Add('isHost', Z.HostToken = MeinToken);
+  Result.Add('phase', PhaseName(Z.Phase));
+  Result.Add('ziel', ZielName(Z.Ziel));
+  Result.Add('zielNr', Z.ZielNr);
+  Result.Add('songIndex', Z.SongIndex);
+  Result.Add('revision', Z.Revision);
+  Result.Add('serverNowMs', Z.ServerNowMs);
+  Result.Add('serverStartMs', Z.ServerStartMs);
+  Result.Add('pausiert', Z.Pausiert);
+  Result.Add('pausePosMs', Z.PausePosMs);
+  Result.Add('vorschauStartMs', Z.VorschauStartMs);
+
+  SpielerListe := TJSONArray.Create;
+  for I := 0 to High(Z.Spieler) do
+  begin
+    SpielerEintrag := TJSONObject.Create;
+    SpielerEintrag.Add('name', Z.Spieler[I].Name);
+    SpielerEintrag.Add('isHost', Z.Spieler[I].Token = Z.HostToken);
+    SpielerEintrag.Add('isYou', Z.Spieler[I].Token = MeinToken);
+    SpielerEintrag.Add('bereit', Z.Spieler[I].Bereit);
+    SpielerEintrag.Add('singt', Z.Spieler[I].Singt);
+    if (Z.Spieler[I].Score >= 0) then
+      SpielerEintrag.Add('score', Z.Spieler[I].Score)
+    else
+      SpielerEintrag.Add('score', TJSONNull.Create);
+    SpielerListe.Add(SpielerEintrag);
+  end;
+  Result.Add('spieler', SpielerListe);
+
+  ReaktionsListe := TJSONArray.Create;
+  for I := 0 to High(Z.Reaktionen) do
+    if (Z.Reaktionen[I].Seq > Since) then
+    begin
+      ReaktionsEintrag := TJSONObject.Create;
+      ReaktionsEintrag.Add('seq', Z.Reaktionen[I].Seq);
+      ReaktionsEintrag.Add('art', ReaktionsArtName(Z.Reaktionen[I].Art));
+      ReaktionsEintrag.Add('name', Z.Reaktionen[I].Name);
+      ReaktionsListe.Add(ReaktionsEintrag);
+    end;
+  Result.Add('reaktionen', ReaktionsListe);
+end;
+
+function HandleWebRequest(Bridge: TWebBridge; Lobby: TLobbyRegistry;
+                          const Path: UTF8String; Query: TStrings;
                           out ContentType, Body: UTF8String): integer;
 var
   Max, Index, Sel, Gesamt: integer;
   Antwort: TJSONObject;
   Treffer: TWebSongArray;
+  LobbyRest, LobbyCode, LobbyAktion, Token, ReaktionsText: UTF8String;
+  LobbySchraeg: integer;
+  Since, ServerStartMs, Seq: int64;
+  Punkte, MeldeBereit, MeldeSingt: integer;
+  FalscherToken, KeinLied, PauseAn: boolean;
+  ReaktionsArt: TReaktionsArt;
+  LobbyZiel: TLobbyZiel;
+  Zustand: TLobbyZustand;
 begin
   ContentType := 'text/plain; charset=utf-8';
   Body := '';
 
-  if not Assigned(Bridge) then
+  if not Assigned(Bridge) or not Assigned(Lobby) then
   begin
     Body := 'Keine Verbindung zum Spiel';
     Result := 503;
@@ -307,6 +420,211 @@ begin
       Antwort.Free;
     end;
     ContentType := 'application/json; charset=utf-8';
+    Exit;
+  end;
+
+  // --- Mehrspieler-Lobbys: /api/lobby/create, /api/lobby/<code>/<aktion> ---
+  if (Copy(Path, 1, 11) = '/api/lobby/') then
+  begin
+    ContentType := 'application/json; charset=utf-8';
+    Token := Query.Values['token'];
+    LobbyRest := Copy(Path, 12, Length(Path));
+    Antwort := TJSONObject.Create;
+    try
+      Result := 404;
+
+      if (LobbyRest = 'create') then
+      begin
+        LobbyCode := Lobby.CreateLobby(Token, Query.Values['name']);
+        Lobby.GetState(LobbyCode, Token, -1, -1, -1, Zustand);
+        Antwort.Free;
+        Antwort := LobbyToJSON(Zustand, Token, 0);
+        Result := 200;
+      end
+      else
+      begin
+        LobbySchraeg := Pos('/', LobbyRest);
+        if (LobbySchraeg <= 1) then
+        begin
+          Antwort.Add('error', 'unbekannter Weg');
+          Result := 404;
+        end
+        else
+        begin
+          LobbyCode := Copy(LobbyRest, 1, LobbySchraeg - 1);
+          LobbyAktion := Copy(LobbyRest, LobbySchraeg + 1, Length(LobbyRest));
+
+          if (LobbyAktion = 'join') then
+          begin
+            if Lobby.JoinLobby(LobbyCode, Token, Query.Values['name']) then
+            begin
+              Lobby.GetState(LobbyCode, Token, -1, -1, -1, Zustand);
+              Antwort.Free;
+              Antwort := LobbyToJSON(Zustand, Token, 0);
+              Result := 200;
+            end
+            else
+              // Entweder gibt es den Code nicht, oder die Lobby ist voll -
+              // fuer den Beitretenden macht das keinen praktischen
+              // Unterschied.
+              Antwort.Add('error', 'unbekannte oder volle Lobby');
+          end
+
+          else if (LobbyAktion = 'leave') then
+          begin
+            Lobby.LeaveLobby(LobbyCode, Token);
+            Antwort.Add('left', true);
+            Result := 200;
+          end
+
+          else if (LobbyAktion = 'state') then
+          begin
+            Since := StrToInt64Def(Query.Values['since'], 0);
+            // Jeweils -1, wenn der Parameter fehlt: dann bleibt der
+            // bisherige Wert stehen.
+            Punkte := StrToIntDef(Query.Values['score'], -1);
+            MeldeBereit := StrToIntDef(Query.Values['bereit'], -1);
+            MeldeSingt := StrToIntDef(Query.Values['singt'], -1);
+            if Lobby.GetState(LobbyCode, Token, Punkte, MeldeBereit, MeldeSingt,
+                              Zustand) then
+            begin
+              Antwort.Free;
+              Antwort := LobbyToJSON(Zustand, Token, Since);
+              Result := 200;
+            end
+            else
+              Antwort.Add('error', 'unbekannte Lobby');
+          end
+
+          else if (LobbyAktion = 'select') then
+          begin
+            // -1 ist eine ausdrueckliche Abwahl ("Anderes Lied"), kein
+            // Fehler - deshalb -2 als Rueckfall fuer einen fehlenden oder
+            // kaputten Parameter, sonst waere beides nicht zu unterscheiden.
+            Index := StrToIntDef(Query.Values['index'], -2);
+            if (Index <> -1) and ((Index < 0) or (Index >= Bridge.SongCount)) then
+            begin
+              Antwort.Add('error', 'unbekanntes Lied');
+              Result := 404;
+            end
+            else if Lobby.SelectSong(LobbyCode, Token, Index, FalscherToken) then
+            begin
+              Antwort.Add('selected', true);
+              Result := 200;
+            end
+            else if FalscherToken then
+            begin
+              Antwort.Add('error', 'nur der Ersteller darf auswaehlen');
+              Result := 403;
+            end
+            else
+              Antwort.Add('error', 'unbekannte Lobby');
+          end
+
+          else if (LobbyAktion = 'start') then
+          begin
+            ServerStartMs := StrToInt64Def(Query.Values['serverStartMs'], 0);
+            if Lobby.StartSinging(LobbyCode, Token, ServerStartMs,
+                                  FalscherToken, KeinLied) then
+            begin
+              Antwort.Add('phase', 'singt');
+              Antwort.Add('serverStartMs', ServerStartMs);
+              Result := 200;
+            end
+            else if FalscherToken then
+            begin
+              Antwort.Add('error', 'nur der Ersteller darf starten');
+              Result := 403;
+            end
+            else if KeinLied then
+            begin
+              Antwort.Add('error', 'kein Lied ausgewaehlt');
+              Result := 409;
+            end
+            else
+              Antwort.Add('error', 'unbekannte Lobby');
+          end
+
+          else if (LobbyAktion = 'ziel') then
+          begin
+            if not ZielVonName(Query.Values['ziel'], LobbyZiel) then
+            begin
+              Antwort.Add('error', 'unbekanntes Ziel');
+              Result := 400;
+            end
+            else if Lobby.SetZiel(LobbyCode, Token, LobbyZiel, FalscherToken) then
+            begin
+              Antwort.Add('ziel', Query.Values['ziel']);
+              Result := 200;
+            end
+            else if FalscherToken then
+            begin
+              Antwort.Add('error', 'nur der Ersteller bestimmt, wie es weitergeht');
+              Result := 403;
+            end
+            else
+              Antwort.Add('error', 'unbekannte Lobby');
+          end
+
+          else if (LobbyAktion = 'pause') then
+          begin
+            PauseAn := Query.Values['an'] = '1';
+            if Lobby.SetPause(LobbyCode, Token, PauseAn,
+                              StrToInt64Def(Query.Values['pos'], 0),
+                              FalscherToken) then
+            begin
+              Antwort.Add('pausiert', PauseAn);
+              Result := 200;
+            end
+            else if FalscherToken then
+            begin
+              Antwort.Add('error', 'nur der Ersteller darf pausieren');
+              Result := 403;
+            end
+            else
+              Antwort.Add('error', 'unbekannte Lobby');
+          end
+
+          else if (LobbyAktion = 'vorschau') then
+          begin
+            if Lobby.SetVorschau(LobbyCode, Token,
+                                 StrToInt64Def(Query.Values['startMs'], 0),
+                                 FalscherToken) then
+            begin
+              Antwort.Add('vorschau', true);
+              Result := 200;
+            end
+            else if FalscherToken then
+            begin
+              Antwort.Add('error', 'nur der Ersteller gibt die Vorschau vor');
+              Result := 403;
+            end
+            else
+              Antwort.Add('error', 'unbekannte Lobby');
+          end
+
+          else if (LobbyAktion = 'react') then
+          begin
+            ReaktionsText := Query.Values['art'];
+            ReaktionsArt := ReaktionsArtVonName(ReaktionsText);
+            if Lobby.React(LobbyCode, Token, ReaktionsArt, Seq) then
+            begin
+              Antwort.Add('seq', Seq);
+              Result := 200;
+            end
+            else
+              Antwort.Add('error', 'unbekannte Lobby');
+          end
+
+          else
+            Antwort.Add('error', 'unbekannter Weg');
+        end;
+      end;
+
+      Body := Antwort.AsJSON;
+    finally
+      Antwort.Free;
+    end;
     Exit;
   end;
 

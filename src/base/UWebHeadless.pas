@@ -25,6 +25,7 @@ uses
   SysUtils,
   Classes,
   UWebBridge,
+  UWebLobby,
   UWebServer,
   USongScan;
 
@@ -89,6 +90,7 @@ end;
 function RunHeadlessWeb(Port: word; const Adresse: UTF8String = ''): integer;
 var
   Bridge: TWebBridge;
+  Lobby: TLobbyRegistry;
   Server: TWebServerThread;
   Ordner: TStringList;
   Lieder: TWebSongArray;
@@ -108,6 +110,7 @@ begin
 
   Ordner := TStringList.Create;
   Bridge := TWebBridge.Create;
+  Lobby := TLobbyRegistry.Create;
   Server := nil;
   try
     Ini := FindConfigIni;
@@ -146,7 +149,7 @@ begin
       WriteLn('Weboberflaeche: ', WebOrdner);
 
     WebLogHandler := Melde;
-    Server := TWebServerThread.Create(Bridge, Port, WebOrdner, Adresse);
+    Server := TWebServerThread.Create(Bridge, Lobby, Port, WebOrdner, Adresse);
 
     if (Adresse <> '') then
       WriteLn('Bereit auf ', Adresse, ' Port ', Port, ' - mit Strg-C beenden.')
@@ -176,6 +179,7 @@ begin
       Server.Free;
     end;
     Bridge.Free;
+    Lobby.Free;
     Ordner.Free;
   end;
 end;

@@ -95,6 +95,14 @@ export class Game {
     this.el = elemente;
     this.audio = new Audio();
     this.audio.preload = 'auto';
+    // Bei einer Lobby wird die Geschwindigkeit zum Gleichlauf leicht
+    // verstellt (siehe driftKorrektur in lobby.js). Die Tonhoehe MUSS dabei
+    // erhalten bleiben: 4 % schneller waeren sonst gut zwei Drittel Halbton
+    // hoeher - man saenge gegen eine verstimmte Begleitung an, und die
+    // Wertung vergliche gegen die falsche Note. Heutige Browser machen das
+    // von sich aus so; hier steht es ausdruecklich, weil es hier darauf
+    // ankommt.
+    this.audio.preservesPitch = true;
     // Eigenes Element fuer die Vorschau in der Liedauswahl - getrennt von
     // this.audio, das dem eigentlichen Singen gehoert. Zusammen auf einem
     // Element liesse sich beim Liedwechsel nicht erst ausblenden: Sobald
@@ -114,6 +122,10 @@ export class Game {
     // Wird gerufen, wenn das Lied durch ist - die Oberflaeche verlaesst
     // darauf das Vollbild.
     this.onEnde = null;
+    // Hoehe der Mitspieler-Anzeige in Punkten (eigenes HTML-Element ueber
+    // dem Canvas) - direkt von aussen gesetzt, damit die obere Duett-Bahn
+    // beim Zeichnen darum herumruecken kann. 0, solange sie nicht steht.
+    this.obenVersatz = 0;
   }
 
   // Video und Hintergrundbild vorbereiten.
@@ -123,6 +135,10 @@ export class Game {
   // ist der Rueckfall - und der wird oefter gebraucht, als man denkt: In
   // vielen aelteren Liedern steht ein .avi oder .mpg, und das spielt kein
   // Browser ab. Erst der Fehler beim Laden verraet das, vorher nicht.
+  //
+  // Gibt es auch KEIN Hintergrundbild (oder laesst es sich nicht laden),
+  // uebernimmt als letzter Ausweg das Titelbild - eine Buehne ganz ohne Bild
+  // wirkt leer, und das Titelbild ist ohnehin schon da, fuer die Liedliste.
   bereiteHintergrund(index, song) {
     const { video, bild } = this.el;
     this.hatVideo = false;
@@ -130,13 +146,26 @@ export class Game {
 
     if (bild) {
       bild.style.display = 'none';
-      if (song.background) {
-        bild.onload = () => {
-          this.hatBild = true;
-          if (!this.hatVideo) bild.style.display = 'block';
+      bild.onload = () => {
+        this.hatBild = true;
+        if (!this.hatVideo) bild.style.display = 'block';
+      };
+      const hintergrundQuelle = song.background
+        ? pfad(`/api/song/${index}/background`) : '';
+      const coverQuelle = song.cover ? pfad(`/api/song/${index}/cover`) : '';
+      if (hintergrundQuelle) {
+        bild.onerror = () => {
+          if (coverQuelle) {
+            bild.onerror = () => { this.hatBild = false; };
+            bild.src = coverQuelle;
+          } else {
+            this.hatBild = false;
+          }
         };
+        bild.src = hintergrundQuelle;
+      } else if (coverQuelle) {
         bild.onerror = () => { this.hatBild = false; };
-        bild.src = pfad(`/api/song/${index}/background`);
+        bild.src = coverQuelle;
       } else {
         bild.removeAttribute('src');
       }
@@ -187,10 +216,35 @@ export class Game {
       if (video.currentTime !== 0) video.currentTime = 0;
       return;
     }
+    // Steht der Ton (Pause in der Lobby), muss das Bild mitstehen. Ohne
+    // diese Abfrage liefe das Video weiter: Die Tonzeit bleibt stehen, das
+    // Video wuerde unten aber trotzdem wieder angeworfen.
+    if (this.audio.paused) {
+      if (!video.paused) video.pause();
+      if (Math.abs(video.currentTime - ziel) > VIDEO_TOLERANZ)
+        video.currentTime = ziel;
+      return;
+    }
     if (video.paused) video.play().catch(() => {});
     if (Math.abs(video.currentTime - ziel) > VIDEO_TOLERANZ)
       video.currentTime = ziel;
   }
+
+  // Anhalten und Fortsetzen. Der Zaehler laeuft weiter (this.laeuft bleibt
+  // stehen), nur Ton und Bild stehen still - die Anzeige soll ja weiterhin
+  // gezeichnet werden, bloss eben unveraendert.
+  pausiere() {
+    if (!this.laeuft || this.audio.paused) return;
+    this.audio.pause();
+    if (this.el.video) this.el.video.pause();
+  }
+
+  async fortsetzen() {
+    if (!this.laeuft || !this.audio.paused) return;
+    try { await this.audio.play(); } catch (e) { /* Browser verweigert */ }
+  }
+
+  get pausiert() { return this.laeuft && this.audio.paused; }
 
   async ladeLied(index) {
     const txt = await fetch(pfad(`/api/song/${index}/txt`)).then((r) => {
@@ -281,10 +335,18 @@ export class Game {
   // bevor die naechste einblendet - dort wird nur hart umgeschaltet, aber
   // zwei Lieder ohne jeden Uebergang klingt auf einer Auswahlseite falsch,
   // auf der man schneller weiterklickt als im Spiel selbst.
-  async vorschauStarten(index, song) {
+  // abSekunde setzt die Stelle abweichend von previewRange() - fuer eine
+  // Lobby, in der die Vorschau bei allen an derselben Stelle laufen soll.
+  //
+  // Rueckgabe: 'laeuft', 'verweigert' (Browser laesst ohne Nutzergeste
+  // keinen Ton zu) oder 'abgebrochen'/'fehler'. Der Aufrufer kann bei
+  // 'verweigert' einen Hinweis zeigen und es beim naechsten Antippen erneut
+  // versuchen - genau das passierte bisher stillschweigend gar nicht, und
+  // wer frisch einer Lobby beitrat, hoerte deshalb nichts.
+  async vorschauStarten(index, song, abSekunde = null) {
     const gen = ++this._vorschauGen;
     await this.vorschauAusblenden(gen);
-    if (gen !== this._vorschauGen) return;
+    if (gen !== this._vorschauGen) return 'abgebrochen';
 
     const audio = this.vorschauAudio;
     this._vorschauEndeAbmelden();
@@ -296,21 +358,41 @@ export class Game {
     try {
       await this._vorschauDauerAbwarten(audio);
     } catch (e) {
-      return;
+      return 'fehler';
     }
-    if (gen !== this._vorschauGen) return;
+    if (gen !== this._vorschauGen) return 'abgebrochen';
 
     const bereich = previewRange(song, audio.duration || 0);
-    audio.currentTime = bereich.start;
-    this._vorschauEndeUeberwachen(bereich.end, gen);
+    // Eine vorgegebene Stelle nur uebernehmen, wenn sie ueberhaupt noch im
+    // Lied liegt - sonst liefe die Vorschau ins Leere.
+    const ziel = (abSekunde !== null && abSekunde >= 0 &&
+                  audio.duration > 0 && abSekunde < audio.duration - 0.5)
+      ? abSekunde : bereich.start;
+    audio.currentTime = ziel;
+    // Das Ende der Vorschau gilt weiterhin; bei vorgegebener Stelle darf es
+    // nicht davor liegen, sonst hielte sie sofort wieder an.
+    this._vorschauEndeUeberwachen(Math.max(bereich.end, ziel + 5), gen);
 
     try {
       await audio.play();
     } catch (e) {
-      return;   // Autoplay verweigert - kein Grund, die Auswahl zu stoeren.
+      return 'verweigert';
     }
-    if (gen !== this._vorschauGen) return;
+    if (gen !== this._vorschauGen) {
+      // Dazwischen wurde abgebrochen (etwa durch vorschauStop beim Verlassen
+      // der Lobby). Das play() oben hat den Ton aber trotzdem gestartet -
+      // ohne dieses pause() liefe die Vorschau weiter, obwohl sie laengst
+      // abbestellt ist. Genau so blieb sie beim Verlassen der Lobby haengen.
+      audio.pause();
+      return 'abgebrochen';
+    }
     await this._vorschauUeberblenden(VORSCHAU_LAUTSTAERKE, VORSCHAU_FADE_MS, gen);
+    return 'laeuft';
+  }
+
+  // Laeuft gerade eine Vorschau?
+  get vorschauLaeuft() {
+    return !this.vorschauAudio.paused && !!this.vorschauAudio.src;
   }
 
   // Blendet eine laufende Vorschau aus. vorGen ist die Generation, gegen die
@@ -401,7 +483,10 @@ export class Game {
   // besetzung: [{ trackIndex, deviceId }] - ein Eintrag je mitsingender Stimme.
   // deviceId darf null sein; dann wird die Stimme angezeigt, aber nicht
   // gewertet. schwierigkeit steuert, wie weit daneben noch zaehlt.
-  async start(besetzung, schwierigkeit = LEICHT) {
+  // seekSekunden setzt die Startposition - fuer eine Lobby, die einem schon
+  // laufenden Lied beitritt. 0 (Standard) laesst jeden bestehenden Aufruf
+  // unveraendert.
+  async start(besetzung, schwierigkeit = LEICHT, seekSekunden = 0) {
     if (!this.song) return;
 
     const belegt = new Set();
@@ -449,10 +534,16 @@ export class Game {
       ? hinweise.join(' · ') + ' - wird nicht gewertet.'
       : '';
 
-    // Von vorne beginnen - sonst haengt bei "Nochmal singen" die Zeit vom
+    // Von vorne beginnen (oder auf die vorgegebene Stelle, siehe
+    // seekSekunden) - sonst haengt bei "Nochmal singen" die Zeit vom
     // vorigen Durchlauf noch am Audioelement, etwa weil zuvor mitten im
     // Lied das Vollbild verlassen wurde.
-    this.audio.currentTime = 0;
+    this.audio.currentTime = seekSekunden;
+    // Ebenso die Geschwindigkeit zuruecksetzen: Eine Lobby kann sie zur
+    // sanften Sync-Korrektur kurz von 1 abweichen lassen (siehe lobby.js) -
+    // endete das Lied waehrend genau dieser Korrektur, liefe sonst das
+    // naechste Lied gleich falsch schnell an.
+    this.audio.playbackRate = 1;
     await this.audio.play();
     this.laeuft = true;
     requestAnimationFrame(() => this.schleife());
@@ -522,50 +613,62 @@ export class Game {
     const zeit = this.audio.currentTime;
     const beat = this.song.timeToBeat(zeit);
 
-    const bahnen = this.saenger.map((s) => {
-      s.sungMidi = -1;
-      if (s.analyser) {
-        // Erst am ROHEN Signal messen und die Regelung nachfuehren. Die
-        // Schranke wird ebenfalls hier geprueft, nicht am verstaerkten:
-        // Die Verstaerkung wird gedaempft nachgezogen und hinkt dem
-        // berechneten Faktor hinterher - man verglich sonst gegen eine
-        // Lautstaerke, die noch gar nicht anliegt, und verwarf zu viel.
-        s.rohAnalyser.getFloatTimeDomainData(s.rohPuffer);
-        const spitze = maxVolume(s.rohPuffer);
-        s.pegel.fuettern(spitze, zeit);
-        const faktor = s.pegel.berechneFaktor();
-        if (s.verstaerker) {
-          // Sanft nachziehen statt springen - ein harter Sprung im
-          // Verstaerkungsfaktor knackt hoerbar in der Kette.
-          s.verstaerker.gain.setTargetAtTime(faktor, this.ctx.currentTime, 0.1);
-        }
+    // Waehrend einer Pause steht die Tonzeit still. Dann NICHT werten: Der
+    // Wertung immer wieder denselben Zeitpunkt zu melden, haeufte Treffer
+    // auf derselben Note an - man bekaeme fuers Stehenbleiben Punkte.
+    const pausiert = this.audio.paused;
 
-        if (spitze >= s.pegel.schwelle()) {
-          // Ausgewertet wird das verstaerkte Signal. Die Schranke steht auf
-          // 0, weil sie oben schon geprueft wurde - wie im Spiel, wo nach
-          // der Lautstaerkepruefung immer ein Ton herauskommt.
-          s.analyser.getFloatTimeDomainData(s.puffer);
-          s.sungMidi = detectMidi(s.puffer, this.ctx.sampleRate, 0);
+    // Im Duett bekommt jede Stimme ihre eigene, halbierte Bahn - ohne
+    // Mikrofon waere das nur eine leere Haelfte des Bildes fuer eine Stimme,
+    // die gar nicht mitsingt. Beim Solo zu zweit bleibt eine unbesetzte
+    // Stimme dagegen sichtbar (nur ungewertet) - das ist dort gewollt, siehe
+    // start().
+    const bahnen = this.saenger
+      .filter((s) => !this.song.isDuet || s.analyser)
+      .map((s) => {
+        s.sungMidi = -1;
+        if (s.analyser && !pausiert) {
+          // Erst am ROHEN Signal messen und die Regelung nachfuehren. Die
+          // Schranke wird ebenfalls hier geprueft, nicht am verstaerkten:
+          // Die Verstaerkung wird gedaempft nachgezogen und hinkt dem
+          // berechneten Faktor hinterher - man verglich sonst gegen eine
+          // Lautstaerke, die noch gar nicht anliegt, und verwarf zu viel.
+          s.rohAnalyser.getFloatTimeDomainData(s.rohPuffer);
+          const spitze = maxVolume(s.rohPuffer);
+          s.pegel.fuettern(spitze, zeit);
+          const faktor = s.pegel.berechneFaktor();
+          if (s.verstaerker) {
+            // Sanft nachziehen statt springen - ein harter Sprung im
+            // Verstaerkungsfaktor knackt hoerbar in der Kette.
+            s.verstaerker.gain.setTargetAtTime(faktor, this.ctx.currentTime, 0.1);
+          }
+
+          if (spitze >= s.pegel.schwelle()) {
+            // Ausgewertet wird das verstaerkte Signal. Die Schranke steht auf
+            // 0, weil sie oben schon geprueft wurde - wie im Spiel, wo nach
+            // der Lautstaerkepruefung immer ein Ton herauskommt.
+            s.analyser.getFloatTimeDomainData(s.puffer);
+            s.sungMidi = detectMidi(s.puffer, this.ctx.sampleRate, 0);
+          }
+          s.scorer.feed(zeit, s.sungMidi);
         }
-        s.scorer.feed(zeit, s.sungMidi);
-      }
-      const spur = this.song.track(s.trackIndex);
-      // Die Bewertung der eben beendeten Zeile, samt ihrem Alter - die
-      // Anzeige entscheidet selbst, wie lange sie sie zeigt.
-      const lz = s.scorer.letzteZeile;
-      return {
-        zeilenLob: lz ? { ...lz, alter: zeit - lz.zeit } : null,
-        line: lineAt(spur, beat),
-        // Die naechste Zeile wird mit angezeigt, damit man weiss, was kommt.
-        nextLine: nextLineAt(spur, beat),
-        bars: s.scorer.bars,
-        name: s.name || s.scorer.name,
-        // Ohne Mikrofon keine Punktzahl, auch keine 0: Eine 0 hiesse
-        // "danebengesungen", und das waere schlicht gelogen. Die Anzeige
-        // erkennt daran auch, dass sie die Noten ganz weglassen kann.
-        score: s.analyser ? s.scorer.score : undefined,
-      };
-    });
+        const spur = this.song.track(s.trackIndex);
+        // Die Bewertung der eben beendeten Zeile, samt ihrem Alter - die
+        // Anzeige entscheidet selbst, wie lange sie sie zeigt.
+        const lz = s.scorer.letzteZeile;
+        return {
+          zeilenLob: lz ? { ...lz, alter: zeit - lz.zeit } : null,
+          line: lineAt(spur, beat),
+          // Die naechste Zeile wird mit angezeigt, damit man weiss, was kommt.
+          nextLine: nextLineAt(spur, beat),
+          bars: s.scorer.bars,
+          name: s.name || s.scorer.name,
+          // Ohne Mikrofon keine Punktzahl, auch keine 0: Eine 0 hiesse
+          // "danebengesungen", und das waere schlicht gelogen. Die Anzeige
+          // erkennt daran auch, dass sie die Noten ganz weglassen kann.
+          score: s.analyser ? s.scorer.score : undefined,
+        };
+      });
 
     this.haltVideoNach(zeit);
     this.renderer.draw(bahnen, beat, this.hatVideo || this.hatBild, {
@@ -574,7 +677,7 @@ export class Game {
       // aus dem Lied - sonst bliebe die Leiste am Anfang leer.
       dauer: this.audio.duration > 0 ? this.audio.duration : this.liedEnde(),
       abschnitte: this.abschnitte,
-    }, this.song.isDuet);
+    }, this.song.isDuet, this.obenVersatz);
 
     if (this.audio.ended) {
       this.beende();

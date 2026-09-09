@@ -74,6 +74,7 @@ export class Song {
   get audio()  { return this.headers.AUDIO || this.headers.MP3 || ''; }
   get video()  { return this.headers.VIDEO || ''; }
   get background() { return this.headers.BACKGROUND || ''; }
+  get cover()  { return this.headers.COVER || ''; }
 
   // #VIDEOGAP in Sekunden. Im Spiel gilt: Videoposition = VIDEOGAP + Tonzeit
   // (UScreenSingController). Ein falsches Vorzeichen verschiebt das Bild

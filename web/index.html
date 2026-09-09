@@ -75,6 +75,87 @@
   .knopfreihe{display:flex;gap:10px;margin-top:14px}
   #singen{flex:1;font-size:17px;padding:14px}
 
+  /* Lobby-Leiste, Kopf und Suchleiste bleiben beim Blaettern durch die
+     Liederliste oben stehen - sonst muesste man fuer "Lobby verlassen" oder
+     eine neue Suche jedesmal erst zurueckscrollen. Ein einziger sticky-
+     Bereich fuer alles zusammen, nicht jedes Kind einzeln: Sonst legten sich
+     mehrere Elemente mit je "top:0" gegenseitig uebereinander, statt sich
+     zu stapeln - und die Hoehe von #lobby_beitreten_feld/#lobby_fehler
+     aendert sich je nachdem, ob sie gerade etwas anzeigen. */
+  #kopfbereich{position:sticky;top:0;z-index:15;background:#0d0f14}
+
+  /* ---------- Lobby ---------- */
+  /* Immer sichtbar, sobald es eine Lobby gibt - und das ist ab dem ersten
+     Laden immer der Fall: jeder bekommt automatisch eine, notfalls allein. */
+  #lobby_leiste{display:flex;flex-wrap:wrap;gap:10px;align-items:center;
+                padding:8px 14px;background:#171a22;border-bottom:1px solid #1b1f29}
+  #lobby_beschriftung{color:#98a0b0;font-size:13px}
+  #lobby_code{font-size:16px;font-weight:700;letter-spacing:2px;
+              font-variant-numeric:tabular-nums}
+  #lobby_mitspieler{color:#98a0b0;font-size:13px}
+  #lobby_name{width:110px;flex:0 1 110px}
+  #lobby_leiste button{padding:7px 12px;font-size:13px;background:#2a3140;flex:0 0 auto}
+  #lobby_beitreten_feld{display:none;gap:8px;padding:8px 14px;background:#171a22;
+                        border-bottom:1px solid #1b1f29}
+  #lobby_beitreten_feld.an{display:flex}
+  #lobby_code_eingabe{width:110px;flex:0 0 auto;text-align:center;letter-spacing:2px}
+  #lobby_fehler{color:#ff9b8a;font-size:13px;padding:6px 14px 0}
+  #lobby_fehler:empty{display:none}
+
+  /* Kurzer Hinweis statt der Suchliste, solange Gaeste noch nichts zu tun
+     haben - nur der Ersteller waehlt. */
+  #gast_hinweis{padding:32px 20px;text-align:center;color:#98a0b0;font-size:15px}
+
+  .reaktion_knoepfe{display:flex;gap:10px;margin-top:14px}
+  .reaktion_knoepfe button{flex:1;font-size:24px;padding:10px;background:#2a3140}
+
+  /* Daumen-Emojis. Sie steigen kurz auf und verschwinden wieder; mehrere
+     duerfen gleichzeitig unterwegs sein, deshalb je Reaktion ein eigenes
+     Element in diesem Behaelter. */
+  #reaktionsflug{position:fixed;inset:0;z-index:30;pointer-events:none;
+                 overflow:hidden}
+  #reaktionsflug .flug{position:absolute;top:64px;left:50%;
+                       display:flex;align-items:center;gap:8px;
+                       white-space:nowrap;
+                       animation:reaktion_auf 2s ease-out forwards}
+  #reaktionsflug .rname{font-size:15px;color:#e8e8ea;
+                        text-shadow:0 1px 3px rgba(0,0,0,.9)}
+  #reaktionsflug .remoji{font-size:34px}
+  @keyframes reaktion_auf {
+    0%   { opacity:0; transform:translate(-50%, 6px) scale(.85); }
+    15%  { opacity:1; transform:translate(-50%, 0) scale(1); }
+    75%  { opacity:1; transform:translate(-50%, -26px) scale(1); }
+    100% { opacity:0; transform:translate(-50%, -44px) scale(1); }
+  }
+
+  /* Mitspieler waehrend des Singens - eine Zeile, kein eigener Bereich je
+     Person: Der Platz gehoert den Noten.
+     Der Selektor nennt bewusst BEIDE Kennungen: Weiter unten streckt
+     "#bild_flaeche > *" jedes Kind auf inset:0 und height:100%. Bei gleicher
+     Spezifitaet gewinnt die spaetere Regel - diese Zeile waere dadurch zur
+     bildschirmfuellenden Flaeche geworden und haette mit ihrem halbdurch-
+     sichtigen Hintergrund das ganze Notenbild abgedunkelt. Genau das war der
+     Fall. bottom/height stehen deshalb ausdruecklich dabei. */
+  #bild_flaeche > #mitspieler{
+              position:absolute;top:0;left:0;right:0;bottom:auto;height:auto;
+              z-index:7;
+              display:flex;flex-wrap:wrap;gap:4px 16px;justify-content:center;
+              padding:5px 10px;font-size:16px;line-height:1.35;
+              background:rgba(8,10,15,0.55);pointer-events:none}
+  #mitspieler .wer{color:#c7cddb;white-space:nowrap}
+  /* Das eigene Geraet hervorheben - man soll die eigene Zahl sofort finden. */
+  #mitspieler .ich{color:#fff;font-weight:600}
+  #mitspieler .pkt{color:#ffd978;font-weight:700;font-variant-numeric:tabular-nums}
+  /* Wer die Buehne verlassen hat, bleibt sichtbar - aber durchgestrichen. */
+  #mitspieler .weg{text-decoration:line-through;opacity:.5}
+
+  /* Grosses Zeichen, solange der Gastgeber angehalten hat. */
+  #pausezeichen{position:absolute;inset:0;z-index:8;display:none;
+                align-items:center;justify-content:center;
+                background:rgba(8,10,15,0.55);font-size:64px;
+                pointer-events:none}
+  #pausezeichen.an{display:flex}
+
   /* ---------- Schritt 2: Singen ---------- */
   #buehne{position:fixed;inset:0;background:#0d0f14;display:flex;flex-direction:column}
   #buehne_kopf{display:flex;justify-content:space-between;align-items:center;
@@ -88,6 +169,7 @@
   canvas{display:block}
   /* ---------- Schritt 3: Ergebnis ---------- */
   #ergebnisseite{padding:18px 14px 28px}
+  #ergebnis_warten{color:#98a0b0;font-size:15px;text-align:center;margin-top:6px}
   #ergebnis_titel{font-size:15px;color:#98a0b0;margin-bottom:2px}
   #ergebnis_lied{font-size:21px;font-weight:600;margin-bottom:18px}
   .karte{background:#171a22;border-radius:14px;padding:16px 18px;margin-bottom:12px}
@@ -98,7 +180,13 @@
   .karte .aufschluesselung{color:#98a0b0;font-size:14px;margin-top:10px}
   .karte.ungewertet .punkte{color:#5c6478;font-size:24px}
 
-  #ergebnis{position:absolute;left:0;right:0;bottom:0;z-index:6;
+  /* Ein Streifen UNTEN, keine Flaeche: top/height ausdruecklich, sonst
+     zieht "#bild_flaeche > *" (oben) sie ueber das ganze Bild - und mit 88 %
+     Deckung waere davon nichts mehr zu sehen. Dieselbe Falle wie bei
+     #mitspieler. */
+  #bild_flaeche > #ergebnis{
+            position:absolute;left:0;right:0;bottom:0;top:auto;height:auto;
+            z-index:6;
             background:rgba(8,10,15,0.88);color:#e8e8ea;font-size:15px;
             padding:12px 16px;text-align:center}
 
@@ -127,19 +215,43 @@
 
 <!-- ============ Schritt 1: Lied waehlen ============ -->
 <div id="auswahl">
-  <header>
-    <div class="suchfeld">
-      <input id="suche" placeholder="Suchen – abba OR queen, !live, 1990-1999">
-      <button id="suche_leeren" class="aus" aria-label="Suche löschen" title="Suche löschen">×</button>
+  <div id="kopfbereich">
+    <div id="lobby_leiste">
+      <span id="lobby_beschriftung">Lobby-Nummer</span>
+      <span id="lobby_code"></span>
+      <span id="lobby_mitspieler"></span>
+      <input id="lobby_name" placeholder="Dein Name" maxlength="24">
+      <button id="lobby_einladen" class="aus">Spieler einladen</button>
+      <button id="lobby_beitreten_knopf">Spiel beitreten</button>
+      <button id="lobby_verlassen">Lobby verlassen</button>
     </div>
-  </header>
-  <div id="suchleiste">
-    <span id="treffer_anzahl"></span>
-    <button id="zufall" class="still" disabled>Zufälliges Lied</button>
+    <div id="lobby_beitreten_feld">
+      <input id="lobby_code_eingabe" placeholder="Code" maxlength="6" inputmode="numeric">
+      <button id="lobby_beitreten_los">Beitreten</button>
+    </div>
+    <div id="lobby_fehler"></div>
+
+    <div id="suchkopf">
+      <header>
+        <div class="suchfeld">
+          <input id="suche" placeholder="Suchen – abba OR queen, !live, 1990-1999">
+          <button id="suche_leeren" class="aus" aria-label="Suche löschen" title="Suche löschen">×</button>
+        </div>
+      </header>
+      <div id="suchleiste">
+        <span id="treffer_anzahl"></span>
+        <button id="zufall" class="still" disabled>Zufälliges Lied</button>
+      </div>
+    </div>
   </div>
-  <div id="liste"></div>
-  <div id="nachladen" class="aus">lädt …</div>
-  <div id="platzhalter"></div>
+
+  <div id="durchsuchen">
+    <div id="liste"></div>
+    <div id="nachladen" class="aus">lädt …</div>
+    <div id="platzhalter"></div>
+  </div>
+
+  <div id="gast_hinweis" class="aus">Warte, bis der Gastgeber ein Lied auswählt …</div>
 
   <div id="vorbereitung" class="aus">
     <div id="gewaehlt_kopf">
@@ -159,6 +271,10 @@
       </select>
     </div>
     <div class="warnung" id="warnung"></div>
+    <div class="reaktion_knoepfe aus" id="reaktion_knoepfe">
+      <button id="reagieren_hoch">👍</button>
+      <button id="reagieren_runter">👎</button>
+    </div>
     <div class="knopfreihe">
       <button id="singen">Singen</button>
       <button id="anderes" class="still">Anderes Lied</button>
@@ -177,6 +293,8 @@
     <img id="hintergrund" alt="">
     <video id="video" muted playsinline preload="auto"></video>
     <canvas id="buehnebild" width="1280" height="480"></canvas>
+    <div id="mitspieler" class="aus"></div>
+    <div id="pausezeichen">⏸</div>
     <div id="startflaeche">
       <button id="losgehts">Los geht's</button>
       <div id="startnotiz">Antippen, sobald der Hinweis des Browsers weg ist.</div>
@@ -193,16 +311,41 @@
   <div id="ergebnis_titel">Ergebnis</div>
   <div id="ergebnis_lied"></div>
   <div id="ergebnis_karten"></div>
-  <div class="knopfreihe">
+  <!-- Nur der Ersteller bestimmt, wie es weitergeht. -->
+  <div class="knopfreihe" id="ergebnis_knoepfe_host">
     <button id="nochmal">Nochmal singen</button>
     <button id="zurueck_zur_liste" class="still">Anderes Lied</button>
   </div>
+  <div id="ergebnis_gast" class="aus">
+    <div id="ergebnis_warten">Warten auf den Gastgeber …</div>
+    <div class="knopfreihe">
+      <button id="ergebnis_verlassen" class="still">Lobby verlassen</button>
+    </div>
+  </div>
 </div>
+
+<!-- Reaktionen fliegen ueber allem, auch ueber der Buehne. -->
+<div id="reaktionsflug"></div>
 
 <script type="module">
 import { Game, pfad } from './js/game.js';
 import { istHandy, vollbildAn, vollbildAus, imVollbild } from './js/vollbild.js';
 import { bewertung, sterne, STUFEN } from './js/bewertung.js';
+import { LobbyClient, istGueltigerCode, driftKorrektur, sollPositionAus,
+         vorschauSollPosition, mitspielerAnzeige, alleBereit, fehlendeBereit,
+         ergebnisMitFernspielern, STANDARDNAME } from './js/lobby.js';
+
+// Wie oft die eigene Wiedergabe gegen den gemeinsamen Anker geprueft wird.
+//
+// Bewusst UNABHAENGIG vom Abfragetakt (1 s): Der Uhrenversatz steht nach
+// wenigen Messungen fest, danach laesst sich die Soll-Position jederzeit
+// ohne Netzverkehr hochrechnen. Frueher wurde nur einmal je Antwort
+// geprueft - und dann gegen einen Stempel, der schon eine Sekunde alt war.
+//
+// Kurzer Takt, weil schon wenige Millisekunden Versatz zwischen Geraeten im
+// selben Raum stoerend klingen: Je oefter geprueft wird, desto kleiner die
+// Abweichung, die ueberhaupt entstehen kann.
+const GLEICHLAUF_MS = 100;
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -235,6 +378,388 @@ let aktuellGeladen = null, aktuelleSucheText = null;
 // das Zufallslied ueber die ganze Trefferliste wuerfeln kann, nicht nur
 // ueber die schon geladene Seite.
 let letzterGesamt = 0;
+
+// ---------- Lobby ----------
+//
+// Jeder, der die Seite oeffnet, bekommt automatisch eine eigene Lobby - im
+// einfachsten Fall eine mit nur einem Mitglied, die nie auffaellt. token
+// steht fuer dieses GERAET/diesen TAB, nicht fuer eine Anmeldung; die Seite
+// kennt ohnehin nur ein gemeinsames Passwort fuer alle.
+//
+// sessionStorage statt einer reinen JS-Variable: Ein versehentliches
+// Neuladen darf den Gastgeber nicht aus seiner eigenen Lobby aussperren -
+// mit einem neuen Token waere niemand mehr der Ersteller, und alle Gaeste
+// blieben auf einer Auswahl haengen, die sich nie mehr aendert. sessionStorage
+// uebersteht das Neuladen und verschwindet erst mit dem Tab - genau die
+// richtige Lebensdauer.
+const lobbyToken = sessionStorage.getItem('lobbyToken') || (() => {
+  const t = crypto.randomUUID();
+  sessionStorage.setItem('lobbyToken', t);
+  return t;
+})();
+
+function lobbyName() {
+  return $('lobby_name').value.trim() || STANDARDNAME;
+}
+
+let binHost = true;
+// "bereit" = hat Singen/Bereit getippt; "aufBuehne" = ist gerade wirklich
+// auf der Buehne. Beides wird bei jedem Abfrage-Takt gemeldet, damit die
+// anderen es an ihrer Anzeige sehen - wer die Buehne verlaesst, erscheint
+// dort durchgestrichen.
+let binBereit = false;
+let aufBuehne = false;
+let bereitAberWartet = false;
+let letzterLobbyZustand = null;
+let ersterLobbyZustand = true;
+// Die zuletzt gesehene Zielnummer. null heisst "noch keine gesehen" - GENAU
+// dann soll auch beim allerersten Zustand gefolgt werden: Wer neu beitritt,
+// waehrend der Ersteller schon auf der Buehne wartet, hat keinen eigenen
+// Bereit-Knopf mehr, um das nachzuholen (siehe folgeZiel).
+let letzteZielNr = null;
+// Zu welcher Lobby diese Nummer gehoert. Jede Lobby zaehlt bei null los;
+// ohne diesen Vergleich haelte man die 0 einer frisch betretenen Lobby fuer
+// eine Aenderung gegenueber der 5 aus der vorigen und spraenge grundlos.
+let letzterLobbyCode = null;
+
+// Was dieses Geraet bei jedem Abfrage-Takt ueber sich meldet.
+//
+// Bei zwei lokalen Saengern (Solo zu zweit) zaehlt fuer die Lobby nur der
+// erste gewertete: Ein Lobby-Mitglied hat eine Punktzahl, eine zweite Person
+// am selben Geraet ist ein bewusst hingenommener Sonderfall.
+function meineMeldung() {
+  const s = spiel.saenger.find((x) => x.analyser);
+  return {
+    punkte: s ? s.scorer.score : -1,
+    bereit: binBereit,
+    singt: aufBuehne,
+  };
+}
+
+const lobbyClient = new LobbyClient(lobbyToken, verarbeiteLobbyZustand, meineMeldung);
+
+// Setzt Bereitschaft/Buehne und sagt es sofort weiter, statt bis zum
+// naechsten Takt zu warten - die anderen sollen nicht bis zu einer Sekunde
+// auf ein "ist bereit" warten muessen.
+function meldeStatus(bereit, buehne_) {
+  binBereit = bereit;
+  aufBuehne = buehne_;
+  lobbyClient.jetztAbfragen();
+}
+
+// Wie weit eine Reaktion hoechstens aus der Mitte wandert - Anteil der
+// Bildbreite, nach links wie nach rechts. Zufaellig, damit mehrere
+// gleichzeitig nicht uebereinanderliegen.
+const REAKTION_STREUUNG = 0.20;
+
+function zeigeReaktion(art, wer) {
+  const el2 = document.createElement('div');
+  el2.className = 'flug';
+  // Der Versatz kommt auf die Mitte obendrauf. left steht auf 50%, die
+  // Verschiebung um die halbe eigene Breite steckt in der Animation - hier
+  // also nur der zusaetzliche Weg zur Seite.
+  const versatz = (Math.random() * 2 - 1) * REAKTION_STREUUNG * 100;
+  el2.style.left = `calc(50% + ${versatz.toFixed(1)}vw)`;
+  el2.innerHTML = `<span class="rname">${esc(wer || STANDARDNAME)}</span>` +
+                  `<span class="remoji">${art === 'runter' ? '👎' : '👍'}</span>`;
+  $('reaktionsflug').appendChild(el2);
+  // Nach der Animation wieder wegraeumen - sonst waechst der Behaelter mit
+  // jeder Reaktion weiter.
+  setTimeout(() => el2.remove(), 2100);
+}
+
+// Einzige Stelle, die auf einen neuen Lobby-Zustand reagiert - wird von
+// LobbyClient bei jedem Abfrage-Takt gerufen, sowie sofort nach
+// erstellen()/trete(). zustand=null heisst: die Lobby gibt es nicht mehr
+// (Gastgeber weg, abgelaufen).
+async function verarbeiteLobbyZustand(zustand) {
+  if (!zustand) {
+    // Die Lobby gibt es nicht mehr: Der Gastgeber hat sie verlassen (dann
+    // loescht der Server sie fuer alle) oder sie ist abgelaufen. Damit ist
+    // es auch fuer alle anderen vorbei - Buehne verlassen, Vorschau aus,
+    // Auswahl zuruecksetzen. Danach bekommt jeder wieder seine eigene
+    // Lobby, genau wie beim ersten Aufruf der Seite.
+    letzterLobbyZustand = null;
+    bereitAberWartet = false;
+    nachgeholteVorschau = null;
+    $('mitspieler').classList.add('aus');
+    spiel.vorschauStop();
+    if (!buehne.classList.contains('aus') || !ergebnisseite.classList.contains('aus')) {
+      await verlasseBuehne();
+      ergebnisseite.classList.add('aus');
+      auswahl.classList.remove('aus');
+      $('singen').disabled = false;
+    }
+    zeigeLeiste(false);
+    aktuellGeladen = null;
+    await lobbyClient.erstelle(lobbyName());
+    // Die Meldung ZULETZT: erstelle() meldet den neuen Zustand sofort und
+    // laeuft dabei erneut durch diese Funktion - die loescht den Text oben
+    // wieder. Erst danach gesetzt, bleibt er stehen.
+    $('lobby_fehler').textContent = 'Die Lobby wurde beendet.';
+    syncURL({ lobby: lobbyClient.code, lied: null, singen: null }, { push: false });
+    return;
+  }
+  $('lobby_fehler').textContent = '';
+  // Der Uhrenversatz wird nicht hier bestimmt: Dafuer braucht es die Zeiten
+  // VOR dem Absenden und NACH dem Empfang, und die kennt nur LobbyClient
+  // selbst (siehe uhrVersatz/UhrAbgleich in lobby.js).
+
+  // Reaktionen erst ab dem ZWEITEN Zustand zeigen - der erste (direkt nach
+  // erstellen()/trete()) kann noch alte, laengst gesehene enthalten.
+  // Danach ALLE neuen, nicht nur die letzte: Tippen zwei gleichzeitig,
+  // sollen auch zwei fliegen.
+  if (!ersterLobbyZustand && zustand.isHost &&
+      Array.isArray(zustand.reaktionen)) {
+    for (const r of zustand.reaktionen) zeigeReaktion(r.art, r.name);
+  }
+  ersterLobbyZustand = false;
+
+  letzterLobbyZustand = zustand;
+  binHost = zustand.isHost;
+  const mehrere = zustand.spieler.length > 1;
+
+  $('lobby_code').textContent = zustand.code;
+  $('lobby_mitspieler').textContent = mehrere ? `${zustand.spieler.length} Spieler` : '';
+  $('durchsuchen').classList.toggle('aus', !binHost);
+  $('suchkopf').classList.toggle('aus', !binHost);
+  $('gast_hinweis').classList.toggle('aus', binHost || zustand.songIndex >= 0);
+  $('reaktion_knoepfe').classList.toggle('aus', binHost || zustand.songIndex < 0);
+  // Nur der Ersteller startet - Gaeste bekommen gar keinen Knopf mehr dafuer,
+  // sie landen automatisch auf der Buehne, sobald der Ersteller drueckt
+  // (siehe folgeZiel).
+  $('singen').classList.toggle('aus', !binHost);
+  $('anderes').classList.toggle('aus', !binHost);
+  // Wie es nach dem Lied weitergeht, bestimmt allein der Ersteller - Gaeste
+  // bekommen stattdessen einen Hinweis und den Weg aus der Lobby heraus.
+  $('ergebnis_knoepfe_host').classList.toggle('aus', !binHost);
+  $('ergebnis_gast').classList.toggle('aus', binHost);
+
+  zeigeMitspieler(zustand);
+  aktualisiereStartknopf(zustand);
+
+  // Der Gast bekommt das vom Gastgeber gewaehlte Lied automatisch geladen -
+  // aber nicht, waehrend gerade gesungen wird oder das Ergebnis steht, sonst
+  // risse ein neu gewaehltes Lied mitten in der eigenen Auffuehrung alles um.
+  const inRuhigerAnsicht =
+    buehne.classList.contains('aus') && ergebnisseite.classList.contains('aus');
+  if (!binHost && zustand.songIndex >= 0 && zustand.songIndex !== aktuellGeladen &&
+      inRuhigerAnsicht) {
+    await waehleLied(zustand.songIndex);
+  } else if (!binHost && zustand.songIndex < 0 && aktuellGeladen !== null &&
+             inRuhigerAnsicht) {
+    // Der Ersteller hat abgewaehlt ("Anderes Lied") oder das Lied ist zu
+    // Ende - dann soll auch bei den Gaesten wieder nichts ausgewaehlt
+    // aussehen.
+    spiel.vorschauStop();
+    zeigeLeiste(false);
+    aktuellGeladen = null;
+  }
+
+  // Andere Lobby? Dann faengt die Zaehlung von vorn an, und der alte Stand
+  // sagt nichts mehr aus.
+  if (zustand.code !== letzterLobbyCode) {
+    letzterLobbyCode = zustand.code;
+    letzteZielNr = null;
+  }
+
+  // Der Ersteller gibt vor, wo alle hingehoeren. Ausgewertet wird die
+  // ZIELNUMMER, nicht das Ziel selbst: Zweimal "Anderes Lied" hintereinander
+  // ergaebe denselben Wert, waere also nicht als zweiter Tastendruck zu
+  // erkennen. Das gilt auch fuer die allererste Beobachtung nach einem
+  // Beitritt - dann holt es die aktuelle Ansage einmalig nach.
+  if (!binHost && zustand.zielNr !== letzteZielNr) {
+    await folgeZiel(zustand.ziel);
+  }
+  letzteZielNr = zustand.zielNr;
+
+  // Pause gilt fuer alle, auch fuer den Gastgeber selbst.
+  if (spiel.laeuft) {
+    $('pausezeichen').classList.toggle('an', !!zustand.pausiert);
+    if (zustand.pausiert) spiel.pausiere();
+    else spiel.fortsetzen();
+  } else {
+    $('pausezeichen').classList.remove('an');
+  }
+
+  if (!spiel.laeuft && bereitAberWartet && zustand.phase === 'singt') {
+    // Der Gast hat schon "Bereit" getippt (Vollbild/Mikrofon sind also
+    // schon zugesagt) und wartete nur noch auf den Gastgeber - jetzt geht's
+    // ohne weitere Nutzergeste los.
+    bereitAberWartet = false;
+    $('startflaeche').style.display = 'none';
+    try {
+      await spiel.start(besetzung, +$('schwierigkeit').value, sollPosition());
+    } catch (err) {
+      el.hinweis.textContent = err.message;
+      await zurueckZurAuswahl();
+    }
+  }
+}
+
+// Bringt einen Gast dorthin, wo der Ersteller ihn haben will.
+//
+// 'ergebnis'  Das Lied ist vorbei - das eigene Ergebnis soll man sehen.
+// 'auswahl'   Zurueck zur Liederliste ("Anderes Lied").
+// 'buehne'    Der Ersteller hat "Singen"/"Nochmal singen" gedrueckt - ohne
+//             eigenen Klick auf die Startflaeche, von der aus man selbst
+//             "Los geht's" tippt.
+async function folgeZiel(ziel) {
+  bereitAberWartet = false;
+
+  if (ziel === 'ergebnis') {
+    // Laeuft noch etwas, ordentlich beenden - beende() zeigt ueber onEnde
+    // die eigene Ergebnisseite mit der eigenen Punktzahl.
+    if (spiel.laeuft) spiel.beende();
+    return;
+  }
+
+  if (ziel === 'buehne') {
+    // Sofort aus, nicht ausgeblendet - sonst lief die Vorschau im Hintergrund
+    // weiter mit, waehrend auf der Buehne schon gesungen wird.
+    spiel.vorschauStop();
+
+    // Erst hier, statt erst am eigenen Bereit-Knopf - der faellt fuer
+    // Gaeste ja gerade weg. Ohne Geste lehnt der Browser das zwar meist ab,
+    // aber das ist kein Problem: Der Tipp auf "Los geht's" fragt gleich
+    // nochmal, DANN mit einer echten Geste.
+    if (mikrofone.length === 0) {
+      await spiel.frageFreigabe();
+      mikrofone = await spiel.listeMikrofone();
+    }
+    await vollbildAn(buehne);
+
+    // Ohne Besetzung waere die Buehne sinnlos - dann bleibt der Gast in der
+    // Auswahl und ordnet erst sein Mikrofon zu.
+    besetzung = ermittleBesetzung();
+    if (besetzung.length === 0) { await zeigeAuswahl(); return; }
+    ergebnisseite.classList.add('aus');
+    auswahl.classList.add('aus');
+    buehne.classList.remove('aus');
+    $('startflaeche').style.display = 'flex';
+    $('startnotiz').textContent = 'Antippen, sobald der Hinweis des Browsers weg ist.';
+    el.hinweis.textContent = '';
+    meldeStatus(false, true);
+    passeAn();
+    return;
+  }
+
+  await zeigeAuswahl();
+}
+
+// Zurueck zur Liederliste - ohne der Lobby etwas mitzuteilen. Genau dafuer
+// ist es getrennt von zurueckZurAuswahl(), das als Ersteller ALLE mitnimmt;
+// hier folgt man ja bloss.
+async function zeigeAuswahl() {
+  if (!buehne.classList.contains('aus')) await verlasseBuehne();
+  ergebnisseite.classList.add('aus');
+  auswahl.classList.remove('aus');
+  $('singen').disabled = false;
+  el.hinweis.textContent = '';
+}
+
+// Die schmale Mitspielerzeile ueber dem Notenbild. Wer die Buehne verlassen
+// hat, steht durchgestrichen da; wer die Lobby verlassen hat, gar nicht mehr.
+function zeigeMitspieler(zustand) {
+  // Die Punktzahlen der Saenger AN DIESEM Geraet - damit die eigene Zeile
+  // dieselbe Zahl zeigt wie die Bahn darunter, und beim Solo zu zweit beide
+  // getrennt erscheinen.
+  const eigene = spiel.saenger.map((s) => (s.analyser ? s.scorer.score : null));
+  const liste = mitspielerAnzeige(zustand, eigene.length ? eigene : null);
+  const zeigen = spiel.laeuft && liste.length > 0;
+  $('mitspieler').classList.toggle('aus', !zeigen);
+  if (!zeigen) { spiel.obenVersatz = 0; return; }
+  $('mitspieler').innerHTML = liste.map((m) =>
+    `<span class="wer${m.weg ? ' weg' : ''}${m.ich ? ' ich' : ''}">${esc(m.name)}` +
+    (m.punkte != null ? ` <span class="pkt">${m.punkte}</span>` : '') +
+    `</span>`).join('');
+  // Erst NACH dem Befuellen messen - bei vielen Mitspielern bricht die
+  // Zeile um, und die Hoehe waechst mit. Im Duett braucht die obere Bahn
+  // genau so viel Platz, sonst liegt diese Anzeige auf ihrem Text.
+  spiel.obenVersatz = $('mitspieler').offsetHeight;
+}
+
+// Der Gastgeber startet erst, wenn sich alle anderen bereitgemeldet haben -
+// sonst faengt das Lied ohne die an, die noch ihr Mikrofon zuordnen.
+function aktualisiereStartknopf(zustand) {
+  if (!binHost) return;
+  const fehlen = fehlendeBereit(zustand);
+  const bereit = alleBereit(zustand);
+  $('losgehts').disabled = !bereit;
+  if (!bereit) {
+    $('startnotiz').textContent = 'Warte auf: ' + fehlen.join(', ');
+  } else if ($('startnotiz').textContent.startsWith('Warte auf')) {
+    $('startnotiz').textContent = 'Antippen, sobald der Hinweis des Browsers weg ist.';
+  }
+}
+
+// Wo die Wiedergabe laut Lobby JETZT stehen muesste.
+//
+// Gerechnet wird mit der hochgerechneten Serverzeit, nicht mit dem Stempel
+// der letzten Antwort - der ist beim Anwenden schon bis zu eine Sekunde alt,
+// und genau diese Verzoegerung war vorher der groesste Einzelfehler.
+function sollPosition() {
+  return sollPositionAus(letzterLobbyZustand, lobbyClient.serverJetzt());
+}
+
+// Zieht die eigene Wiedergabe laufend an den gemeinsamen Anker heran.
+//
+// Laeuft in einem eigenen, schnelleren Takt als die Abfrage: Nachregeln
+// kostet nichts, sobald der Uhrenversatz bekannt ist. Der Wert wird bei
+// jedem Takt neu gesetzt, statt nach fester Zeit zurueckgestellt zu werden -
+// so klingt die Abweichung von selbst ab, statt in Spruengen aufgeholt zu
+// werden.
+// Zieht ein Tonelement an eine Sollposition heran. Gibt zurueck, ob
+// ueberhaupt eingegriffen wurde.
+function ziehNach(audio, soll) {
+  const korrektur = driftKorrektur(audio.currentTime, soll);
+  if (korrektur.art === 'sprung') {
+    audio.currentTime = korrektur.wert;
+    audio.playbackRate = 1;
+  } else {
+    // Auch 'keine' setzt zurueck auf 1 - sonst bliebe die letzte
+    // Geschwindigkeitskorrektur stehen und triebe die Wiedergabe wieder
+    // auseinander.
+    audio.playbackRate = korrektur.wert;
+  }
+  return korrektur.art !== 'keine';
+}
+
+setInterval(() => {
+  if (!letzterLobbyZustand || !lobbyClient.uhr.bekannt) return;
+  // Allein in der Lobby gibt es nichts abzugleichen - dann soll die
+  // Wiedergabe unangetastet bleiben.
+  if (letzterLobbyZustand.spieler.length < 2) {
+    if (spiel.audio.playbackRate !== 1) spiel.audio.playbackRate = 1;
+    if (spiel.vorschauAudio.playbackRate !== 1) spiel.vorschauAudio.playbackRate = 1;
+    return;
+  }
+
+  // Der Gastgeber ist der Taktgeber - er wird nie an sich selbst nachgeregelt.
+  // Sonst zerrte das eigene Messrauschen (Uhrenversatz, Netzwerk-Jitter) an
+  // einer Wiedergabe, die per Definition schon richtig ist: Alle anderen
+  // richten sich ja gerade nach IHM, nicht umgekehrt.
+  if (binHost) {
+    if (spiel.audio.playbackRate !== 1) spiel.audio.playbackRate = 1;
+    if (spiel.vorschauAudio.playbackRate !== 1) spiel.vorschauAudio.playbackRate = 1;
+    return;
+  }
+
+  if (spiel.laeuft) {
+    if (letzterLobbyZustand.phase !== 'singt') return;
+    // Waehrend einer Pause steht die Sollposition fest; nachzuregeln gaebe
+    // es nichts, und ein Sprung waere hier sogar schaedlich.
+    if (letzterLobbyZustand.pausiert || spiel.audio.paused) return;
+    ziehNach(spiel.audio, sollPosition());
+    return;
+  }
+
+  // Auch die angespielte Vorschau in der Auswahl laeuft bei allen gleich.
+  const vorschauSoll =
+    vorschauSollPosition(letzterLobbyZustand, lobbyClient.serverJetzt());
+  if (vorschauSoll !== null && spiel.vorschauLaeuft)
+    ziehNach(spiel.vorschauAudio, vorschauSoll);
+}, GLEICHLAUF_MS);
 
 // Nachladen beim Blaettern.
 //
@@ -295,6 +820,7 @@ function leseZustandAusURL() {
     q: p.get('q') || '',
     lied: p.has('lied') ? +p.get('lied') : null,
     singen: p.get('singen') === '1',
+    lobby: p.get('lobby') || null,
   };
 }
 
@@ -340,6 +866,19 @@ async function anwendenZustand(z) {
   // Singen liess sich nicht wiederaufnehmen (siehe oben) - die URL soll das
   // dann auch zeigen, statt einen Zustand vorzutaeuschen, der nicht stimmt.
   if (z.singen) syncURL({ singen: null }, { push: false });
+
+  // Ein Einladungslink bringt einen Lobby-Code mit - beitreten, bevor
+  // ansonsten (wie bei jedem ersten Laden) eine eigene Solo-Lobby entstehen
+  // wuerde. Schlaegt der Beitritt fehl (Code falsch/abgelaufen), faellt das
+  // still auf eine eigene Lobby zurueck - derselbe Gedanke wie bei singen=1.
+  if (z.lobby && z.lobby !== lobbyClient.code) {
+    const ok = await lobbyClient.trete(z.lobby, lobbyName());
+    if (!ok) syncURL({ lobby: null }, { push: false });
+  }
+  if (!lobbyClient.code) {
+    await lobbyClient.erstelle(lobbyName());
+    syncURL({ lobby: lobbyClient.code }, { push: false });
+  }
 }
 
 addEventListener('popstate', () => { anwendenZustand(leseZustandAusURL()); });
@@ -451,9 +990,92 @@ $('zufall').addEventListener('click', async () => {
     const treffer = d.songs || [];
     if (!treffer.length) return;
     await waehleLied(treffer[0].index);
+    lobbyClient.waehle(treffer[0].index);
     syncURL({ lied: treffer[0].index, singen: null }, { push: true });
   } catch (e) { /* Verbindung weg - der Knopf bleibt einfach ohne Wirkung */ }
 });
+
+// ---------- Lobby: Knopfleiste ----------
+
+// Nur auf dem Handy - auf dem Desktop gibt es keinen Teilen-Dialog, und ein
+// Knopf ohne Wirkung waere nur verwirrend. handy steht schon fest, dieselbe
+// Variable wie bei #drehen.
+$('lobby_einladen').classList.toggle('aus', !handy);
+$('lobby_einladen').addEventListener('click', async () => {
+  if (!navigator.share || !lobbyClient.code) return;
+  try {
+    await navigator.share({
+      title: 'UltraStar mitsingen',
+      url: pfad('/?lobby=' + lobbyClient.code),
+    });
+  } catch (e) { /* abgebrochen oder nicht unterstuetzt - kein Problem */ }
+});
+
+$('lobby_name').value = sessionStorage.getItem('lobbyName') || '';
+$('lobby_name').addEventListener('change', () => {
+  sessionStorage.setItem('lobbyName', $('lobby_name').value);
+});
+
+$('lobby_beitreten_knopf').addEventListener('click', () => {
+  $('lobby_beitreten_feld').classList.toggle('an');
+  if ($('lobby_beitreten_feld').classList.contains('an')) $('lobby_code_eingabe').focus();
+});
+
+// Wechselt zu einer fremden Lobby - ein Themenwechsel, deshalb wie
+// "Lobby verlassen" auch das eigene Lied/die Buehne zuruecksetzen.
+async function beitreteMitEingabe() {
+  const code = $('lobby_code_eingabe').value.trim();
+  if (!istGueltigerCode(code)) {
+    $('lobby_fehler').textContent = 'Bitte einen 6-stelligen Code eingeben.';
+    return;
+  }
+  const ok = await lobbyClient.trete(code, lobbyName());
+  if (!ok) {
+    $('lobby_fehler').textContent = 'Diese Lobby gibt es nicht (mehr).';
+    return;
+  }
+  $('lobby_fehler').textContent = '';
+  $('lobby_beitreten_feld').classList.remove('an');
+  $('lobby_code_eingabe').value = '';
+  // Andere Lobby, anderes Lied - die Vorschau des alten gehoert nicht dazu.
+  spiel.vorschauStop();
+  nachgeholteVorschau = null;
+  if (!buehne.classList.contains('aus') || !ergebnisseite.classList.contains('aus')) {
+    await verlasseBuehne();
+    ergebnisseite.classList.add('aus');
+    auswahl.classList.remove('aus');
+    $('singen').disabled = false;
+  }
+  zeigeLeiste(false);
+  aktuellGeladen = null;
+  syncURL({ lobby: lobbyClient.code, lied: null, singen: null }, { push: true });
+}
+$('lobby_beitreten_los').addEventListener('click', beitreteMitEingabe);
+$('lobby_code_eingabe').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') beitreteMitEingabe();
+});
+
+async function lobbyVerlassen() {
+  if (!buehne.classList.contains('aus') || !ergebnisseite.classList.contains('aus')) {
+    await verlasseBuehne();
+    ergebnisseite.classList.add('aus');
+    auswahl.classList.remove('aus');
+    $('singen').disabled = false;
+  }
+  spiel.vorschauStop();
+  // Sonst holt die naechste Beruehrung eine abgelehnte Vorschau nach - und
+  // ausgerechnet der Klick auf "Lobby verlassen" ist so eine Beruehrung.
+  nachgeholteVorschau = null;
+  zeigeLeiste(false);
+  aktuellGeladen = null;
+  await lobbyClient.verlasse(lobbyName());
+  syncURL({ lobby: lobbyClient.code, lied: null, singen: null }, { push: true });
+}
+$('lobby_verlassen').addEventListener('click', lobbyVerlassen);
+$('ergebnis_verlassen').addEventListener('click', lobbyVerlassen);
+
+$('reagieren_hoch').addEventListener('click', () => lobbyClient.reagiere('hoch'));
+$('reagieren_runter').addEventListener('click', () => lobbyClient.reagiere('runter'));
 
 function zeigeBesetzung(song) {
   $('stimmen').innerHTML = '';
@@ -509,6 +1131,46 @@ function pruefeDoppelt() {
 }
 $('stimmen').addEventListener('change', pruefeDoppelt);
 
+// Merkt sich, was angespielt werden sollte, falls der Browser den Ton ohne
+// Nutzergeste verweigert - wer frisch ueber einen Einladungslink kommt, hat
+// die Seite noch nie beruehrt und bekam deshalb bisher gar nichts zu hoeren.
+let nachgeholteVorschau = null;
+
+// Startet die Vorschau und haelt sie mit der Lobby gleich.
+//
+// Der Ersteller gibt den Anker vor, alle anderen setzen ihre Vorschau auf
+// dieselbe Stelle - so hoert die Runde dasselbe, statt jeder etwas anderes.
+async function starteVorschauFuerLobby(index, song) {
+  const ab = vorschauSollPosition(letzterLobbyZustand, lobbyClient.serverJetzt());
+  const wie = await spiel.vorschauStarten(index, song, binHost ? null : ab);
+
+  if (wie === 'verweigert') {
+    // Beim naechsten Antippen nachholen (siehe unten).
+    nachgeholteVorschau = { index, song };
+    $('gewaehlt_info').textContent = 'Zum Anhören kurz tippen.';
+    return;
+  }
+  if (wie !== 'laeuft') return;
+  nachgeholteVorschau = null;
+
+  // Nur der Ersteller kuendigt an, ab wann die Vorschau laeuft.
+  if (binHost && lobbyClient.code) {
+    lobbyClient.vorschau(
+      lobbyClient.serverJetzt() - spiel.vorschauAudio.currentTime * 1000);
+  }
+}
+
+// Erste Nutzergeste nach einer verweigerten Vorschau: nachholen. Einmalig
+// je Verweigerung, danach steht nachgeholteVorschau wieder auf null.
+for (const ereignis of ['pointerdown', 'keydown']) {
+  addEventListener(ereignis, () => {
+    if (!nachgeholteVorschau) return;
+    const { index, song } = nachgeholteVorschau;
+    nachgeholteVorschau = null;
+    starteVorschauFuerLobby(index, song);
+  }, { passive: true });
+}
+
 async function waehleLied(index) {
   $('gewaehlt').textContent = 'Lade …';
   $('gewaehlt_info').textContent = '';
@@ -519,7 +1181,7 @@ async function waehleLied(index) {
     const song = await spiel.ladeLied(index);
     // Vorschau anspielen wie im Spiel (TScreenSong.StartMusicPreview) - nicht
     // abwarten, das Fenster soll sich nicht dafuer verzoegern.
-    spiel.vorschauStarten(index, song);
+    starteVorschauFuerLobby(index, song);
     // Ob es ein Titelbild gibt, weiss die Weboberflaeche erst nach dem
     // Laden nicht mehr sicher - also einfach versuchen und bei Fehlschlag
     // wieder verstecken, genau wie beim Hintergrundbild auf der Buehne.
@@ -551,23 +1213,30 @@ $('liste').addEventListener('click', async (e) => {
   if (!d) return;
   const index = +d.dataset.i;
   await waehleLied(index);
+  // An die Lobby weitergeben - nur der Ersteller kommt hier ueberhaupt an
+  // die Liste heran (Gaeste sehen #durchsuchen gar nicht), ein Wachposten
+  // ist trotzdem billig.
+  lobbyClient.waehle(index);
   syncURL({ lied: index, singen: null }, { push: true });
 });
 
-$('anderes').addEventListener('click', () => {
+$('anderes').addEventListener('click', async () => {
   spiel.vorschauStop();
   zeigeLeiste(false);
   aktuellGeladen = null;
   syncURL({ lied: null, singen: null }, { push: true });
+  // Sonst saehen die anderen in der Lobby weiter das abgewaehlte Lied, statt
+  // wieder auf die Auswahl des Erstellers zu warten (dieser Knopf ist fuer
+  // Gaeste ohnehin ausgeblendet).
+  if (binHost) await lobbyClient.waehle(-1);
 });
 
-// ---------- Schritt 2: Singen ----------
-$('singen').addEventListener('click', async () => {
-  // Sofort aus, nicht ausgeblendet - gleich singt man selbst, da soll nicht
-  // noch eine Sekunde die leise Vorschau mitlaufen.
-  spiel.vorschauStop();
-  $('singen').disabled = true;
-  besetzung = [...$('stimmen').querySelectorAll('select')]
+// Wer welche Spur mit welchem Mikrofon singt, aus den Auswahlfeldern
+// gelesen. Gebraucht vom Ersteller beim Klick auf "Singen" UND vom Gast,
+// der beim automatischen Wechsel auf die Buehne (folgeZiel) gar nicht mehr
+// selbst klickt.
+function ermittleBesetzung() {
+  return [...$('stimmen').querySelectorAll('select')]
     // Ein freiwilliger Platz ohne Mikrofon bekommt keine Bahn: Beim Solo
     // waere das sonst eine zweite, stumme Anzeige derselben Noten.
     .filter((s) => s.dataset.pflicht === '1' || s.value !== '')
@@ -576,13 +1245,31 @@ $('singen').addEventListener('click', async () => {
       deviceId: s.value || null,
       name: s.previousElementSibling.textContent,
     }));
+}
+
+// ---------- Schritt 2: Singen ----------
+$('singen').addEventListener('click', async () => {
+  // Sofort aus, nicht ausgeblendet - gleich singt man selbst, da soll nicht
+  // noch eine Sekunde die leise Vorschau mitlaufen.
+  spiel.vorschauStop();
+  $('singen').disabled = true;
+  besetzung = ermittleBesetzung();
 
   auswahl.classList.add('aus');
   zeigeLeiste(false);
   buehne.classList.remove('aus');
   $('startflaeche').style.display = 'flex';
+  $('startnotiz').textContent = 'Antippen, sobald der Hinweis des Browsers weg ist.';
   el.hinweis.textContent = '';
+  // Auf der Buehne, aber noch NICHT bereit: Bereit wird man erst mit dem
+  // Tipp auf "Los geht's". Wer schon hier als bereit zaehlte, koennte vom
+  // Gastgeber ueberholt werden - das Lied liefe los, waehrend man selbst
+  // noch auf der Startflaeche steht und gar nicht mitstartet.
+  meldeStatus(false, true);
   syncURL({ singen: 1 }, { push: true });
+  // Nimmt die ganze Lobby mit auf die Buehne - nur der Ersteller darf das
+  // ueberhaupt (dieser Knopf ist fuer Gaeste ohnehin ausgeblendet).
+  if (binHost) await lobbyClient.setzeZiel('buehne');
 
   // Vollbild MUSS aus dieser Klickbehandlung heraus angefordert werden -
   // spaeter fehlt die Nutzergeste und der Browser lehnt ab. Das gilt auf
@@ -596,25 +1283,80 @@ $('singen').addEventListener('click', async () => {
 });
 
 $('losgehts').addEventListener('click', async () => {
-  $('startflaeche').style.display = 'none';
+  // Erneuter Versuch mit einer echten Nutzergeste: Beim automatischen
+  // Wechsel auf die Buehne (folgeZiel) fehlte die, deshalb schlug Vollbild
+  // dort meist fehl. War es schon erfolgreich (Ersteller beim Klick auf
+  // "Singen"), wird hier nichts noch einmal angestossen.
+  if (!imVollbild()) {
+    const konnte = await vollbildAn(buehne);
+    if (handy && !konnte.quer) $('drehen').style.display = 'block';
+  }
   passeAn();
-  try {
-    await spiel.start(besetzung, +$('schwierigkeit').value);
-  } catch (err) {
-    el.hinweis.textContent = err.message;
-    await zurueckZurAuswahl();
+
+  // Kurz vor dem Losspielen den Uhrenversatz schaerfen - genau hier haengt
+  // die Genauigkeit des gemeinsamen Ankers daran.
+  const mehrereInLobby =
+    letzterLobbyZustand && letzterLobbyZustand.spieler.length > 1;
+  if (mehrereInLobby) await lobbyClient.synchronisiereUhr();
+
+  if (binHost) {
+    $('startflaeche').style.display = 'none';
+    try {
+      await spiel.start(besetzung, +$('schwierigkeit').value);
+      // Der Anker sagt: "zu DIESER Serverzeit stand die Wiedergabe auf 0".
+      // Deshalb die bereits gelaufene Zeit abziehen, statt einfach den
+      // Zeitpunkt des Startbefehls zu nehmen - zwischen Klick und wirklich
+      // laufendem Ton vergehen je nach Geraet einige Zehntelsekunden.
+      lobbyClient.starte(lobbyClient.serverJetzt() - spiel.audio.currentTime * 1000);
+    } catch (err) {
+      el.hinweis.textContent = err.message;
+      await zurueckZurAuswahl();
+    }
+    return;
+  }
+
+  // Gast: erst starten, wenn der Gastgeber tatsaechlich schon losgelegt
+  // hat - sonst liefe man dem gemeinsamen Anker voraus. Vollbild und
+  // Mikrofon sind mit diesem Tipp schon zugesagt, das reicht als
+  // Nutzergeste auch fuer den spaeteren, verzoegerten Start.
+  //
+  // JETZT gilt man als bereit: Ab hier startet man auch wirklich mit, wenn
+  // der Gastgeber loslegt.
+  meldeStatus(true, true);
+  if (letzterLobbyZustand && letzterLobbyZustand.phase === 'singt') {
+    $('startflaeche').style.display = 'none';
+    try {
+      await spiel.start(besetzung, +$('schwierigkeit').value, sollPosition());
+    } catch (err) {
+      el.hinweis.textContent = err.message;
+      await zurueckZurAuswahl();
+    }
+  } else {
+    bereitAberWartet = true;
+    $('startnotiz').textContent = 'Bereit – warte auf den Gastgeber …';
   }
 });
 
 async function verlasseBuehne() {
   spiel.stop();
+  // Sonst koennte ein spaeterer Start des Gastgebers hier faelschlich
+  // automatisch mitstarten, obwohl niemand seitdem erneut "Bereit" getippt
+  // hat.
+  bereitAberWartet = false;
   $('startflaeche').style.display = 'none';
+  $('mitspieler').classList.add('aus');
+  $('pausezeichen').classList.remove('an');
   await vollbildAus();
   $('drehen').style.display = 'none';
   buehne.classList.add('aus');
+  // Die Buehne ist verlassen - die anderen sollen das sehen (durchgestrichen).
+  meldeStatus(false, false);
 }
 
 async function zurueckZurAuswahl() {
+  // Der Ersteller nimmt ALLE mit: Wer zurueck in die Auswahl geht, laesst
+  // die anderen nicht allein weitersingen oder vor dem Ergebnis sitzen.
+  if (binHost) await lobbyClient.setzeZiel('auswahl');
   await verlasseBuehne();
   ergebnisseite.classList.add('aus');
   auswahl.classList.remove('aus');
@@ -629,10 +1371,15 @@ $('zurueck_zur_liste').addEventListener('click', zurueckZurAuswahl);
 
 // Noch einmal dasselbe Lied, mit derselben Besetzung.
 $('nochmal').addEventListener('click', async () => {
+  // Ein neuer Durchgang: alle zurueck auf die Buehne, wo sie sich neu
+  // bereitmelden und dann gemeinsam starten.
+  if (binHost) await lobbyClient.setzeZiel('buehne');
   ergebnisseite.classList.add('aus');
   buehne.classList.remove('aus');
   $('startflaeche').style.display = 'flex';
+  $('startnotiz').textContent = 'Antippen, sobald der Hinweis des Browsers weg ist.';
   el.hinweis.textContent = '';
+  meldeStatus(false, true);
   const konnte = await vollbildAn(buehne);
   if (handy && !konnte.quer) $('drehen').style.display = 'block';
   passeAn();
@@ -649,12 +1396,18 @@ function zeigeErgebnis(ergebnis) {
     }
     const b = bewertung(e.punkte);
     const st = sterne(b.stufe);
+    // Von entfernten Mitspielern ist nur die Gesamtpunktzahl bekannt, keine
+    // Aufschluesselung (e.normal bleibt dann null) - die Zeile faellt in
+    // dem Fall ganz weg, statt "null" anzuzeigen.
+    const aufschluesselung = e.normal != null
+      ? `<div class="aufschluesselung">Noten ${e.normal} · ` +
+        `Goldene Noten ${e.golden} · Zeilenbonus ${e.bonus}</div>`
+      : '';
     return `<div class="karte"><div class="wer">${esc(e.name)}</div>` +
       `<div class="punkte" data-ziel="${e.punkte}">0</div>` +
       `<div class="stufe">${esc(b.name)}</div>` +
       `<div class="sterne">${'★'.repeat(st)}${'☆'.repeat(STUFEN.length - 1 - st)}</div>` +
-      `<div class="aufschluesselung">Noten ${e.normal} · ` +
-      `Goldene Noten ${e.golden} · Zeilenbonus ${e.bonus}</div></div>`;
+      aufschluesselung + `</div>`;
   }).join('');
 
   // Hochzaehlen wie im Spiel - das Ergebnis soll sich aufbauen, nicht
@@ -677,34 +1430,63 @@ function zeigeErgebnis(ergebnis) {
 
 // Lied zu Ende: Vollbild verlassen und die Ergebnisseite zeigen.
 spiel.onEnde = async (ergebnis) => {
+  // Der Ersteller beendet damit auch fuer alle anderen - egal ob das Lied
+  // ausgelaufen ist oder abgebrochen wurde. Ziel ist das Ergebnis: Jeder
+  // soll erst einmal seine eigene Punktzahl sehen.
+  if (binHost) await lobbyClient.setzeZiel('ergebnis');
+  const zustandFuersErgebnis = letzterLobbyZustand;
   await verlasseBuehne();
-  zeigeErgebnis(ergebnis);
+  zeigeErgebnis(ergebnisMitFernspielern(ergebnis, zustandFuersErgebnis));
 };
 
-// Verlaesst jemand das Vollbild von Hand (Escape, Zurueck-Geste), darf das
-// Querformat nicht festgehalten bleiben.
-// Doppeltippen zum Spulen: links zurueck, rechts vor.
+// Tippen auf die Buehne: einmal haelt an bzw. laesst weiterlaufen, zweimal
+// spult. BEIDES nur fuer den Ersteller - Pause und Sprung gelten fuer die
+// ganze Lobby, das darf nicht jeder ausloesen koennen.
 //
-// Bewusst selbst erkannt statt ueber dblclick: Auf Beruehrbildschirmen kommt
-// dblclick spaet oder gar nicht, und ein Doppeltipp soll sofort wirken.
+// Doppeltipp bewusst selbst erkannt statt ueber dblclick: Auf
+// Beruehrbildschirmen kommt dblclick spaet oder gar nicht.
+//
+// Der einfache Tipp muss abwarten, ob noch ein zweiter kommt - sonst
+// pausierte jeder Spulvorgang zuerst kurz. Deshalb der Zeitgeber: Er wird
+// vom zweiten Tipp abgeraeumt.
 const SPULWEITE = 5;
 const DOPPEL_MS = 350;
-let letzterTipp = 0, letzterX = 0;
+let letzterTipp = 0, letzterX = 0, tippTimer = null;
 
 $('bild_flaeche').addEventListener('pointerdown', (e) => {
-  // Auf der Startflaeche nicht spulen - dort wird gestartet.
+  // Auf der Startflaeche nicht - dort wird gestartet.
   if ($('startflaeche').style.display !== 'none') return;
+  if (!spiel.laeuft) return;
+  if (!binHost) return;   // Gaeste duerfen weder pausieren noch spulen
+
   const jetzt = performance.now();
   const nah = Math.abs(e.clientX - letzterX) < 80;
   if (jetzt - letzterTipp < DOPPEL_MS && nah) {
+    clearTimeout(tippTimer);   // der geplante Pausenwechsel faellt aus
+    tippTimer = null;
     const r = $('bild_flaeche').getBoundingClientRect();
     const vor = (e.clientX - r.left) > r.width / 2;
     spiel.spulen(vor ? SPULWEITE : -SPULWEITE);
+    // Nach dem Spulen den Anker neu setzen, sonst zoege die Nachfuehrung
+    // alle sofort wieder auf die alte Stelle zurueck.
+    lobbyClient.starte(lobbyClient.serverJetzt() - spiel.audio.currentTime * 1000);
     letzterTipp = 0;   // nicht dreifach ausloesen
     return;
   }
   letzterTipp = jetzt;
   letzterX = e.clientX;
+  clearTimeout(tippTimer);
+  tippTimer = setTimeout(() => {
+    tippTimer = null;
+    if (!spiel.laeuft) return;
+    const willPause = !spiel.pausiert;
+    // Sofort selbst umschalten, nicht erst auf die Antwort warten - sonst
+    // fuehlt sich das Antippen traege an. Die anderen ziehen beim naechsten
+    // Abfrage-Takt nach.
+    if (willPause) spiel.pausiere(); else spiel.fortsetzen();
+    $('pausezeichen').classList.toggle('an', willPause);
+    lobbyClient.pause(willPause, spiel.audio.currentTime);
+  }, DOPPEL_MS);
 });
 
 document.addEventListener('fullscreenchange', () => {

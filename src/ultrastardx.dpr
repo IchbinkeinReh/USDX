@@ -198,6 +198,7 @@ uses
   USongSearch       in 'base\USongSearch.pas',
   USearchStore      in 'base\USearchStore.pas',
   UWebBridge        in 'base\UWebBridge.pas',
+  UWebLobby         in 'base\UWebLobby.pas',
   UWebPage          in 'base\UWebPage.pas',
   UWebApi           in 'base\UWebApi.pas',
   UWebServer        in 'base\UWebServer.pas',

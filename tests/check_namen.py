@@ -26,6 +26,7 @@ DATEIEN = [
     "src/base/UWebApi.pas",
     "src/base/UWebServer.pas",
     "src/base/UWebPage.pas",
+    "src/base/UWebLobby.pas",
 ]
 
 CONST_BLOCK = re.compile(r"^\s*const\s*$", re.I)

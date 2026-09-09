@@ -31,7 +31,8 @@ uses
   fphttpserver,
   httpdefs,
   ssockets,
-  UWebBridge;
+  UWebBridge,
+  UWebLobby;
 
 type
   // TFPHttpServer veroeffentlicht die Bindeadresse nicht - sie liegt im
@@ -46,6 +47,7 @@ type
     private
       fServer:  TBindbarerServer;
       fBridge:  TWebBridge;
+      fLobby:   TLobbyRegistry;
       fPort:    word;
       fWebRoot: UTF8String;
       fAdresse: UTF8String;
@@ -64,7 +66,7 @@ type
       // einem Vorschalt-Server, der die Anmeldung prueft, MUSS hier
       // 127.0.0.1 stehen: Sonst ist der Port unter Umgehung der Anmeldung
       // direkt aus dem Netz erreichbar, und die Anmeldung ist wertlos.
-      constructor Create(ABridge: TWebBridge; APort: word;
+      constructor Create(ABridge: TWebBridge; ALobby: TLobbyRegistry; APort: word;
                          const AWebRoot: UTF8String = '';
                          const AAdresse: UTF8String = '');
       destructor Destroy; override;
@@ -103,11 +105,13 @@ begin
     WebLogHandler(Nachricht, Fehler);
 end;
 
-constructor TWebServerThread.Create(ABridge: TWebBridge; APort: word;
+constructor TWebServerThread.Create(ABridge: TWebBridge; ALobby: TLobbyRegistry;
+                                   APort: word;
                                    const AWebRoot: UTF8String = '';
                                    const AAdresse: UTF8String = '');
 begin
   fBridge := ABridge;
+  fLobby := ALobby;
   fPort := APort;
   fWebRoot := AWebRoot;
   fAdresse := AAdresse;
@@ -282,7 +286,7 @@ begin
     end;
 
     // Die Wegewahl liegt in UWebApi - dort ohne SDL und damit pruefbar.
-    AResponse.Code := HandleWebRequest(fBridge, ARequest.PathInfo,
+    AResponse.Code := HandleWebRequest(fBridge, fLobby, ARequest.PathInfo,
                                        ARequest.QueryFields,
                                        ContentType, Body);
     AResponse.ContentType := ContentType;

@@ -91,6 +91,7 @@ uses
   URenderer,
   USongs,
   UWebBridge,
+  UWebLobby,
   UWebServer,
   USkins,
   UThemes,
@@ -112,6 +113,10 @@ var
   // der Liederliste und die Befehlsschlange, der Server bedient das Netz.
   WebBridge: TWebBridge = nil;
   WebServer: TWebServerThread = nil;
+  // Mehrspieler-Lobbys - reiner Web-Belang, beruehrt nie den Spielthread
+  // (siehe Kopfkommentar von UWebLobby). Deshalb kein eigener Eintrag in
+  // HandleWebCommands noetig.
+  LobbyRegistry: TLobbyRegistry = nil;
 
 // Fuehrt aus, was die Weboberflaeche angefordert hat - im Spielthread, wo
 // der Zugriff auf die Bildschirme sicher ist.
@@ -379,12 +384,13 @@ begin
       Log.LogStatus('Web Interface', 'Initialization');
       WebBridge := TWebBridge.Create;
       PublishSongsToWeb;
+      LobbyRegistry := TLobbyRegistry.Create;
       // web/ liegt neben der ausfuehrbaren Datei bzw. im Quellbaum. Fehlt der
       // Ordner, liefert der Server die eingebaute Fernbedienungsseite aus -
       // das Spiel startet also auch ohne die Weboberflaeche.
       WebLogHandler := WebLog;
       // --webport schlaegt die Voreinstellung; 0 heisst "nicht angegeben".
-      WebServer := TWebServerThread.Create(WebBridge,
+      WebServer := TWebServerThread.Create(WebBridge, LobbyRegistry,
         IfThen(Params.WebPort > 0, Params.WebPort, WEB_DEFAULT_PORT),
         FindeWebOrdner(), Params.WebHost);
     end;
@@ -398,6 +404,7 @@ begin
       WebServer.WaitFor;
       FreeAndNil(WebServer);
     end;
+    FreeAndNil(LobbyRegistry);
     FreeAndNil(WebBridge);
 
   {$IFNDEF Debug}

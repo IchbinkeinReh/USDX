@@ -11,7 +11,7 @@ program testwebapi;
 uses
   {$IFDEF UNIX}cthreads,{$ENDIF}
   SysUtils, Classes, fpjson, jsonparser,
-  USongFilter, UWebBridge, UWebApi;
+  USongFilter, UWebBridge, UWebLobby, UWebApi;
 
 var
   Bestanden, Fehlgeschlagen: integer;
@@ -24,6 +24,7 @@ end;
 
 var
   B: TWebBridge;
+  Lobby: TLobbyRegistry;
   Q: TStringList;
   CT, Body: UTF8String;
   Status: integer;
@@ -35,6 +36,8 @@ var
   L: TWebSongArray;
   D: TJSONData;
   Cmd: TWebCommand;
+  LobbyCode, LobbyCode2: UTF8String;
+  LetzteSeq: int64;
 
 function Ruf(const Pfad: UTF8String; const Params: array of string): integer;
 var I: integer;
@@ -46,7 +49,15 @@ begin
     Q.Values[Params[I]] := Params[I + 1];
     Inc(I, 2);
   end;
-  Result := HandleWebRequest(B, Pfad, Q, CT, Body);
+  Result := HandleWebRequest(B, Lobby, Pfad, Q, CT, Body);
+end;
+
+// /api/lobby/* liefert bei Erfolg immer die Zustands-Antwort - ob es
+// ueberhaupt eine ist, wird hier an einer Stelle geprueft.
+function IstZustand(D: TJSONData): boolean;
+begin
+  Result := Assigned(D) and (D.JSONType = jtObject) and
+            (TJSONObject(D).Find('code') <> nil);
 end;
 
 // /api/songs liefert {"total": N, "songs": [...]} - die Liederliste steckt
@@ -59,6 +70,7 @@ end;
 begin
   Bestanden := 0; Fehlgeschlagen := 0;
   B := TWebBridge.Create;
+  Lobby := TLobbyRegistry.Create;
   Q := TStringList.Create;
 
   SetLength(L, 3);
@@ -156,8 +168,10 @@ begin
   Status := Ruf('/gibtesnicht', []);
   Check('unbekannter Weg: 404', Status = 404, IntToStr(Status));
 
-  Status := HandleWebRequest(nil, '/api/status', Q, CT, Body);
+  Status := HandleWebRequest(nil, Lobby, '/api/status', Q, CT, Body);
   Check('ohne Bruecke: 503 statt Absturz', Status = 503, IntToStr(Status));
+  Status := HandleWebRequest(B, nil, '/api/status', Q, CT, Body);
+  Check('ohne Lobby-Register: ebenso 503', Status = 503, IntToStr(Status));
 
   Ruf('/api/songs', ['q', 'queen', 'mode', 'artist']);
   D := GetJSON(Body);
@@ -282,7 +296,140 @@ begin
   Check('Api bleibt Api',
         ResolveFileRequest(B, '/api/songs', 'web', Pfad, CT) = waNichts);
 
-  B.Free; Q.Free;
+  WriteLn;
+  WriteLn('Mehrspieler-Lobbys');
+  Status := Ruf('/api/lobby/create', ['token', 'host-tok', 'name', 'Host']);
+  Check('Erstellen liefert 200', Status = 200, IntToStr(Status));
+  D := GetJSON(Body);
+  try
+    Check('Antwort ist eine Zustands-Antwort', IstZustand(D));
+    Check('sechsstelliger Code',
+          Length(TJSONObject(D).Strings['code']) = 6,
+          TJSONObject(D).Strings['code']);
+    Check('Ersteller ist Host', TJSONObject(D).Booleans['isHost']);
+    Check('anfangs wartet', TJSONObject(D).Strings['phase'] = 'wartet');
+    LobbyCode := TJSONObject(D).Strings['code'];
+  finally D.Free; end;
+
+  Status := Ruf('/api/lobby/' + LobbyCode + '/join',
+                ['token', 'gast-tok', 'name', 'Gast']);
+  Check('Beitreten liefert 200', Status = 200, IntToStr(Status));
+  D := GetJSON(Body);
+  try
+    Check('Gast ist nicht Host', not TJSONObject(D).Booleans['isHost']);
+    Check('zwei Spieler stehen drin',
+          TJSONArray(TJSONObject(D).Arrays['spieler']).Count = 2);
+  finally D.Free; end;
+
+  Status := Ruf('/api/lobby/000000/join', ['token', 'x', 'name', 'X']);
+  Check('Beitritt zu unbekanntem Code: 404', Status = 404, IntToStr(Status));
+
+  // Kein Gast darf je den Token eines anderen zu Gesicht bekommen - auch
+  // nicht den des Hosts. Das ist der eigentliche Punkt hinter isHost/isYou.
+  Status := Ruf('/api/lobby/' + LobbyCode + '/state', ['token', 'gast-tok']);
+  Check('Zustand fuer den Gast liefert 200', Status = 200, IntToStr(Status));
+  Check('der Host-Token steht nirgends im Text',
+        Pos('host-tok', Body) = 0, Body);
+
+  WriteLn('Nur der Ersteller darf waehlen und starten');
+  // Gueltige Indizes sind 0..SongCount-1 - die Sortierung beim
+  // Veroeffentlichen vergibt sie neu, die urspruenglichen L[I].Index (5/6/7)
+  // gelten danach nicht mehr.
+  Status := Ruf('/api/lobby/' + LobbyCode + '/select',
+                ['token', 'gast-tok', 'index', '1']);
+  Check('Gast darf nicht auswaehlen: 403', Status = 403, IntToStr(Status));
+  Status := Ruf('/api/lobby/' + LobbyCode + '/select',
+                ['token', 'host-tok', 'index', '1']);
+  Check('Host darf auswaehlen', Status = 200, IntToStr(Status));
+  Status := Ruf('/api/lobby/' + LobbyCode + '/select',
+                ['token', 'host-tok', 'index', '99999']);
+  Check('nicht vorhandenes Lied: 404', Status = 404, IntToStr(Status));
+
+  // -1 ist die ausdrueckliche Abwahl ("Anderes Lied") - kein Fehler wie ein
+  // erfundener Index, sonst liesse sich nach einem Lied nichts mehr abwaehlen.
+  Status := Ruf('/api/lobby/' + LobbyCode + '/select',
+                ['token', 'host-tok', 'index', '-1']);
+  Check('Abwahl mit -1 gelingt', Status = 200, IntToStr(Status));
+  Status := Ruf('/api/lobby/' + LobbyCode + '/state', ['token', 'host-tok']);
+  D := GetJSON(Body);
+  try Check('kein Lied bleibt ausgewaehlt',
+            TJSONObject(D).Int64s['songIndex'] = -1);
+  finally D.Free; end;
+  // Ein fehlender Parameter darf NICHT wie -1 durchgehen, sonst waere eine
+  // kaputte Anfrage vom absichtlichen Abwaehlen nicht zu unterscheiden.
+  Status := Ruf('/api/lobby/' + LobbyCode + '/select', ['token', 'host-tok']);
+  Check('fehlender Index bleibt ein Fehler, nicht heimlich -1',
+        Status = 404, IntToStr(Status));
+  // Fuer die folgenden Tests wieder ein Lied auswaehlen - oben wurde
+  // ausdruecklich abgewaehlt.
+  Ruf('/api/lobby/' + LobbyCode + '/select', ['token', 'host-tok', 'index', '1']);
+
+  Status := Ruf('/api/lobby/' + LobbyCode + '/start',
+                ['token', 'gast-tok', 'serverStartMs', '1000']);
+  Check('Gast darf nicht starten: 403', Status = 403, IntToStr(Status));
+
+  Status := Ruf('/api/lobby/create', ['token', 'leer-host', 'name', 'LeerHost']);
+  D := GetJSON(Body);
+  try LobbyCode2 := TJSONObject(D).Strings['code'];
+  finally D.Free; end;
+  Status := Ruf('/api/lobby/' + LobbyCode2 + '/start',
+                ['token', 'leer-host', 'serverStartMs', '1000']);
+  Check('ohne gewaehltes Lied: 409', Status = 409, IntToStr(Status));
+
+  Status := Ruf('/api/lobby/' + LobbyCode + '/start',
+                ['token', 'host-tok', 'serverStartMs', '424242']);
+  Check('Host darf starten', Status = 200, IntToStr(Status));
+  D := GetJSON(Body);
+  try Check('Anker kommt zurueck',
+            TJSONObject(D).Int64s['serverStartMs'] = 424242);
+  finally D.Free; end;
+
+  Status := Ruf('/api/lobby/' + LobbyCode + '/state', ['token', 'host-tok']);
+  D := GetJSON(Body);
+  try Check('Zustand zeigt jetzt singt',
+            TJSONObject(D).Strings['phase'] = 'singt');
+  finally D.Free; end;
+
+  WriteLn('Reaktionen');
+  Status := Ruf('/api/lobby/' + LobbyCode + '/react',
+                ['token', 'gast-tok', 'art', 'hoch']);
+  Check('Reaktion wird angenommen', Status = 200, IntToStr(Status));
+  D := GetJSON(Body);
+  try LetzteSeq := TJSONObject(D).Int64s['seq'];
+  finally D.Free; end;
+
+  Status := Ruf('/api/lobby/' + LobbyCode + '/state',
+                ['token', 'host-tok', 'since', IntToStr(LetzteSeq)]);
+  D := GetJSON(Body);
+  try
+    Check('mit since=letzte Seq kommt sie nicht noch einmal',
+          TJSONArray(TJSONObject(D).Arrays['reaktionen']).Count = 0);
+  finally D.Free; end;
+  Status := Ruf('/api/lobby/' + LobbyCode + '/state',
+                ['token', 'host-tok', 'since', '0']);
+  D := GetJSON(Body);
+  try
+    Check('ohne since kommt sie mit',
+          TJSONArray(TJSONObject(D).Arrays['reaktionen']).Count >= 1);
+  finally D.Free; end;
+
+  WriteLn('Verlassen');
+  Status := Ruf('/api/lobby/' + LobbyCode + '/leave', ['token', 'gast-tok']);
+  Check('Verlassen liefert 200', Status = 200, IntToStr(Status));
+  Status := Ruf('/api/lobby/' + LobbyCode + '/state', ['token', 'host-tok']);
+  D := GetJSON(Body);
+  try Check('Gast ist wirklich weg',
+            TJSONArray(TJSONObject(D).Arrays['spieler']).Count = 1);
+  finally D.Free; end;
+
+  WriteLn('Unbekannte Lobby ueberall');
+  Check('join: 404', Ruf('/api/lobby/999999/join', ['token','x','name','X']) = 404);
+  Check('state: 404', Ruf('/api/lobby/999999/state', ['token','x']) = 404);
+  Check('select: 404', Ruf('/api/lobby/999999/select', ['token','x','index','0']) = 404);
+  Check('start: 404', Ruf('/api/lobby/999999/start', ['token','x','serverStartMs','1']) = 404);
+  Check('react: 404', Ruf('/api/lobby/999999/react', ['token','x','art','hoch']) = 404);
+
+  B.Free; Lobby.Free; Q.Free;
   WriteLn;
   WriteLn(Format('%d bestanden, %d fehlgeschlagen', [Bestanden, Fehlgeschlagen]));
   if Fehlgeschlagen > 0 then Halt(1);

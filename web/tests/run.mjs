@@ -19,6 +19,12 @@ import { Renderer } from '../js/render.js';
 import { Pegel, ZIEL_PEGEL, MAX_FAKTOR, MIN_FAKTOR,
          MIN_SCHWELLE, UEBER_RAUSCHEN } from '../js/pegel.js';
 import { bewertung, sterne, STUFEN } from '../js/bewertung.js';
+import { LobbyClient,
+         istGueltigerCode, wiedergabePosition, driftKorrektur,
+         ergebnisMitFernspielern, uhrVersatz, UhrAbgleich,
+         mitspielerAnzeige, alleBereit, fehlendeBereit, sollPositionAus,
+         vorschauSollPosition, STANDARDNAME,
+         TOTZONE, SPRUNG_AB, MAX_RATE_ABWEICHUNG } from '../js/lobby.js';
 
 // Aufzeichnender Ersatz fuer den Zeichenkontext. Zeichnen laesst sich hier
 // nicht pruefen - WAS gezeichnet wird und WIE GROSS aber schon, und genau
@@ -753,6 +759,33 @@ E`);
           duett.length === 2 ? String(duett[1][3]) : '-');
   }
 
+  // obenVersatz: Platz fuer die Mitspieler-Anzeige (HTML-Element ueber dem
+  // Canvas), die sonst genau auf dem oberen Duett-Text laege.
+  {
+    const zwei = [
+      { line: lied.lines[0], nextLine: null, bars: [], name: 'A', score: 0 },
+      { line: lied.lines[0], nextLine: null, bars: [], name: 'B', score: 0 },
+    ];
+    const male = (obenVersatz) => {
+      const ctx = stubKontext();
+      const r = new Renderer({ width: 0, height: 0, getContext: () => ctx });
+      r.passeGroesseAn(800, 600, 1);
+      r.draw(zwei, 5, false, null, true, obenVersatz);
+      return ctx.ops.filter((o) => o[0] === 'fillText' && o[1] === 'hallo');
+    };
+
+    const ohne = male(0);
+    const mit = male(40);
+    check('ohne Versatz bleibt es wie zuvor', ohne[0][3] < 150,
+          String(ohne[0][3]));
+    check('mit Versatz ruckt der obere Text nach unten',
+          mit[0][3] > ohne[0][3] + 30,
+          `${ohne[0][3]} -> ${mit[0][3]}`);
+    check('der untere Text bleibt davon unberuehrt',
+          Math.abs(mit[1][3] - ohne[1][3]) < 1,
+          `${ohne[1][3]} vs ${mit[1][3]}`);
+  }
+
   // Die Punktzahl steht in der Bahn, auch wenn es nur eine gibt - in der
   // Kopfleiste stand sie frueher und nahm dort Platz weg.
   {
@@ -1058,11 +1091,13 @@ const v = parseSong(`#TITLE:Mit Bild
 #BPM:120
 #VIDEO:clip.mp4
 #BACKGROUND:bild.jpg
+#COVER:titel.jpg
 #VIDEOGAP:1,5
 : 0 4 60 a
 E`);
 check('Videodatei aus dem Kopf', v.video === 'clip.mp4', v.video);
 check('Hintergrundbild aus dem Kopf', v.background === 'bild.jpg', v.background);
+check('Titelbild aus dem Kopf', v.cover === 'titel.jpg', v.cover);
 // Kommazahlen stehen mal mit Punkt, mal mit Komma - beim VIDEOGAP wuerde
 // ein Punkt-Komma-Fehler das Bild um Sekunden verschieben.
 check('VIDEOGAP mit Komma', v.videoGap === 1.5, String(v.videoGap));
@@ -1073,8 +1108,8 @@ check('VIDEOGAP mit Punkt und Vorzeichen', v2.videoGap === -2.25,
 
 const v3 = parseSong('#TITLE:x\n#BPM:120\n: 0 4 60 a\nE');
 check('ohne Angabe ist der Versatz null', v3.videoGap === 0, String(v3.videoGap));
-check('ohne Angabe kein Video und kein Bild',
-      v3.video === '' && v3.background === '');
+check('ohne Angabe kein Video, kein Bild und kein Titelbild',
+      v3.video === '' && v3.background === '' && v3.cover === '');
 
 console.log('Vorschau (previewRange)');
 {
@@ -1321,6 +1356,365 @@ const wC = new Scorer(d, 1);
 for (const n of d.tracks[0].notes)
   for (let i = 0; i < 5; i++) wC.feed(d.beatToTime(n.start + 0.5), n.pitch + 60);
 check('Toene der anderen Stimme zaehlen nicht', wC.score === 0, String(wC.score));
+
+console.log('Lobby: Code pruefen');
+{
+  check('sechs Ziffern sind gueltig', istGueltigerCode('042817'));
+  check('fuenf Ziffern nicht', !istGueltigerCode('42817'));
+  check('sieben Ziffern nicht', !istGueltigerCode('1234567'));
+  check('Buchstaben machen ihn ungueltig', !istGueltigerCode('12345a'));
+  check('leer ist ungueltig', !istGueltigerCode(''));
+  check('nicht-Text stuerzt nicht ab', !istGueltigerCode(null) && !istGueltigerCode(undefined));
+}
+
+console.log('Lobby: Wiedergabeposition aus dem Server-Anker');
+{
+  check('am Anker selbst ist die Position 0',
+        wiedergabePosition(1000, 1000) === 0);
+  check('eine Sekunde spaeter ist die Position 1',
+        wiedergabePosition(1000, 2000) === 1);
+  check('ohne Anker (0) ist die Position 0',
+        wiedergabePosition(0, 5000) === 0);
+  check('ein negativer Anker ist genauso ungueltig',
+        wiedergabePosition(-5, 5000) === 0);
+  check('wird nie negativ, auch wenn "jetzt" vor dem Anker liegt',
+        wiedergabePosition(5000, 1000) === 0);
+}
+
+console.log('Lobby: Uhrenabgleich');
+{
+  // Der Kern: Der Serverstempel entsteht in der MITTE zwischen Absenden und
+  // Empfangen, nicht beim Empfangen. Wer das ignoriert, liegt systematisch
+  // um den halben Umlauf daneben (hier gemessen ~25 ms zu diesem Server).
+  //
+  // Gleiche Uhren, 50 ms Umlauf: t0=1000, Server stempelt bei 1025, t1=1050.
+  check('bei gleich langen Wegen ist der Versatz null',
+        uhrVersatz(1000, 1025, 1050) === 0);
+  check('eine um 500 vorgehende Serveruhr wird als +500 erkannt',
+        uhrVersatz(1000, 1525, 1050) === 500);
+  check('eine nachgehende Serveruhr wird negativ erkannt',
+        uhrVersatz(1000, 525, 1050) === -500);
+  // Genau der Fehler, den die naive Rechnung machte: Ohne Mittelung waere
+  // hier 1025-1050 = -25 herausgekommen statt 0.
+  check('der halbe Umlauf wird herausgerechnet, nicht mitgeschleppt',
+        uhrVersatz(1000, 1025, 1050) !== 1025 - 1050);
+
+  const u = new UhrAbgleich(4);
+  check('ohne Messung ist nichts bekannt', !u.bekannt && u.versatz === 0);
+  // Drei Messungen: eine schnelle mit gleichen Wegen, zwei langsame und
+  // schiefe. Genommen werden soll die SCHNELLSTE, weil sie am wenigsten
+  // schief sein kann.
+  u.probe(0, 300, 400);       // Umlauf 400, Versatz 100
+  u.probe(1000, 1100, 1040);  // Umlauf  40, Versatz  80
+  u.probe(2000, 2400, 2600);  // Umlauf 600, Versatz 100
+  check('die schnellste Messung gewinnt, nicht die neueste',
+        u.versatz === 80, String(u.versatz));
+  check('nach einer Messung gilt die Uhr als bekannt', u.bekannt);
+  check('serverJetzt rechnet den Versatz auf die eigene Zeit',
+        u.serverJetzt(5000) === 5080, String(u.serverJetzt(5000)));
+
+  // Das Fenster ist begrenzt - sonst bliebe eine einmalige Glücksmessung
+  // fuer immer massgeblich, auch wenn sich die Lage laengst geaendert hat.
+  const k = new UhrAbgleich(2);
+  k.probe(0, 50, 100);        // Umlauf 100, Versatz 0
+  k.probe(0, 60, 20);         // Umlauf  20, Versatz 50
+  k.probe(0, 70, 40);         // Umlauf  40, Versatz 50
+  check('aelteste Messungen fallen aus dem Fenster',
+        k.proben.length === 2, String(k.proben.length));
+  check('unsinnige Messungen werden verworfen',
+        (() => { const x = new UhrAbgleich();
+                 x.probe(100, 500, 50);      // t1 vor t0
+                 x.probe(0, NaN, 10);        // kein Stempel
+                 return !x.bekannt; })());
+}
+
+console.log('Lobby: Abweichungskorrektur');
+{
+  check('innerhalb der Totzone passiert nichts',
+        driftKorrektur(10.0, 10.0 + TOTZONE / 2).art === 'keine');
+  check('und die Geschwindigkeit steht dann auf 1',
+        driftKorrektur(10.0, 10.0).wert === 1);
+  // Von 0 aus gerechnet, damit die Grenze exakt getroffen wird: 10.0+0.035
+  // ergibt in Gleitkomma 0.03500000000000014 Abstand, also knapp DARUEBER -
+  // das pruefte dann etwas anderes als gemeint.
+  check('genau an der Totzone noch nichts',
+        driftKorrektur(0, TOTZONE).art === 'keine');
+  check('knapp darueber wird sanft nachgezogen',
+        driftKorrektur(0, TOTZONE * 1.5).art === 'rate');
+  check('haengt hinterher -> etwas schneller',
+        driftKorrektur(10.0, 10.1).wert > 1);
+  check('laeuft voraus -> etwas langsamer',
+        driftKorrektur(10.1, 10.0).wert < 1);
+
+  // Der eigentliche Fortschritt: Die Korrektur richtet sich nach der GROESSE
+  // der Abweichung. Vorher gab es einen festen Wert, der eine halbe Sekunde
+  // Rueckstand erst nach einer halben Minute abgebaut haette.
+  const klein = driftKorrektur(10.0, 10.05).wert;
+  const gross = driftKorrektur(10.0, 10.2).wert;
+  check('groessere Abweichung wird kraeftiger nachgeregelt', gross > klein,
+        `${klein} vs ${gross}`);
+
+  check('die Geschwindigkeit bleibt begrenzt',
+        driftKorrektur(10.0, 10.0 + SPRUNG_AB * 0.99).wert
+          <= 1 + MAX_RATE_ABWEICHUNG + 1e-9);
+  check('auch nach unten begrenzt',
+        driftKorrektur(10.0 + SPRUNG_AB * 0.99, 10.0).wert
+          >= 1 - MAX_RATE_ABWEICHUNG - 1e-9);
+
+  // Von 0 aus, damit die Grenze exakt getroffen wird - 10.0+0.12 ergibt in
+  // Gleitkomma 0.11999999999999922 Abstand und laege knapp DARUNTER.
+  check('ab der Sprunggrenze wird hart gesprungen',
+        driftKorrektur(0, SPRUNG_AB).art === 'sprung');
+  check('und zwar genau auf die Sollposition',
+        driftKorrektur(10.0, 20.0).wert === 20.0);
+  check('auch rueckwaerts wird gesprungen',
+        driftKorrektur(20.0, 10.0).art === 'sprung');
+  check('eigene Grenzen lassen sich vorgeben',
+        driftKorrektur(10.0, 10.02, { totzone: 0.01 }).art === 'rate');
+
+  // Nachgerechnet: Laeuft die Korrektur laufend mit, muss die Abweichung
+  // kleiner werden statt stehenzubleiben - das war beim festen Wert der
+  // eigentliche Mangel. Getaktet wie im Betrieb (GLEICHLAUF_MS = 100 ms).
+  const takt = 0.1;
+  let ist = 10.0, soll = 10.0 + SPRUNG_AB * 0.9;   // knapp unter der Sprunggrenze
+  let schritte = 0;
+  for (let i = 0; i < 100; i++) {                  // hoechstens 10 s
+    const k2 = driftKorrektur(ist, soll);
+    if (k2.art === 'keine') break;
+    if (k2.art === 'sprung') ist = k2.wert;
+    else ist += takt * (k2.wert - 1);              // der Gewinn durch das Tempo
+    ist += takt;                                   // eigene Wiedergabe
+    soll += takt;                                  // der Anker laeuft mit
+    schritte++;
+  }
+  check('die Abweichung klingt in wenigen Sekunden ab',
+        Math.abs(soll - ist) <= TOTZONE,
+        `${(soll - ist).toFixed(4)} nach ${(schritte * takt).toFixed(1)} s`);
+  check('und zwar in unter drei Sekunden',
+        schritte * takt < 3, `${(schritte * takt).toFixed(1)} s`);
+}
+
+console.log('Lobby: Mitspieler-Anzeige');
+{
+  const zustand = {
+    spieler: [
+      { name: 'Ich', isYou: true, isHost: true, score: 100, singt: true, bereit: true },
+      { name: 'Ben', isYou: false, isHost: false, score: 4210, singt: true, bereit: true },
+      { name: 'Cara', isYou: false, isHost: false, score: null, singt: false, bereit: true },
+    ],
+  };
+  // Das eigene Geraet steht MIT in der Liste - man soll die eigene Zahl
+  // neben denen der anderen sehen.
+  const liste = mitspielerAnzeige(zustand, [100]);
+  check('das eigene Geraet steht mit in der Liste',
+        liste.length === 3, String(liste.length));
+  check('und ist als solches gekennzeichnet',
+        liste[0].ich === true && liste[1].ich === false);
+  check('die eigene Punktzahl kommt lokal, nicht vom Server',
+        liste[0].punkte === 100);
+  check('Name und Punktzahl der anderen kommen durch',
+        liste[1].name === 'Ben' && liste[1].punkte === 4210);
+  check('wer noch singt, ist nicht "weg"', liste[1].weg === false);
+  // Buehne verlassen, aber noch in der Lobby: durchgestrichen anzeigen.
+  check('wer die Buehne verlassen hat, ist "weg"', liste[2].weg === true);
+  check('ohne Wertung bleibt die Punktzahl null', liste[2].punkte === null);
+  check('ohne Zustand eine leere Liste', mitspielerAnzeige(null).length === 0);
+  // Wer die LOBBY verlaesst, steht nicht mehr in spieler[] - taucht also
+  // gar nicht mehr auf. Genau das unterscheidet die beiden Faelle.
+  const ohneCara = { spieler: zustand.spieler.slice(0, 2) };
+  check('wer die Lobby verlassen hat, verschwindet ganz',
+        mitspielerAnzeige(ohneCara, [100]).length === 2);
+
+  // Singen zwei an EINEM Geraet, braucht jeder seine eigene Zeile - sonst
+  // staende derselbe Name zweimal da, ohne unterscheidbare Punktzahl.
+  const zuZweit = mitspielerAnzeige(zustand, [100, 250]);
+  check('zwei lokale Saenger werden aufgeteilt',
+        zuZweit.length === 4, String(zuZweit.length));
+  check('und mit (1)/(2) unterschieden',
+        zuZweit[0].name === 'Ich (1)' && zuZweit[1].name === 'Ich (2)',
+        zuZweit[0].name + ' / ' + zuZweit[1].name);
+  check('jeder mit seiner eigenen Punktzahl',
+        zuZweit[0].punkte === 100 && zuZweit[1].punkte === 250);
+
+  // Ohne eingetragenen Namen soll nicht "" dastehen.
+  const ohneNamen = mitspielerAnzeige(
+    { spieler: [{ name: '', isYou: false, isHost: false, score: 5, singt: true }] });
+  check('ohne Namen greift der Standardname',
+        ohneNamen[0].name === STANDARDNAME, ohneNamen[0].name);
+  const nurLeerzeichen = mitspielerAnzeige(
+    { spieler: [{ name: '   ', isYou: false, isHost: false, score: 5, singt: true }] });
+  check('auch bei nur Leerzeichen', nurLeerzeichen[0].name === STANDARDNAME);
+  check('eine noch nicht gewertete eigene Zahl bleibt leer',
+        mitspielerAnzeige(zustand, [-1])[0].punkte === null);
+}
+
+console.log('Lobby: Vorschau gleichhalten');
+{
+  check('ohne Anker kein Gleichlauf - jeder spielt fuer sich',
+        vorschauSollPosition({ vorschauStartMs: 0 }, 5000) === null);
+  check('ohne Zustand ebenso', vorschauSollPosition(null, 5000) === null);
+  check('mit Anker die gemeinsame Stelle',
+        vorschauSollPosition({ vorschauStartMs: 2000 }, 5000) === 3);
+}
+
+console.log('Lobby: Startfreigabe');
+{
+  const alleDa = { spieler: [
+    { name: 'Host', isYou: true, isHost: true, bereit: false },
+    { name: 'Ben', isYou: false, isHost: false, bereit: true },
+  ]};
+  check('alle Gaeste bereit -> Start frei', alleBereit(alleDa));
+  check('und niemand fehlt', fehlendeBereit(alleDa).length === 0);
+  // Der Ersteller zaehlt nicht mit: Er ist es ja, der startet.
+  check('die eigene Bereitschaft des Erstellers ist egal',
+        alleBereit({ spieler: [{ name: 'Host', isYou: true, isHost: true, bereit: false }] }));
+
+  const einerFehlt = { spieler: [
+    { name: 'Host', isYou: true, isHost: true, bereit: true },
+    { name: 'Ben', isYou: false, isHost: false, bereit: true },
+    { name: 'Cara', isYou: false, isHost: false, bereit: false },
+  ]};
+  check('ein nicht bereiter Gast blockiert den Start', !alleBereit(einerFehlt));
+  check('und wird namentlich genannt',
+        fehlendeBereit(einerFehlt).join(',') === 'Cara',
+        fehlendeBereit(einerFehlt).join(','));
+  check('allein in der Lobby ist immer freigegeben', alleBereit(null));
+}
+
+console.log('Lobby: Sollposition mit Pause');
+{
+  check('laufend: aus dem Anker gerechnet',
+        sollPositionAus({ pausiert: false, serverStartMs: 1000 }, 5000) === 4);
+  // Waehrend der Pause steht die Sollposition STILL - liefe sie weiter,
+  // spraenge die Wiedergabe beim Fortsetzen bei allen nach vorn.
+  check('pausiert: die festgehaltene Stelle gilt',
+        sollPositionAus({ pausiert: true, pausePosMs: 4000, serverStartMs: 1000 },
+                        99999) === 4);
+  check('und sie bleibt stehen, egal wie viel Zeit vergeht',
+        sollPositionAus({ pausiert: true, pausePosMs: 4000 }, 1e9) === 4);
+  check('ohne Zustand null', sollPositionAus(null, 5000) === 0);
+  check('fehlende Pausenstelle zaehlt als null',
+        sollPositionAus({ pausiert: true }, 5000) === 0);
+}
+
+console.log('Lobby: Ergebnisliste');
+{
+  const lokal = [{ name: 'Ich', gewertet: true, punkte: 5000, normal: 10, golden: 2, bonus: 300 }];
+  const ohneZustand = ergebnisMitFernspielern(lokal, null);
+  check('ohne Lobby-Zustand bleibt die Liste unveraendert', ohneZustand === lokal);
+
+  const zustand = {
+    spieler: [
+      { name: 'Ich', isYou: true, score: 5000 },
+      { name: 'Ben', isYou: false, score: 4210 },
+      { name: 'Charlie', isYou: false, score: null },
+    ],
+  };
+  const ergaenzt = ergebnisMitFernspielern(lokal, zustand);
+  check('der eigene Eintrag bleibt einmalig (isYou wird ausgeschlossen)',
+        ergaenzt.length === 3, String(ergaenzt.length));
+  check('lokal steht vorn', ergaenzt[0] === lokal[0]);
+  check('entfernte Spieler ohne Aufschluesselung (normal:null)',
+        ergaenzt[1].normal === null && ergaenzt[2].normal === null);
+  check('ungewertete Ferne haben gewertet:false und punkte:null',
+        ergaenzt[2].gewertet === false && ergaenzt[2].punkte === null);
+  check('gewertete Ferne haben ihre Punktzahl',
+        ergaenzt[1].gewertet === true && ergaenzt[1].punkte === 4210);
+}
+
+console.log('Lobby: Abfrageschleife (Reaktionen nicht doppelt)');
+{
+  // Mit mehreren Leuten in der Lobby melden staendig welche "bereit" oder
+  // "Buehne verlassen" - jede solche Meldung fragt sofort ab. Ueberholte das
+  // eine laufende Abfrage, kamen dieselben Reaktionen doppelt an, UND jede
+  // plante ihren eigenen naechsten Takt: Die Schleifen vervielfachten sich
+  // und liessen sich nicht mehr abstellen. Genau das wird hier geprueft.
+  const echterFetch = globalThis.fetch;
+  let anfragen = 0;
+  globalThis.fetch = async (url) => {
+    anfragen++;
+    const since = Number(new URL(url, 'http://x').searchParams.get('since') || 0);
+    await new Promise((r) => setTimeout(r, 20));   // Netzlaufzeit
+    return { ok: true, json: async () => ({
+      code: '123456', isHost: true, phase: 'wartet', songIndex: -1,
+      revision: 5, serverNowMs: Date.now(), serverStartMs: 0,
+      pausiert: false, pausePosMs: 0, vorschauStartMs: 0,
+      spieler: [{ name: 'A', isHost: true, isYou: true,
+                  bereit: false, singt: false, score: null }],
+      // Wie der echte Server: nur was neuer ist als since.
+      reaktionen: since < 4 ? [{ seq: 4, art: 'hoch', name: 'Berta' }] : [],
+    })};
+  };
+
+  let gezeigt = 0;
+  const c = new LobbyClient('tok',
+    (z) => { if (z && z.reaktionen && z.reaktionen.length) gezeigt += z.reaktionen.length; },
+    () => ({ punkte: -1, bereit: false, singt: false }));
+
+  await c.erstelle('A');
+  // Drei Meldungen kurz hintereinander, waehrend noch abgefragt wird.
+  c.jetztAbfragen(); c.jetztAbfragen(); c.jetztAbfragen();
+  await new Promise((r) => setTimeout(r, 200));
+
+  check('der Reaktions-Rueckstand beim Beitreten wird nicht als neu gemeldet',
+        gezeigt === 0, String(gezeigt));
+
+  const vorher = anfragen;
+  await new Promise((r) => setTimeout(r, 2200));
+  const dazu = anfragen - vorher;
+  // Bei EINER Schleife sind es rund zwei Abfragen in 2,2 s.
+  check('es laeuft nur eine Abfrageschleife', dazu <= 3, String(dazu));
+
+  c.stop();
+  await new Promise((r) => setTimeout(r, 1200));
+  const nachStop = anfragen;
+  await new Promise((r) => setTimeout(r, 1200));
+  check('nach stop() wird gar nicht mehr abgefragt',
+        anfragen === nachStop, `${anfragen - nachStop} Anfragen nach stop()`);
+
+  // Verlaesst der Ersteller die Lobby, loescht der Server sie fuer alle.
+  // Die anderen Geraete muessen das beim naechsten Abruf merken (404) und
+  // in einer eigenen, leeren Lobby landen - nicht in einer toten haengen.
+  let lobbyWeg = false;
+  const angelegt = [];
+  globalThis.fetch = async (url) => {
+    const u = new URL(url, 'http://x');
+    const neu = u.pathname.endsWith('/create');
+    if (!neu && lobbyWeg)
+      return { ok: false, status: 404, json: async () => ({ error: 'weg' }) };
+    const code = neu ? '999999' : '111111';
+    if (neu) angelegt.push(code);
+    return { ok: true, json: async () => ({
+      code, isHost: true, phase: 'wartet', songIndex: -1, revision: 1,
+      serverNowMs: Date.now(), serverStartMs: 0, pausiert: false,
+      pausePosMs: 0, vorschauStartMs: 0, reaktionen: [],
+      spieler: [{ name: 'Ich', isHost: true, isYou: true,
+                  bereit: false, singt: false, score: null }],
+    })};
+  };
+
+  const gesehen = [];
+  const gast = new LobbyClient('gast-token',
+    async (z) => {
+      gesehen.push(z === null ? 'weg' : z.code);
+      // Dasselbe wie in index.html: eigene neue Lobby aufmachen.
+      if (z === null) await gast.erstelle('Ich');
+    },
+    () => ({ punkte: -1, bereit: false, singt: false }));
+
+  await gast.trete('111111', 'Ich');
+  lobbyWeg = true;                                  // Gastgeber geht
+  await new Promise((r) => setTimeout(r, 1400));    // ein Abfrage-Takt
+
+  check('das Ende der Lobby wird bemerkt', gesehen.includes('weg'),
+        gesehen.join(' -> '));
+  check('danach steht eine eigene, neue Lobby', gast.code === '999999',
+        String(gast.code));
+  check('und zwar genau eine', angelegt.length === 1, String(angelegt.length));
+  gast.stop();
+
+  globalThis.fetch = echterFetch;
+}
 
 console.log();
 console.log(`${bestanden} bestanden, ${fehlgeschlagen} fehlgeschlagen`);

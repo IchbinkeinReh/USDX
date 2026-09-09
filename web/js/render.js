@@ -134,7 +134,12 @@ export class Renderer {
   // wann ueberhaupt gesungen wird.
   // duett: beim Duett hat jede Stimme ihren eigenen Text; sonst singen alle
   //   denselben und er wird nur EINMAL gezeigt.
-  draw(bahnen, beat, hintergrund = false, fortschritt = null, duett = false) {
+  // obenVersatz: zusaetzlicher Abstand fuer die OBERE Duett-Bahn, in Punkten.
+  //   Der Aufrufer kennt die Hoehe der Mitspieler-Anzeige (HTML-Element
+  //   ueber dem Canvas) - ohne diesen Versatz laege deren oberer Duett-Text
+  //   genau darunter.
+  draw(bahnen, beat, hintergrund = false, fortschritt = null, duett = false,
+       obenVersatz = 0) {
     const { ctx, canvas } = this;
     // Ohne passeGroesseAn auf die rohen Canvas-Masse zurueckfallen - so
     // laesst sich das Zeichnen auch ohne Browser durchrechnen.
@@ -185,7 +190,7 @@ export class Renderer {
     bahnen.forEach((bahn, i) => {
       const lage = gemeinsam ? null : (i === 0 ? 'oben' : 'unten');
       this.zeichneBahn(bahn, beat, i, 0, i * laneH, w, laneH,
-                       bahnen.length > 1, lage);
+                       bahnen.length > 1, lage, obenVersatz);
       if (i > 0) {
         ctx.strokeStyle = '#252b38';
         ctx.lineWidth = 1;
@@ -249,7 +254,8 @@ export class Renderer {
 
   bandHoehe(h) { return this.bandMasse(h).hoehe; }
 
-  zeichneBahn(bahn, beat, index, ox, oy, w, h, mitNamen, textLage = 'unten') {
+  zeichneBahn(bahn, beat, index, ox, oy, w, h, mitNamen, textLage = 'unten',
+              obenVersatz = 0) {
     const ctx = this.ctx;
     const farbe = FARBEN[index % FARBEN.length];
     const line = bahn.line;
@@ -262,15 +268,19 @@ export class Renderer {
     // sich beide.
     const { schrift, zeilenH, helferH, hoehe: bandH } = this.bandMasse(h);
     const hatBand = textLage === 'oben' || textLage === 'unten';
-    const bandY = textLage === 'oben' ? 0 : h - bandH;
+    // Nur oben ruecken - dort liegt bei mehreren Lobby-Mitgliedern die
+    // Mitspieler-Anzeige (eigenes HTML-Element ueber dem Canvas) sonst genau
+    // auf dem Text.
+    const obenAbstand = textLage === 'oben' ? obenVersatz : 0;
+    const bandY = textLage === 'oben' ? obenAbstand : h - bandH;
     // Bei Text oben faengt die Notenflaeche darunter an.
-    const notenY = textLage === 'oben' ? bandH : 0;
-    const notenH = hatBand ? h - bandH : h;
+    const notenY = textLage === 'oben' ? bandH + obenAbstand : 0;
+    const notenH = hatBand ? h - bandH - obenAbstand : h;
 
     // Punktzahl und Name stehen in der Bahn, nicht mehr in der Kopfleiste -
     // dort nahmen sie Platz weg, den die Noten brauchen. Die Punktzahl wird
     // immer gezeigt, der Name nur, wenn es mehrere Bahnen gibt.
-    const kopfY = textLage === 'oben' ? bandH + 6 : 8;
+    const kopfY = textLage === 'oben' ? bandH + obenAbstand + 6 : 8;
     if (bahn.score !== undefined || bahn.name) {
       ctx.font = '600 15px system-ui, sans-serif';
       ctx.textBaseline = 'top';

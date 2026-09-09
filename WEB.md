@@ -386,9 +386,10 @@ liegen kann, wird der Fortschritt auf 0…1 begrenzt.
 ### Video und Hintergrundbild
 
 Dieselbe Reihenfolge wie im Spiel (`UScreenSingController`): Ist ein Video da,
-läuft es; sonst steht das Hintergrundbild aus `#BACKGROUND`; sonst bleibt es
-dunkel. Beides wird geladen — das Bild ist der **Rückfall**, nicht die
-zweite Wahl.
+läuft es; sonst steht das Hintergrundbild aus `#BACKGROUND`; sonst — eine
+Erweiterung gegenüber dem Original — das Titelbild aus `#COVER`, falls eines
+da ist; sonst bleibt es dunkel. Alle drei werden geladen, in dieser
+Reihenfolge als **Rückfall**, nicht als zweite Wahl.
 
 Der Rückfall wird öfter gebraucht, als es klingt: In vielen älteren Liedern
 steht ein `.avi`, `.mpg` oder `.divx`, und das spielt **kein Browser** ab.
@@ -793,6 +794,57 @@ angefordert, antwortet der Server mit weniger und sagt das über
 `Content-Range`; das ist erlaubt (RFC 7233) und die übliche Arbeitsweise beim
 Streamen. Der Browser holt sich den Rest mit der nächsten Anfrage.
 
+## Mehrspieler-Lobbys
+
+Jeder, der die Seite öffnet, bekommt automatisch eine eigene Lobby — im
+Regelfall eine mit nur einem Mitglied, die nie auffällt. Über einen
+6-stelligen Code oder einen Teilen-Link (nur auf dem Handy angeboten, per
+Web-Share-API) können weitere Geräte beitreten. Nur der **Ersteller** wählt
+Lieder aus; alle anderen sehen die Auswahl mit, singen aber selbst mit
+eigenem Mikrofon und eigener Wertung — nur ihre **Punktzahl** wird geteilt,
+keine Notentreffer. Wer nicht der Ersteller ist, kann stattdessen per
+Daumen-Emoji auf die Auswahl reagieren.
+
+### Transport: Abfragen statt WebSocket
+
+Bewusst kein neues Protokoll: Jedes Gerät fragt etwa einmal pro Sekunde
+`/api/lobby/<code>/state` ab (`web/js/lobby.js`, `LobbyClient`). FPCs
+mitgelieferte `fcl-web`-Bibliothek kennt keine WebSockets — das hätte einen
+von Hand geschriebenen RFC-6455-Handshake, unbegrenzt viele offene
+Verbindungen (ein Thread je Verbindung, siehe oben) und eine
+Apache-Erweiterung gebraucht. Der bestehende `Stand`-Zähler aus
+`UWebBridge.pas` zeigte ohnehin schon, dass dieses Muster hier gut passt.
+
+Zwischen zwei Abfragen läuft die Wiedergabe lokal frei weiter. Erst wenn die
+eigene Position mehr als 0,75 s von der aus dem Server-Anker berechneten
+Sollposition abweicht, wird sanft nachgezogen (`playbackRate` kurz auf
+0,97/1,03); erst ab 3 s Abweichung springt die Wiedergabe hart — derselbe
+Gedanke wie bei `haltVideoNach()` für das Video, nur mit lockereren Grenzen,
+weil ein Sekundentakt keine Zehntelsekunden-Genauigkeit erlaubt. Der
+Ankerpunkt selbst (`serverStartMs`) wird vom Ersteller berechnet, sobald er
+tatsächlich zu singen beginnt, nicht vom Server — der weiß ohnehin nichts
+über Wiedergabe-Latenz.
+
+### Rechte, Kennung, Aufräumen
+
+Ein Token (`crypto.randomUUID()`, in `sessionStorage`) steht für ein
+Gerät/einen Tab, nicht für eine Anmeldung — die ganze Seite hängt schon
+hinter einem gemeinsamen Passwort. `sessionStorage` statt einer reinen
+JS-Variable, damit ein versehentliches Neuladen den Ersteller nicht aus
+seiner eigenen Lobby aussperrt. Der Server prüft bei jeder Aktion, die nur
+der Ersteller darf, den Token erneut — ein `isHost`-Feld aus der Antwort
+wird nie einfach vertraut. Tokens selbst tauchen in keiner Antwort auf, auch
+nicht im eigenen `isYou`/`isHost`.
+
+Lobbys räumen sich selbst auf, ohne eigenen Hintergrund-Thread: Jede
+öffentliche Methode von `TLobbyRegistry` (`src/base/UWebLobby.pas`) prüft zu
+Beginn, ob Mitglieder seit 3 Minuten nicht mehr abgefragt haben. Ein
+einzelner abgelaufener Gast fliegt raus, die Lobby bleibt; ist der
+**Ersteller** abgelaufen, endet die ganze Lobby — kein Wechsel des
+Erstellers in dieser Fassung. Das nächste Poll eines Gasts bekommt dann ein
+404 und behandelt das genauso wie die weiter oben beschriebene
+`singen`-Rückfallbehandlung: eigene, neue Solo-Lobby.
+
 ## API
 
 | Weg | Zweck |
@@ -805,6 +857,13 @@ Streamen. Der Browser holt sich den Rest mit der nächsten Anfrage.
 | `GET /api/song/N/audio` | die Tondatei, mit `Range` |
 | `GET /api/song/N/video` | das Video, mit `Range`; 404 wenn keins |
 | `GET /api/song/N/background` | das Hintergrundbild; 404 wenn keins |
+| `POST /api/lobby/create?token=&name=` | eigene Lobby erstellen |
+| `POST /api/lobby/<code>/join?token=&name=` | einer Lobby beitreten |
+| `POST /api/lobby/<code>/leave?token=` | Lobby verlassen |
+| `GET /api/lobby/<code>/state?token=&since=&score=` | Zustand abfragen, eigene Punktzahl melden |
+| `POST /api/lobby/<code>/select?token=&index=` | Lied auswählen (nur Ersteller) |
+| `POST /api/lobby/<code>/start?token=&serverStartMs=` | Singen beginnen (nur Ersteller) |
+| `POST /api/lobby/<code>/react?token=&art=` | Daumen hoch/runter senden |
 
 ## Tests
 
@@ -814,6 +873,11 @@ Streamen. Der Browser holt sich den Rest mit der nächsten Anfrage.
 `testwebserver` startet einen echten Server auf Port 8099 und spricht ihn
 über einen rohen TCP-Anschluss an — mit einer HTTP-Bibliothek prüfte man am
 Ende die Bibliothek statt den Server.
+
+`testweblobby` prüft `TLobbyRegistry` für sich, ohne Sockets: Rechte des
+Erstellers, Reaktionsschlange, Aufräumen abgelaufener Mitglieder/Lobbys,
+sowie Nebenläufigkeit (ein Thread hämmert auf einer Lobby herum, während der
+Haupttest sie gleichzeitig verändert).
 
 `tests/headless.sh` startet die **gebaute Binärdatei** mit `--web-only` auf
 Port 8171 und ruft sie über HTTP ab. Das ist der einzige Test, der den ganzen

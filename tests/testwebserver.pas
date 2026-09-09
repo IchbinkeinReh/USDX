@@ -11,7 +11,7 @@ program testwebserver;
 uses
   {$IFDEF UNIX}cthreads,{$ENDIF}
   SysUtils, Classes, ssockets,
-  UWebBridge, UWebApi, UWebServer;
+  UWebBridge, UWebLobby, UWebApi, UWebServer;
 
 var
   Bestanden, Fehlgeschlagen: integer;
@@ -19,6 +19,7 @@ var
   // lassen, ohne die Hole-Funktion umzubauen.
   LetzterKopf: string;
   B: TWebBridge;
+  Lobby: TLobbyRegistry;
   S: TWebServerThread;
   Ordner, Lied, Ton, Roh, Gross: string;
   I: integer;
@@ -157,7 +158,8 @@ begin
   L[2].TxtPath := Lied; L[2].AudioPath := Gross;
   B.PublishSongs(L);
 
-  S := TWebServerThread.Create(B, 8099, Ordner);
+  Lobby := TLobbyRegistry.Create;
+  S := TWebServerThread.Create(B, Lobby, 8099, Ordner);
   Sleep(700);   // dem Server Zeit zum Binden geben
 
   WriteLn('Weboberflaeche');
@@ -263,6 +265,7 @@ begin
   Check('Server beendet sich', true);
   S.Free;
   B.Free;
+  Lobby.Free;
 
   DeleteFile(Lied); DeleteFile(Ton); DeleteFile(Roh); DeleteFile(Gross);
   DeleteFile(Ordner + 'index.html');
