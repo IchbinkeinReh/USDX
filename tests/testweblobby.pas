@@ -327,10 +327,12 @@ begin
   Registry.GetState(BereitCode, 'b-host', -1, -1, -1, Zustand);
   Check('Phase steht wieder auf wartet', Zustand.Phase = lphWartet);
   Check('das Ziel ist das Ergebnis', Zustand.Ziel = lzErgebnis);
-  // Nach dem Singen soll fuer niemanden mehr ein Lied feststehen - sonst
-  // saehe ein spaeter beitretender Gast noch das Lied der vorigen Runde.
-  Check('kein Lied bleibt ausgewaehlt',
-        Zustand.SongIndex = -1, IntToStr(Zustand.SongIndex));
+  // Das Lied bleibt beim Ergebnis ausdruecklich stehen - "Nochmal singen"
+  // geht von hier aus direkt auf die Buehne, OHNE das Lied neu zu waehlen.
+  // Waere es hier schon geloescht, meldete /start faelschlich "kein Lied
+  // ausgewaehlt" (genau der Fehler, der einmal live aufgetreten ist).
+  Check('das Lied bleibt fuer "Nochmal singen" erhalten',
+        Zustand.SongIndex = 3, IntToStr(Zustand.SongIndex));
   // Nach einem Abbruch muss sich jeder neu bereitmelden - sonst startete die
   // naechste Runde ungefragt bei denen mit, die gerade nicht am Geraet sind.
   Check('die Bereitschaft ist zurueckgesetzt',
@@ -338,12 +340,17 @@ begin
   Check('und niemand steht mehr auf der Buehne',
         (not Zustand.Spieler[0].Singt) and (not Zustand.Spieler[1].Singt));
 
-  // "Nochmal singen": alle zurueck auf die Buehne.
+  // "Nochmal singen": alle zurueck auf die Buehne - genau hier lag der Fehler.
   AlteZielNr := Zustand.ZielNr;
   Registry.SetZiel(BereitCode, 'b-host', lzBuehne, FalscherToken);
   Registry.GetState(BereitCode, 'b-host', -1, -1, -1, Zustand);
   Check('Ziel Buehne kommt an', Zustand.Ziel = lzBuehne);
   Check('und die Zielnummer steigt', Zustand.ZielNr > AlteZielNr);
+  // Der eigentliche Fehlerfall: Losspielen OHNE vorher neu auszuwaehlen
+  // muss gelingen, weil das Lied ja dasselbe bleibt.
+  Check('Nochmal singen laesst sich starten, ohne neu auszuwaehlen',
+        Registry.StartSinging(BereitCode, 'b-host', 5500, FalscherToken, KeinLied)
+        and not KeinLied);
 
   // Der entscheidende Punkt: ZWEIMAL dasselbe Ziel muss zweimal zaehlen.
   // Sonst bekaeme ein Gast den zweiten Druck auf "Anderes Lied" gar nicht
@@ -351,6 +358,10 @@ begin
   Registry.SetZiel(BereitCode, 'b-host', lzAuswahl, FalscherToken);
   Registry.GetState(BereitCode, 'b-host', -1, -1, -1, Zustand);
   AlteZielNr := Zustand.ZielNr;
+  // Anders als beim Ergebnis: Zurueck in die Auswahl heisst, dass dort ein
+  // (womoeglich neues) Lied gewaehlt wird - das alte gilt nicht mehr.
+  Check('zurueck in die Auswahl loescht das Lied',
+        Zustand.SongIndex = -1, IntToStr(Zustand.SongIndex));
   Registry.SetZiel(BereitCode, 'b-host', lzAuswahl, FalscherToken);
   Registry.GetState(BereitCode, 'b-host', -1, -1, -1, Zustand);
   Check('dasselbe Ziel erneut zaehlt trotzdem als neue Ansage',

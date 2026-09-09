@@ -551,9 +551,12 @@ begin
     fLobbies[Idx].Phase := lphWartet;
     fLobbies[Idx].Pausiert := False;
     fLobbies[Idx].PausePosMs := 0;
-    // Nach dem Singen steht fuer niemanden mehr ein Lied fest - sonst
-    // zeigte ein spaeter beitretender Gast noch das Lied der vorigen Runde.
-    if (Ziel = lzErgebnis) then
+    // Erst beim Zurueckgehen in die Auswahl steht kein Lied mehr fest -
+    // sonst zeigte ein spaeter beitretender Gast noch das Lied der vorigen
+    // Runde. NICHT schon beim Ergebnis: "Nochmal singen" geht von dort aus
+    // direkt auf die Buehne (Ziel lzBuehne), ohne das Lied neu zu waehlen -
+    // /start haette sonst faelschlich "kein Lied ausgewaehlt" gemeldet.
+    if (Ziel = lzAuswahl) then
       fLobbies[Idx].SongIndex := -1;
     // Bereitschaft zuruecksetzen - siehe Kommentar bei der Deklaration.
     for I := 0 to High(fLobbies[Idx].Spieler) do
