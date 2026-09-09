@@ -60,11 +60,21 @@ export function lyricHelper(line, beat) {
   if (!line || !line.notes || line.notes.length === 0) return null;
 
   const ersterSchlag = line.notes[0].start;
-  let vorlauf = ersterSchlag - line.startBeat;   // FirstNoteDelta
   let rest = ersterSchlag - beat;                // BarMoveDelta
-
-  if (!(vorlauf > HELFER_MIN_VORLAUF)) return null;
   if (!(rest > 0)) return null;   // die Note ist da - der Anzeiger hat fertig
+
+  // Vorlauf laut Datei (FirstNoteDelta): wie weit vor dem im Chart
+  // eingetragenen Zeilenbeginn die erste Note liegt. Viele Dateien setzen
+  // diesen Wert knapp oder sogar gleich der ersten Note - dann bliebe der
+  // Anzeiger trotz einer tatsaechlich langen Gesangspause unsichtbar, denn
+  // dieser Wert beschreibt nur die Chart-Angabe, nicht die wirkliche Pause
+  // seit dem Ende der vorigen Zeile. Der Anzeiger soll aber IMMER da sein,
+  // solange gewartet wird - ohne brauchbaren Wert aus der Datei gilt
+  // ersatzweise derselbe Hoechstwert wie fuer weit entfernte Zeilen
+  // (HELFER_GRENZE): Der Anzeiger faengt dann eben erst dort an, sich zu
+  // bewegen, statt ganz zu fehlen.
+  let vorlauf = ersterSchlag - line.startBeat;
+  if (!(vorlauf > HELFER_MIN_VORLAUF)) vorlauf = HELFER_GRENZE;
 
   // Das Pulsieren rechnet mit dem UNGEKUERZTEN Rest, so wie im Spiel: Es
   // haengt am Takt, nicht am Weg des Balkens.

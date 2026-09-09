@@ -1031,13 +1031,33 @@ console.log('Zeilenanzeiger');
   check('bei der Note verschwindet er', lyricHelper(zeile, 20) === null);
   check('danach ebenfalls', lyricHelper(zeile, 30) === null);
 
-  // Unter dem Mindestvorlauf erscheint er gar nicht - bei kurzen Pausen
-  // zwischen zwei Zeilen waere er nur ein Zucken.
-  const kurz = { startBeat: 0, notes: [{ start: HELFER_MIN_VORLAUF, length: 4 }] };
-  check('bei zu kurzem Vorlauf gar nicht', lyricHelper(kurz, 0) === null);
+  // Der Vorlauf aus der Datei (Abstand zwischen dem eingetragenen
+  // Zeilenbeginn und der ersten Note) ist oft knapp oder sogar 0, obwohl
+  // seit dem Ende der vorigen Zeile tatsaechlich lange gewartet wird - er
+  // beschreibt ja nur die Chart-Angabe, nicht die wirkliche Pause. Der
+  // Anzeiger darf deshalb NIE ganz fehlen, solange gewartet wird
+  // (rest > 0): Ohne brauchbaren Vorlauf gilt ersatzweise HELFER_GRENZE.
+  const kurz = { startBeat: 92, notes: [{ start: 100, length: 4 }] };
+  check('bei zu kurzem Vorlauf trotzdem sichtbar', lyricHelper(kurz, 60) !== null);
+  check('und steht bei weiter Entfernung zunaechst links, wie sonst auch',
+        lyricHelper(kurz, 60).fortschritt === 0,
+        String(lyricHelper(kurz, 60).fortschritt));
+  check('und bewegt sich, sobald die Note naeher ruckt',
+        lyricHelper(kurz, 90).fortschritt > 0,
+        String(lyricHelper(kurz, 90).fortschritt));
+  check('und kommt kurz davor auch an',
+        lyricHelper(kurz, 99).fortschritt > 0.9,
+        String(lyricHelper(kurz, 99).fortschritt));
   const knapp = { startBeat: 0,
                   notes: [{ start: HELFER_MIN_VORLAUF + 1, length: 4 }] };
-  check('einen Schlag darueber schon', lyricHelper(knapp, 0) !== null);
+  check('einen Schlag Vorlauf darueber bleibt es beim regulaeren Wert',
+        lyricHelper(knapp, 0) !== null);
+  // Sogar Vorlauf 0 (Zeilenbeginn = erste Note im Chart) darf nicht dazu
+  // fuehren, dass durch 0 geteilt wird oder der Anzeiger verschwindet.
+  const keinVorlauf = { startBeat: 20, notes: [{ start: 20, length: 4 }] };
+  check('Vorlauf 0 stuerzt nicht ab und bleibt sichtbar',
+        lyricHelper(keinVorlauf, 15) !== null &&
+        Number.isFinite(lyricHelper(keinVorlauf, 15).fortschritt));
 
   // Bei sehr langer Wartezeit bleibt er links stehen, statt sich unmerklich
   // langsam zu bewegen: Beide Werte werden auf die Grenze gekuerzt.
