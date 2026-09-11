@@ -25,6 +25,13 @@ if [ "$targetarch" == "x86_64" ]; then
 	from="debian/eol:jessie"
 	fpcpackage="https://sourceforge.net/projects/freepascal/files/Linux/3.2.2/fpc-3.2.2.x86_64-linux.tar"
 	prefixcmd="linux64"
+elif [ "$targetarch" == "aarch64" ]; then
+	imagename="usdx/buildenv:jessie-aarch64"
+	from="debian/eol:jessie"
+	fpcpackage="https://sourceforge.net/projects/freepascal/files/Linux/3.2.2/fpc-3.2.2.aarch64-linux.tar"
+	# No 32/64 switch needed here (already native 64-bit) - linux64 is just
+	# the generic "keep the current personality" no-op, same as on x86_64.
+	prefixcmd="linux64"
 else
 	echo "Unsupported architecture: $targetarch"
 	exit 1

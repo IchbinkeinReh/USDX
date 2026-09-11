@@ -179,8 +179,20 @@ jobs:
           if-no-files-found: error
 
   build_linux:
-    name: Build for Linux
-    runs-on: ubuntu-22.04
+    name: Build for Linux (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Kein Suffix fuer amd64: haelt den bisherigen Dateinamen stabil,
+          # an den evtl. schon verlinkt wird.
+          - runner: ubuntu-22.04
+            arch: amd64
+            suffix: ""
+          - runner: ubuntu-22.04-arm
+            arch: arm64
+            suffix: "-arm64"
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
@@ -191,7 +203,11 @@ jobs:
       - name: Cache build
         uses: actions/cache@v5
         with:
-          key: linux-docker-${{ hashFiles('dists/linux/dl.sh', 'dists/linux/tasks.sh', 'dists/linux/dockerenv.sh', 'dists/linux/Dockerfile.in') }}
+          # Arch im Schluessel: amd64- und arm64-Runner teilen sich sonst
+          # denselben Cache-Eintrag, obwohl "prefix/" fertig gebaute,
+          # architekturspezifische Binaries enthaelt - auf dem falschen
+          # Runner wiederhergestellt waere das ein Build mit fremder Arch.
+          key: linux-docker-${{ matrix.arch }}-${{ hashFiles('dists/linux/dl.sh', 'dists/linux/tasks.sh', 'dists/linux/dockerenv.sh', 'dists/linux/Dockerfile.in') }}
           path: |
             dists/linux/prefix
       - name: Start container builder
@@ -204,8 +220,11 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: dists/linux
-          cache-from: type=gha
-          cache-to: type=gha,mode=max,ignore-error=true
+          # Eigener Scope je Arch - sonst teilen sich amd64- und
+          # arm64-Runner denselben GHA-Cache-Slot und behindern sich beim
+          # gleichzeitigen Schreiben, obwohl ihre Layer nie zusammenpassen.
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,ignore-error=true,scope=${{ matrix.arch }}
           load: true
           tags: usdx/buildenv:latest
       - name: Build
@@ -213,12 +232,12 @@ jobs:
           cd dists/linux
           sed -i '/docker/s/-it\>//' dockerenv.sh
           ./dockerenv.sh --use-existing=usdx/buildenv:latest make compress
-          mv UltraStar*.AppImage ../../UltraStarDeluxe-linux-${{ env.versionName }}.AppImage
+          mv UltraStar*.AppImage ../../UltraStarDeluxe-linux${{ matrix.suffix }}-${{ env.versionName }}.AppImage
       - name: Upload Image Artifact
         uses: actions/upload-artifact@v6
         with:
-          name: UltraStarDeluxe-linux-${{ env.versionName }}
-          path: UltraStarDeluxe-linux-${{ env.versionName }}.AppImage
+          name: UltraStarDeluxe-linux${{ matrix.suffix }}-${{ env.versionName }}
+          path: UltraStarDeluxe-linux${{ matrix.suffix }}-${{ env.versionName }}.AppImage
           if-no-files-found: error
 
   release:

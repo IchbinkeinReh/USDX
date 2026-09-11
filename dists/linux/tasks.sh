@@ -109,7 +109,9 @@ task_projectm() {
 	cmake -DCMAKE_INSTALL_PREFIX="$PREFIX" -DCMAKE_BUILD_TYPE=Release -DENABLE_PLAYLIST=OFF
 	make $makearg
 	make install
-	ln -s /usr/lib/x86_64-linux-gnu/pkgconfig/gl.pc $PREFIX/lib/pkgconfig/opengl.pc
+	# Debian's multiarch triplet varies by architecture (x86_64-linux-gnu,
+	# aarch64-linux-gnu, ...) - ask gcc instead of hardcoding one.
+	ln -s "/usr/lib/$(gcc -dumpmachine)/pkgconfig/gl.pc" $PREFIX/lib/pkgconfig/opengl.pc
 }
 
 task_desktop_file_utils() {
