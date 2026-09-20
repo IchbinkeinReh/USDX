@@ -93,6 +93,8 @@ uses
   UWebBridge,
   UWebLobby,
   UWebServer,
+  UWebVorschau,
+  UWebZaehler,
   USkins,
   UThemes,
   UParty,
@@ -117,6 +119,8 @@ var
   // (siehe Kopfkommentar von UWebLobby). Deshalb kein eigener Eintrag in
   // HandleWebCommands noetig.
   LobbyRegistry: TLobbyRegistry = nil;
+  // Schneidet die Vorschau-Schnipsel im Hintergrund, waehrend gespielt wird.
+  WebBauer: TVorschauBauer = nil;
 
 // Fuehrt aus, was die Weboberflaeche angefordert hat - im Spielthread, wo
 // der Zugriff auf die Bildschirme sicher ist.
@@ -152,6 +156,12 @@ begin
     Log.LogError(Nachricht, 'UWebServer')
   else
     Log.LogStatus(Nachricht, 'UWebServer');
+end;
+
+// Der Bauer meldet nur Fortschritt, nie Fehler.
+procedure WebVorschauLog(const Nachricht: UTF8String);
+begin
+  Log.LogStatus(Nachricht, 'UWebVorschau');
 end;
 
 // Sucht den Ordner mit index.html an den Stellen, an denen er nach einem
@@ -204,6 +214,12 @@ begin
     Liste[Anzahl].Language := CatSongs.Song[I].Language;
     Liste[Anzahl].Year     := CatSongs.Song[I].Year;
     Liste[Anzahl].Duet     := CatSongs.Song[I].isDuet;
+    // Fuer den Vorschau-Schnipsel. Finish steht im Lied in Millisekunden,
+    // hier gilt durchweg Sekunden - genau wie USongHeader es fuer den
+    // kopflosen Betrieb umrechnet.
+    Liste[Anzahl].PreviewStart := CatSongs.Song[I].PreviewStart;
+    Liste[Anzahl].Start        := CatSongs.Song[I].Start;
+    Liste[Anzahl].Finish       := CatSongs.Song[I].Finish / 1000;
     // Pfade fuer die Weboberflaeche mitgeben. Path ist der Ordner, FileName
     // und Audio jeweils nur der Name darin - erst zusammengesetzt ergibt das
     // eine Datei, die sich oeffnen laesst.
@@ -389,15 +405,33 @@ begin
       // Ordner, liefert der Server die eingebaute Fernbedienungsseite aus -
       // das Spiel startet also auch ohne die Weboberflaeche.
       WebLogHandler := WebLog;
+
+      // Vorschau-Schnipsel im Hintergrund schneiden - genau wie im
+      // kopflosen Betrieb. Das Spiel selbst wartet darauf nicht: Es soll
+      // sofort spielbar sein, und die Vorschauen tauchen nach und nach auf.
+      VorschauLogHandler := WebVorschauLog;
+      WebBauer := TVorschauBauer.Create(WebBridge.VorschauAuftraege);
+
       // --webport schlaegt die Voreinstellung; 0 heisst "nicht angegeben".
+      // Gezaehlt wird neben der config.ini des Spiels.
       WebServer := TWebServerThread.Create(WebBridge, LobbyRegistry,
         IfThen(Params.WebPort > 0, Params.WebPort, WEB_DEFAULT_PORT),
-        FindeWebOrdner(), Params.WebHost);
+        FindeWebOrdner(), Params.WebHost,
+        ZaehlerOrdner(Platform.GetGameUserPath.Append('config.ini').ToUTF8()));
     end;
 
     Log.LogStatus('Main Loop', 'Initialization');
     MainLoop;
 
+    // Den Bauer zuerst abbrechen: Sonst liefe er nach dem Beenden des
+    // Spiels noch weiter und hielte den Prozess am Leben.
+    if Assigned(WebBauer) then
+    begin
+      WebBauer.Terminate;
+      WebBauer.WaitFor;
+      WebBauer.Free;
+      WebBauer := nil;
+    end;
     if Assigned(WebServer) then
     begin
       WebServer.Stop;

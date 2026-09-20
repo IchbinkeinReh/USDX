@@ -10,8 +10,8 @@ program testwebserver;
 
 uses
   {$IFDEF UNIX}cthreads,{$ENDIF}
-  SysUtils, Classes, ssockets,
-  UWebBridge, UWebLobby, UWebApi, UWebServer;
+  SysUtils, Classes, ssockets, fpjson, jsonparser,
+  UWebBridge, UWebCrypto, UWebLobby, UWebApi, UWebServer;
 
 var
   Bestanden, Fehlgeschlagen: integer;
@@ -26,6 +26,9 @@ var
   RohStrom: TFileStream;
   RohBytes: RawByteString;
   L: TWebSongArray;
+  // Die Sitzung, unter der die geschuetzten Dateien geholt werden.
+  Sid: string;
+  Key: TChaChaKey;
 
 procedure Check(const Was: string; Bedingung: boolean; const Info: string = '');
 begin
@@ -107,10 +110,47 @@ begin
   end;
 end;
 
+// Wo das erste Byte der letzten Antwort im Strom steht. Ohne Content-Range
+// ist es der Anfang der Datei.
+function BereichsStart(const Kopf: string): int64;
 var
-  Body: string;
+  P, Q: integer;
+  Zahl: string;
+begin
+  Result := 0;
+  P := Pos('bytes ', LowerCase(Kopf));
+  if (P = 0) then Exit;
+  Q := P + 6;
+  Zahl := '';
+  while (Q <= Length(Kopf)) and (Kopf[Q] in ['0'..'9']) do
+  begin
+    Zahl := Zahl + Kopf[Q];
+    Inc(Q);
+  end;
+  Result := StrToInt64Def(Zahl, 0);
+end;
+
+// Holt eine geschuetzte Lieddatei MIT Sitzung und entschluesselt sie gleich
+// wieder. Alles darunter prueft damit weiterhin den Klartext - aber den, der
+// tatsaechlich verschluesselt ueber die Leitung ging.
+function HoleLied(Index: integer; Art: TWebFileKind; const Name: string;
+                  out Body: string; const Bereich: string = ''): integer;
+var
+  Nonce: TChaChaNonce;
+begin
+  Result := Hole(Format('/api/song/%d/%s?sid=%s', [Index, Name, Sid]),
+                 Body, Bereich);
+  if ((Result <> 200) and (Result <> 206)) or (Body = '') then Exit;
+  UniqueString(Body);
+  Nonce := NonceForFile(Index, Ord(Art));
+  ChaCha20XOR(Key, Nonce, BereichsStart(LetzterKopf), Body[1], Length(Body));
+end;
+
+var
+  Body, Roher: string;
   Status: integer;
   F: TextFile;
+  Sitzung: TJSONData;
 begin
   Bestanden := 0; Fehlgeschlagen := 0;
 
@@ -171,33 +211,67 @@ begin
   Check('Modul wird ausgeliefert', (Status = 200) and (Pos('export', Body) > 0),
         IntToStr(Status));
 
+  WriteLn('Sitzung');
+  Status := Hole('/api/session', Body);
+  Check('Sitzung wird ausgegeben', Status = 200, IntToStr(Status));
+  Sitzung := GetJSON(Body);
+  try
+    Sid := TJSONObject(Sitzung).Strings['sid'];
+    Check('Schluessel laesst sich lesen',
+          HexToBytes(TJSONObject(Sitzung).Strings['key'], Key, SizeOf(Key)));
+  finally Sitzung.Free; end;
+  Check('Sitzungsschluessel wird nicht zwischengespeichert',
+        Pos('no-store', LowerCase(LetzterKopf)) > 0, LetzterKopf);
+
+  // Der eigentliche Punkt der ganzen Uebung: OHNE Sitzung gibt es die Datei
+  // nicht - auch nicht im Klartext. Gaebe es hier einen Rueckfall, genuegte
+  // das Weglassen des Parameters, um die Verschluesselung zu umgehen.
+  WriteLn('Ohne Sitzung');
+  Check('Ton ohne sid: 403', Hole('/api/song/0/audio', Body) = 403);
+  Check('Noten ohne sid: 403', Hole('/api/song/0/txt', Body) = 403);
+  Check('erfundene sid: 403',
+        Hole('/api/song/0/audio?sid=00112233445566778899aabbccddeeff',
+             Body) = 403);
+  Check('und der Klartext steht nicht darin',
+        Pos('0123456789', Body) = 0, Body);
+
   WriteLn('Liedateien');
-  Status := Hole('/api/song/0/txt', Body);
+  // Erst roh holen: Was ueber die Leitung geht, MUSS anders aussehen als die
+  // Datei auf der Platte. Ohne diese Probe koennte die Verschluesselung
+  // stillschweigend ausfallen und alle Tests darunter blieben gruen.
+  Hole('/api/song/0/audio?sid=' + Sid, Roher);
+  Check('ueber die Leitung geht kein Klartext',
+        (Length(Roher) = 10) and (Roher <> '0123456789'), Roher);
+
+  Status := HoleLied(0, wfkTxt, 'txt', Body);
   Check('Liedtext kommt an', (Status = 200) and (Pos('#BPM:120', Body) > 0),
         IntToStr(Status));
-  Status := Hole('/api/song/0/audio', Body);
+  Status := HoleLied(0, wfkAudio, 'audio', Body);
   Check('Ton kommt ganz an', (Status = 200) and (Body = '0123456789'),
         IntToStr(Status) + ' ' + Body);
 
   // Der Fehler, der hier lauert: Wird der Inhalt als Text behandelt, kommen
   // Zeilenenden hinzu oder werden umgeschrieben - die Datei ist dann kaputt,
   // ohne dass Status oder Laenge etwas verraten.
-  Status := Hole('/api/song/1/audio', Body);
+  Status := HoleLied(1, wfkAudio, 'audio', Body);
   Check('Bytes kommen unveraendert an',
         (Status = 200) and (Body = RohBytes) and (Length(Body) = 9),
         IntToStr(Status) + ' Laenge ' + IntToStr(Length(Body)));
 
   WriteLn('Teilbereiche');
-  Status := Hole('/api/song/0/audio', Body, 'bytes=3-5');
+  // Hier zahlt sich das Stromverfahren aus: Der Teilbereich wird an seiner
+  // Stelle im Strom entschluesselt, ohne dass der Anfang der Datei je
+  // geholt wurde.
+  Status := HoleLied(0, wfkAudio, 'audio', Body, 'bytes=3-5');
   Check('Teilbereich liefert 206', Status = 206, IntToStr(Status));
   Check('und genau die angefragten Zeichen', Body = '345', Body);
-  Status := Hole('/api/song/0/audio', Body, 'bytes=7-');
+  Status := HoleLied(0, wfkAudio, 'audio', Body, 'bytes=7-');
   Check('offenes Ende geht bis zum Schluss', (Status = 206) and (Body = '789'),
         Body);
-  Status := Hole('/api/song/0/audio', Body, 'bytes=0-999');
+  Status := HoleLied(0, wfkAudio, 'audio', Body, 'bytes=0-999');
   Check('zu grosses Ende wird gekappt, nicht abgelehnt',
         (Status = 206) and (Body = '0123456789'), IntToStr(Status) + ' ' + Body);
-  Status := Hole('/api/song/0/audio', Body, 'bytes=0-');
+  Status := HoleLied(0, wfkAudio, 'audio', Body, 'bytes=0-');
   Check('bytes=0- liefert 206, nicht 200',
         (Status = 206) and (Body = '0123456789'), IntToStr(Status));
 
@@ -211,7 +285,7 @@ begin
         Pos('close', LowerCase(LetzterKopf)) > 0, LetzterKopf);
   Hole('/gibtesnicht', Body);
   Check('auch bei 404', Pos('close', LowerCase(LetzterKopf)) > 0, LetzterKopf);
-  Hole('/api/song/0/audio', Body);
+  Hole('/api/song/0/audio?sid=' + Sid, Body);
   Check('auch beim Ausliefern einer Datei',
         Pos('close', LowerCase(LetzterKopf)) > 0, LetzterKopf);
 
@@ -219,9 +293,14 @@ begin
   // Lieddateien duerfen im Browser liegen bleiben - Titelbilder sind im
   // Schnitt eine Viertelmegabyte gross und wuerden beim Zurueckblaettern
   // sonst jedes Mal neu geholt.
-  Hole('/api/song/0/audio', Body);
+  Hole('/api/song/0/audio?sid=' + Sid, Body);
   Check('Lieddateien duerfen zwischengespeichert werden',
         Pos('max-age', LowerCase(LetzterKopf)) > 0, LetzterKopf);
+  // Aber nur fuer diesen einen Benutzer: Die Bytes gelten fuer seine
+  // Sitzung. Stuende hier "public", duerfte ein Vorschalt-Server sie an den
+  // naechsten weiterreichen, der sie gar nicht entschluesseln kann.
+  Check('und zwar nur privat',
+        Pos('private', LowerCase(LetzterKopf)) > 0, LetzterKopf);
   // Die Oberflaeche NICHT: Sonst liefe nach einer Aktualisierung tagelang
   // die alte Fassung weiter.
   Hole('/js/song.js', Body);
@@ -235,13 +314,13 @@ begin
   // Eine Datei ueber der Grenze darf nicht am Stueck in den Speicher gehen.
   // Geprueft wird ueber die Antwort: Sie muss gekuerzt sein und das auch
   // sagen, statt die ganze Datei zu behaupten.
-  Status := Hole('/api/song/2/audio', Body);
+  Status := Hole('/api/song/2/audio?sid=' + Sid, Body);
   Check('zu grosse Datei wird gestueckelt', Status = 206, IntToStr(Status));
   Check('und zwar auf die Obergrenze',
         Length(Body) = WEB_MAX_STUECK,
         IntToStr(Length(Body)) + ' statt ' + IntToStr(WEB_MAX_STUECK));
 
-  Status := Hole('/api/song/2/audio', Body, 'bytes=0-');
+  Status := Hole('/api/song/2/audio?sid=' + Sid, Body, 'bytes=0-');
   Check('auch bei offenem Ende gekuerzt',
         (Status = 206) and (Length(Body) = WEB_MAX_STUECK),
         IntToStr(Length(Body)));

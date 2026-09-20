@@ -42,7 +42,7 @@ mkdir -p "$ORDNER/lieder/Solo" "$ORDNER/lieder/Duo"
 
 printf '#TITLE:Solo\n#ARTIST:Einer\n#YEAR:1976\n#MP3:t.mp3\n#BPM:100\n: 0 4 60 a\nE\n' \
     > "$ORDNER/lieder/Solo/lied.txt"
-printf 'TON' > "$ORDNER/lieder/Solo/t.mp3"
+head -c 200000 /dev/urandom > "$ORDNER/lieder/Solo/t.mp3"
 printf '#TITLE:Zusammen\n#ARTIST:Duo\n#BPM:120\n#VIDEO:v.mp4\n#BACKGROUND:b.jpg\n#VIDEOGAP:1.5\nP1\n: 0 4 60 a\nP2\n: 0 4 67 b\nE\n' \
     > "$ORDNER/lieder/Duo/lied.txt"
 printf 'VIDEO' > "$ORDNER/lieder/Duo/v.mp4"
@@ -97,7 +97,21 @@ pruefe "beide Lieder gefunden, die Liesmich nicht" "$(echo "$ANZAHL" | tr -d ' '
 DUETTE=$(curl -s "http://127.0.0.1:$PORT/api/songs" | grep -o '"duet" : true' | wc -l)
 pruefe "genau ein Duett erkannt" "$(echo "$DUETTE" | tr -d ' ')" "1"
 
-pruefe "Lieddatei abrufbar" "$(hole /api/song/0/txt)" "200"
+# Ton, Video und Noten gehen nur gegen eine Sitzung heraus - und nur
+# verschluesselt. Ohne sie muss 403 kommen, nicht etwa der Klartext.
+pruefe "Lieddatei ohne Sitzung abgewiesen" "$(hole /api/song/0/txt)" "403"
+
+SID=$(curl -s -X POST "http://127.0.0.1:$PORT/api/session" \
+      | grep -o '"sid" *: *"[0-9a-f]*"' | grep -o '[0-9a-f]\{32\}')
+pruefe "Sitzung liefert eine Kennung" "$(printf %s "$SID" | wc -c | tr -d ' ')" "32"
+
+pruefe "Lieddatei mit Sitzung abrufbar" "$(hole "/api/song/0/txt?sid=$SID")" "200"
+
+# Und sie kommt NICHT im Klartext an: Stuende die Kopfzeile lesbar darin,
+# waere die ganze Verschluesselung wirkungslos.
+KLARTEXT=$(curl -s "http://127.0.0.1:$PORT/api/song/0/txt?sid=$SID" \
+           | grep -c "TITLE" || true)
+pruefe "Lieddatei kommt verschluesselt an" "$KLARTEXT" "0"
 
 # Welcher Eintrag das Duett ist, haengt an der Reihenfolge der Ordner.
 # Deshalb suchen statt raten.
@@ -108,12 +122,13 @@ SOLO=$(curl -s "http://127.0.0.1:$PORT/api/songs" \
        | tr '}' '\n' | grep '"duet" : false' | grep -o '"index" : [0-9]*' \
        | grep -o '[0-9]*')
 
-pruefe "Video wird ausgeliefert" "$(hole "/api/song/$DUETT/video")" "200"
+pruefe "Video wird ausgeliefert" \
+       "$(hole "/api/song/$DUETT/video?sid=$SID")" "200"
 pruefe "Hintergrundbild wird ausgeliefert" \
        "$(hole "/api/song/$DUETT/background")" "200"
 
 TYP=$(curl -s -o /dev/null -w '%{content_type}' \
-      "http://127.0.0.1:$PORT/api/song/$DUETT/video")
+      "http://127.0.0.1:$PORT/api/song/$DUETT/video?sid=$SID")
 pruefe "Video mit passendem Typ" "$TYP" "video/mp4"
 TYP=$(curl -s -o /dev/null -w '%{content_type}' \
       "http://127.0.0.1:$PORT/api/song/$DUETT/background")
@@ -122,11 +137,30 @@ pruefe "Bild mit passendem Typ" "$TYP" "image/jpeg"
 # Ohne Video muss 404 kommen: Der Browser fragt immer erst an und faellt
 # genau darauf zurueck. Eine leere 200-Antwort haette er als kaputtes Video
 # verstanden und gar nichts angezeigt.
-pruefe "Lied ohne Video antwortet mit 404" "$(hole "/api/song/$SOLO/video")" "404"
+pruefe "Lied ohne Video antwortet mit 404" \
+       "$(hole "/api/song/$SOLO/video?sid=$SID")" "404"
 pruefe "Lied ohne Bild antwortet mit 404" \
        "$(hole "/api/song/$SOLO/background")" "404"
-pruefe "unbekanntes Lied wird abgewiesen" "$(hole /api/song/99/txt)" "404"
+pruefe "unbekanntes Lied wird abgewiesen" \
+       "$(hole "/api/song/99/txt?sid=$SID")" "404"
 pruefe "Ausbruch aus dem Webordner scheitert" "$(hole /js/../../etc/passwd)" "404"
+
+# Die Rechnung des Dienstarbeiters gegen den laufenden Server: holen,
+# stueckweise entschluesseln, mit der Datei auf der Platte vergleichen.
+# Der einzige Test, der beide Haelften ZUSAMMEN ueber echtes HTTP prueft.
+if command -v node > /dev/null 2>&1; then
+    if node web/tests/strom.mjs "http://127.0.0.1:$PORT" \
+            "$ORDNER/lieder/Solo/t.mp3" "$SOLO" > "$ORDNER/strom.log" 2>&1; then
+        BESTANDEN=$((BESTANDEN + 1))
+        echo "  OK   Dienstarbeiter entschluesselt, was der Server schickt"
+    else
+        FEHLGESCHLAGEN=$((FEHLGESCHLAGEN + 1))
+        echo "  FEHL Dienstarbeiter entschluesselt, was der Server schickt"
+        sed 's/^/       /' "$ORDNER/strom.log"
+    fi
+else
+    echo "  node fehlt - Stromtest uebersprungen"
+fi
 
 # Beenden muss klappen: Ein Dienst, der sich nicht stoppen laesst, ist auf
 # einem Server schlimmer als einer, der gar nicht erst startet.

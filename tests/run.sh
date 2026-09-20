@@ -72,4 +72,10 @@ else
     echo "  node fehlt - uebersprungen"
 fi
 
+# Und zuletzt das, was nur ein echter Browser zeigt: dass der Dienstarbeiter
+# die Lieddateien entschluesselt und <audio> damit etwas anfangen kann.
+# Ueberspringt sich selbst, wenn kein Browser da ist.
+echo "=== Browser (Dienstarbeiter, Tonausgabe) ==="
+sh tests/browser.sh || FEHLER=1
+
 exit $FEHLER

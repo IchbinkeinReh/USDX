@@ -11,10 +11,35 @@ program testwebapi;
 uses
   {$IFDEF UNIX}cthreads,{$ENDIF}
   SysUtils, Classes, fpjson, jsonparser,
-  USongFilter, UWebBridge, UWebLobby, UWebApi;
+  USongFilter, UWebBridge, UWebCrypto, UWebLobby, UWebApi;
 
 var
   Bestanden, Fehlgeschlagen: integer;
+
+const
+  // Die Plaetze der drei Testlieder NACH dem Veroeffentlichen.
+  //
+  // PublishSongs sortiert alphabetisch nach Interpret und vergibt den Index
+  // neu - er zeigt auf die Stelle in dieser sortierten Liste, nicht auf die
+  // Reihenfolge, in der die Lieder hier hineingereicht werden. Aus
+  // ABBA / Queen / Nirvana wird also ABBA / Nirvana / Queen.
+  //
+  // Frueher standen hier nackte Zahlen, und genau daran ist der Test
+  // auseinandergelaufen: '/api/song/1/...' war einmal Queen gemeint, traf
+  // nach dem Hinzukommen von Nirvana aber dieses - und weil Nirvana
+  // ebenfalls weder Ton noch Video hat, blieben die Pruefungen gruen und
+  // pruefte nur nichts mehr. Als Namen faellt eine Verschiebung auf.
+  ABBA_NR    = 0;
+  NIRVANA_NR = 1;
+  QUEEN_NR   = 2;
+
+  // Was das SPIEL zum Auswaehlen braucht, steht getrennt in SelectIndex und
+  // hat mit dem Platz in der Liste nichts zu tun. Bewusst unterschiedliche
+  // Werte: Waeren sie gleich, koennte /api/select den einen fuer den anderen
+  // halten und niemand saehe es.
+  ABBA_SEL    = 50;
+  QUEEN_SEL   = 60;
+  NIRVANA_SEL = 70;
 
 procedure Check(const Was: string; Bedingung: boolean; const Detail: string = '');
 begin
@@ -25,6 +50,7 @@ end;
 var
   B: TWebBridge;
   Lobby: TLobbyRegistry;
+  Sessions: TCryptoSessions;
   Q: TStringList;
   CT, Body: UTF8String;
   Status: integer;
@@ -49,7 +75,111 @@ begin
     Q.Values[Params[I]] := Params[I + 1];
     Inc(I, 2);
   end;
-  Result := HandleWebRequest(B, Lobby, Pfad, Q, CT, Body);
+  Result := HandleWebRequest(B, Lobby, Sessions, Pfad, Q, CT, Body);
+end;
+
+// Die allermeisten Faelle hier interessiert nur, WELCHE Antwortart
+// herauskommt - der Schutz wird getrennt geprueft (siehe "Verschluesselung").
+function Aufloesen(Bridge: TWebBridge; const Weg, Wurzel: UTF8String;
+                   out P, C: UTF8String): TWebAntwortArt;
+var
+  Schutz: TWebDateiSchutz;
+begin
+  Result := ResolveFileRequest(Bridge, Weg, Wurzel, P, C, Schutz);
+end;
+
+// Welche Dateien nur gegen eine gueltige Sitzung hinausgehen - und dass
+// die Zuordnung von Schluessel und Einmalwert daran haengt.
+procedure PruefeSchutz;
+var
+  P, C: UTF8String;
+  Schutz: TWebDateiSchutz;
+  Key: TChaChaKey;
+  Nonce, NonceB: TChaChaNonce;
+  Sid: UTF8String;
+  I: integer;
+  Gleich: boolean;
+  Art: TWebAntwortArt;
+begin
+  Check('Sitzung liefert 200', Ruf('/api/session', []) = 200);
+  D := GetJSON(Body);
+  try
+    Check('Sitzung nennt eine Kennung',
+          Length(TJSONObject(D).Strings['sid']) = 32,
+          TJSONObject(D).Strings['sid']);
+    Check('Sitzung nennt einen 256-Bit-Schluessel',
+          Length(TJSONObject(D).Strings['key']) = 64,
+          TJSONObject(D).Strings['key']);
+    Check('Sitzung nennt ihre Laufzeit',
+          TJSONObject(D).Integers['ttl'] = CRYPTO_TTL_SECONDS);
+    Sid := TJSONObject(D).Strings['sid'];
+  finally D.Free; end;
+
+  Ruf('/api/session', []);
+  D := GetJSON(Body);
+  try
+    Check('zwei Anfragen geben verschiedene Sitzungen',
+          TJSONObject(D).Strings['sid'] <> Sid);
+  finally D.Free; end;
+
+  Check('Ton ist geschuetzt', DateiIstGeschuetzt(wfkAudio));
+  Check('Video ist geschuetzt', DateiIstGeschuetzt(wfkVideo));
+  Check('Noten sind geschuetzt', DateiIstGeschuetzt(wfkTxt));
+  // Der Schnipsel ist nur eine halbe Minute - dreissigtausend halbe Minuten
+  // sind trotzdem die Sammlung.
+  Check('Vorschau ist geschuetzt', DateiIstGeschuetzt(wfkPreview));
+  // Titelbilder und Hintergruende bleiben offen - sie haengen in der Liste
+  // an tausenden <img>-Elementen.
+  Check('Titelbild ist nicht geschuetzt', not DateiIstGeschuetzt(wfkCover));
+  Check('Hintergrund ist nicht geschuetzt',
+        not DateiIstGeschuetzt(wfkBackground));
+
+  Art := ResolveFileRequest(B, '/api/song/' + IntToStr(ABBA_NR) + '/audio',
+                            '', P, C, Schutz);
+  Check('Ton meldet Schutzbedarf',
+        (Art = waDatei) and Schutz.Noetig);
+  Check('mit richtiger Liednummer und Art',
+        (Schutz.SongIndex = ABBA_NR) and (Schutz.Art = Ord(wfkAudio)),
+        IntToStr(Schutz.SongIndex) + '/' + IntToStr(Schutz.Art));
+
+  Art := ResolveFileRequest(B, '/api/song/' + IntToStr(ABBA_NR) + '/cover',
+                       '', P, C, Schutz);
+  Check('Titelbild meldet keinen Schutzbedarf',
+        (Art = waDatei) and not Schutz.Noetig);
+
+  // Ohne Sitzung gibt es keinen Schluessel - und damit (im Server) 403.
+  Art := ResolveFileRequest(B, '/api/song/' + IntToStr(ABBA_NR) + '/audio',
+                            '', P, C, Schutz);
+  Check('ohne Sitzung kein Schluessel',
+        not SchluesselFuerAnfrage(Sessions, Schutz, '', Key, Nonce));
+  Check('unbekannte Sitzung ebenso',
+        not SchluesselFuerAnfrage(Sessions, Schutz, 'ff00ff00', Key, Nonce));
+
+  Sessions.NewSession(Sid, Key);
+  FillChar(Key, SizeOf(Key), 0);
+  Check('mit gueltiger Sitzung gibt es einen Schluessel',
+        SchluesselFuerAnfrage(Sessions, Schutz, Sid, Key, Nonce));
+  Gleich := True;
+  for I := 0 to 31 do
+    if (Key[I] <> 0) then Gleich := False;
+  Check('und der ist nicht leer', not Gleich);
+
+  // Der Einmalwert muss sich je Datei unterscheiden, sonst liefe der
+  // bekannte Klartext einer .txt gegen den Ton daneben.
+  ResolveFileRequest(B, '/api/song/' + IntToStr(ABBA_NR) + '/txt',
+                       '', P, C, Schutz);
+  SchluesselFuerAnfrage(Sessions, Schutz, Sid, Key, NonceB);
+  Gleich := True;
+  for I := 0 to 11 do
+    if (Nonce[I] <> NonceB[I]) then Gleich := False;
+  Check('Ton und Noten bekommen verschiedene Einmalwerte', not Gleich);
+
+  // Eine ungeschuetzte Datei bekommt NIE einen Schluessel - sonst wuerde
+  // sie verschluesselt ausgeliefert, obwohl niemand sie entschluesselt.
+  ResolveFileRequest(B, '/api/song/' + IntToStr(ABBA_NR) + '/cover',
+                       '', P, C, Schutz);
+  Check('ungeschuetzte Datei bekommt keinen Schluessel',
+        not SchluesselFuerAnfrage(Sessions, Schutz, Sid, Key, Nonce));
 end;
 
 // /api/lobby/* liefert bei Erfolg immer die Zustands-Antwort - ob es
@@ -71,18 +201,25 @@ begin
   Bestanden := 0; Fehlgeschlagen := 0;
   B := TWebBridge.Create;
   Lobby := TLobbyRegistry.Create;
+  Sessions := TCryptoSessions.Create;
   Q := TStringList.Create;
 
   SetLength(L, 3);
-  L[0].Index := 5; L[0].Artist := 'ABBA';    L[0].Title := 'Dancing Queen'; L[0].Genre := 'Pop';    L[0].Year := 1976;
-  L[1].Index := 6; L[1].Artist := 'Queen';   L[1].Title := 'Bohemian';      L[1].Genre := 'Rock';   L[1].Year := 1975;
-  L[2].Index := 7; L[2].Artist := 'Nirvana'; L[2].Title := 'Smells';        L[2].Genre := 'Grunge'; L[2].Year := 1991;
+  // Index wird hier NICHT gesetzt: PublishSongs vergibt ihn beim Sortieren
+  // ohnehin neu. Stuenden hier Zahlen, laese sich der Test so, als haetten
+  // sie Bedeutung - genau der Irrtum, der ihn hat verfallen lassen.
+  L[0].Artist := 'ABBA';    L[0].Title := 'Dancing Queen'; L[0].Genre := 'Pop';    L[0].Year := 1976;
+  L[1].Artist := 'Queen';   L[1].Title := 'Bohemian';      L[1].Genre := 'Rock';   L[1].Year := 1975;
+  L[2].Artist := 'Nirvana'; L[2].Title := 'Smells';        L[2].Genre := 'Grunge'; L[2].Year := 1991;
   L[0].TxtPath := '/lieder/abba.txt';  L[0].AudioPath := '/lieder/abba.mp3';
   L[1].Duet := True;   // Queen-Eintrag als Duett
   L[1].TxtPath := '/lieder/queen.txt'; L[1].AudioPath := '';   // ohne Ton
   L[0].VideoPath := '/lieder/abba.mp4'; L[0].BackgPath := '/lieder/abba.jpg';
   L[0].CoverPath := '/lieder/abba_cover.jpg';
   L[1].VideoPath := '';                 L[1].BackgPath := '/lieder/queen.png';
+  L[0].SelectIndex := ABBA_SEL;
+  L[1].SelectIndex := QUEEN_SEL;
+  L[2].SelectIndex := NIRVANA_SEL;
   B.PublishSongs(L);
 
   WriteLn('Seite und Status');
@@ -153,24 +290,34 @@ begin
   finally D.Free; end;
 
   WriteLn('Auswaehlen');
-  Status := Ruf('/api/select', ['index', '6']);
+  Status := Ruf('/api/select', ['index', IntToStr(QUEEN_NR)]);
   Check('Auswahl liefert 200', Status = 200, IntToStr(Status));
-  Check('Befehl liegt beim Spiel',
-        B.NextCommand(Cmd) and (Cmd.Kind = wckStart) and (Cmd.SongIndex = 6));
+  // Der eigentliche Punkt: Aus dem Netz kommt der PLATZ in der sortierten
+  // Liste, an das Spiel geht der SelectIndex. Wer beides verwechselt, waehlt
+  // ein anderes Lied aus als angetippt - genau dafuer sind die beiden Felder
+  // getrennt (siehe WEB.md, "Reihenfolge und Nachladen").
+  Check('Befehl liegt beim Spiel, mit dem SelectIndex statt dem Platz',
+        B.NextCommand(Cmd) and (Cmd.Kind = wckStart) and
+        (Cmd.SongIndex = QUEEN_SEL),
+        IntToStr(Cmd.SongIndex) + ' statt ' + IntToStr(QUEEN_SEL));
 
   Status := Ruf('/api/select', []);
   Check('ohne Index: 400', Status = 400, IntToStr(Status));
   Status := Ruf('/api/select', ['index', 'quatsch']);
   Check('unlesbarer Index: 400', Status = 400, IntToStr(Status));
+  // Ein Platz jenseits der Liste ist kein Lied - und darf auch keines
+  // auswaehlen.
+  Status := Ruf('/api/select', ['index', '99']);
+  Check('Platz ausserhalb der Liste: 404', Status = 404, IntToStr(Status));
   Check('und kein Befehl entstanden', not B.NextCommand(Cmd));
 
   WriteLn('Fehlerfaelle');
   Status := Ruf('/gibtesnicht', []);
   Check('unbekannter Weg: 404', Status = 404, IntToStr(Status));
 
-  Status := HandleWebRequest(nil, Lobby, '/api/status', Q, CT, Body);
+  Status := HandleWebRequest(nil, Lobby, Sessions, '/api/status', Q, CT, Body);
   Check('ohne Bruecke: 503 statt Absturz', Status = 503, IntToStr(Status));
-  Status := HandleWebRequest(B, nil, '/api/status', Q, CT, Body);
+  Status := HandleWebRequest(B, nil, Sessions, '/api/status', Q, CT, Body);
   Check('ohne Lobby-Register: ebenso 503', Status = 503, IntToStr(Status));
 
   Ruf('/api/songs', ['q', 'queen', 'mode', 'artist']);
@@ -216,60 +363,68 @@ begin
   WriteLn;
   WriteLn('Dateianfragen');
   Check('Liedtext wird zugeordnet',
-        (ResolveFileRequest(B, '/api/song/0/txt', '', Pfad, CT) = waDatei) and
+        (Aufloesen(B, '/api/song/' + IntToStr(ABBA_NR) + '/txt', '',
+                   Pfad, CT) = waDatei) and
         (Pfad = '/lieder/abba.txt'));
   Check('und als Text ausgeliefert', Pos('text/plain', CT) = 1, CT);
   Check('Ton wird zugeordnet',
-        (ResolveFileRequest(B, '/api/song/0/audio', '', Pfad, CT) = waDatei) and
+        (Aufloesen(B, '/api/song/' + IntToStr(ABBA_NR) + '/audio', '',
+                   Pfad, CT) = waDatei) and
         (Pfad = '/lieder/abba.mp3'));
   Check('mit passendem Typ', CT = 'audio/mpeg', CT);
 
   Check('fehlender Ton: 404 statt leerer Pfad',
-        ResolveFileRequest(B, '/api/song/1/audio', '', Pfad, CT) = waFehlt);
+        Aufloesen(B, '/api/song/' + IntToStr(QUEEN_NR) + '/audio', '',
+                  Pfad, CT) = waFehlt);
   Check('Index ausserhalb: 404',
-        ResolveFileRequest(B, '/api/song/99/txt', '', Pfad, CT) = waFehlt);
+        Aufloesen(B, '/api/song/99/txt', '', Pfad, CT) = waFehlt);
   Check('negativer Index: 404',
-        ResolveFileRequest(B, '/api/song/-1/txt', '', Pfad, CT) = waFehlt);
+        Aufloesen(B, '/api/song/-1/txt', '', Pfad, CT) = waFehlt);
   Check('unlesbarer Index: 404',
-        ResolveFileRequest(B, '/api/song/x/txt', '', Pfad, CT) = waFehlt);
+        Aufloesen(B, '/api/song/x/txt', '', Pfad, CT) = waFehlt);
   Check('unbekannte Datei am Lied: 404',
-        ResolveFileRequest(B, '/api/song/0/passwd', '', Pfad, CT) = waFehlt);
+        Aufloesen(B, '/api/song/0/passwd', '', Pfad, CT) = waFehlt);
   Check('kein Pfad bei Ablehnung', Pfad = '', Pfad);
 
   // Der eigentliche Punkt: Aus der URL laesst sich kein Pfad steuern. Der
   // Index wird nachgeschlagen, alles andere faellt durch.
   Check('Punkt-Punkt im Index greift nicht',
-        ResolveFileRequest(B, '/api/song/..%2F..%2Fetc%2Fpasswd/txt', '',
+        Aufloesen(B, '/api/song/..%2F..%2Fetc%2Fpasswd/txt', '',
                            Pfad, CT) = waFehlt);
   Check('Ausbruch ueber den Dateinamen greift nicht',
-        ResolveFileRequest(B, '/../etc/passwd', 'web', Pfad, CT) = waNichts);
+        Aufloesen(B, '/../etc/passwd', 'web', Pfad, CT) = waNichts);
   Check('nicht aufgefuehrte Datei wird nicht geliefert',
-        ResolveFileRequest(B, '/js/../../etc/passwd', 'web', Pfad, CT) = waNichts);
+        Aufloesen(B, '/js/../../etc/passwd', 'web', Pfad, CT) = waNichts);
   Check('unbekanntes js wird nicht geliefert',
-        ResolveFileRequest(B, '/js/geheim.js', 'web', Pfad, CT) = waNichts);
+        Aufloesen(B, '/js/geheim.js', 'web', Pfad, CT) = waNichts);
 
   WriteLn;
   WriteLn('Video und Hintergrundbild');
   Check('Video wird zugeordnet',
-        (ResolveFileRequest(B, '/api/song/0/video', '', Pfad, CT) = waDatei) and
+        (Aufloesen(B, '/api/song/' + IntToStr(ABBA_NR) + '/video', '',
+                   Pfad, CT) = waDatei) and
         (Pfad = '/lieder/abba.mp4'), Pfad);
   Check('mit Videotyp', CT = 'video/mp4', CT);
   Check('Hintergrundbild wird zugeordnet',
-        (ResolveFileRequest(B, '/api/song/0/background', '', Pfad, CT) = waDatei) and
+        (Aufloesen(B, '/api/song/' + IntToStr(ABBA_NR) + '/background', '',
+                   Pfad, CT) = waDatei) and
         (Pfad = '/lieder/abba.jpg'), Pfad);
   Check('mit Bildtyp', CT = 'image/jpeg', CT);
   Check('png bekommt seinen eigenen Typ',
-        (ResolveFileRequest(B, '/api/song/1/background', '', Pfad, CT) = waDatei) and
-        (CT = 'image/png'), CT);
+        (Aufloesen(B, '/api/song/' + IntToStr(QUEEN_NR) + '/background', '',
+                   Pfad, CT) = waDatei) and
+        (CT = 'image/png'), Pfad + ' ' + CT);
 
   // Ein Lied ohne Video muss 404 liefern. Der Browser fragt naemlich immer
   // erst an und faellt bei 404 auf das Bild zurueck - eine leere 200-Antwort
   // haette er als kaputtes Video verstanden.
   Check('Titelbild wird zugeordnet',
-        (ResolveFileRequest(B, '/api/song/0/cover', '', Pfad, CT) = waDatei) and
+        (Aufloesen(B, '/api/song/' + IntToStr(ABBA_NR) + '/cover', '',
+                   Pfad, CT) = waDatei) and
         (Pfad = '/lieder/abba_cover.jpg'), Pfad);
   Check('fehlendes Titelbild: 404',
-        ResolveFileRequest(B, '/api/song/1/cover', '', Pfad, CT) = waFehlt);
+        Aufloesen(B, '/api/song/' + IntToStr(QUEEN_NR) + '/cover', '',
+                  Pfad, CT) = waFehlt);
 
   Ruf('/api/songs', ['q', 'abba', 'mode', 'artist']);
   D := GetJSON(Body);
@@ -285,16 +440,27 @@ begin
   finally D.Free; end;
 
   Check('fehlendes Video: 404',
-        ResolveFileRequest(B, '/api/song/1/video', '', Pfad, CT) = waFehlt);
+        Aufloesen(B, '/api/song/' + IntToStr(QUEEN_NR) + '/video', '',
+                  Pfad, CT) = waFehlt);
 
   // Auch hier gilt: aus der URL kommt kein Pfad, sondern eine Zahl.
-  Check('erfundene Dateiart am Lied: 404',
-        ResolveFileRequest(B, '/api/song/0/cover', '', Pfad, CT) = waFehlt);
+  //
+  // Die Dateiart muss GENAU passen. Frueher stand hier '/cover' als die
+  // erfundene Art - bis es Titelbilder wirklich gab und die Pruefung das
+  // Gegenteil dessen behauptete, was zwanzig Zeilen darueber steht. Jetzt
+  // steht hier, worauf es ankommt: ein Name, der einer echten Art nur
+  // aehnelt, zaehlt nicht.
+  Check('abgeschnittene Dateiart: 404',
+        Aufloesen(B, '/api/song/' + IntToStr(ABBA_NR) + '/cov', '',
+                  Pfad, CT) = waFehlt);
+  Check('verlaengerte Dateiart: 404',
+        Aufloesen(B, '/api/song/' + IntToStr(ABBA_NR) + '/coverx', '',
+                  Pfad, CT) = waFehlt);
 
   Check('ohne Webordner faellt die Seite zurueck',
-        ResolveFileRequest(B, '/index.html', '', Pfad, CT) = waNichts);
+        Aufloesen(B, '/index.html', '', Pfad, CT) = waNichts);
   Check('Api bleibt Api',
-        ResolveFileRequest(B, '/api/songs', 'web', Pfad, CT) = waNichts);
+        Aufloesen(B, '/api/songs', 'web', Pfad, CT) = waNichts);
 
   WriteLn;
   WriteLn('Mehrspieler-Lobbys');
@@ -429,7 +595,11 @@ begin
   Check('start: 404', Ruf('/api/lobby/999999/start', ['token','x','serverStartMs','1']) = 404);
   Check('react: 404', Ruf('/api/lobby/999999/react', ['token','x','art','hoch']) = 404);
 
-  B.Free; Lobby.Free; Q.Free;
+  WriteLn;
+  WriteLn('Verschluesselung');
+  PruefeSchutz;
+
+  B.Free; Lobby.Free; Sessions.Free; Q.Free;
   WriteLn;
   WriteLn(Format('%d bestanden, %d fehlgeschlagen', [Bestanden, Fehlgeschlagen]));
   if Fehlgeschlagen > 0 then Halt(1);

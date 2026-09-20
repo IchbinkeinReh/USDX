@@ -24,6 +24,7 @@ uses
   USongFilter,
   USearchStore,
   UWebBridge,
+  UWebCrypto,
   UWebLobby,
   UWebPage;
 
@@ -36,9 +37,15 @@ const
   // noch so verdrehte URL etwas ausliefern, was nicht hier steht, und der
   // uebliche Fehler - ein ../ das durch die Pruefung rutscht - kann gar nicht
   // erst auftreten. Neue Datei im Ordner heisst: hier eintragen.
-  WEB_DATEIEN: array[0..10] of UTF8String = (
+  WEB_DATEIEN: array[0..13] of UTF8String = (
     'index.html',
     'favicon.png',
+    // Der Dienstarbeiter MUSS an der Wurzel liegen, nicht unter js/: Sein
+    // Geltungsbereich reicht nur so weit wie sein eigener Ordner, und von
+    // /js/ aus saehe er /api/song/... gar nicht.
+    'sw.js',
+    'js/krypto.js',
+    'js/sitzung.js',
     'js/song.js',
     'js/pitch.js',
     'js/score.js',
@@ -55,17 +62,50 @@ type
   TWebAntwortArt = (
     waNichts,   // keine Dateianfrage - HandleWebRequest uebernimmt
     waDatei,    // FilePath ausliefern
-    waFehlt     // war eine Dateianfrage, aber es gibt sie nicht -> 404
+    waFehlt,    // war eine Dateianfrage, aber es gibt sie nicht -> 404
+    waVerboten  // Datei gibt es, aber ohne gueltige Sitzung nicht -> 403
   );
 
+  // Was zum Entschluesseln einer Datei gehoert.
+  //
+  // Der Einmalwert wird NICHT mit uebertragen, sondern auf beiden Seiten aus
+  // Liednummer und Dateiart gerechnet (siehe NonceForFile).
+  TWebDateiSchutz = record
+    Noetig: boolean;      // diese Datei geht nur verschluesselt hinaus
+    SongIndex: integer;
+    Art: integer;         // Ord(TWebFileKind)
+  end;
+
+// Welche Dateien nur verschluesselt hinausgehen.
+//
+// Ton, Bild und Noten - also alles, was die eigentliche Sammlung ausmacht.
+// Titelbilder und Hintergruende bleiben offen: Sie haengen in der Liste an
+// tausenden <img>-Elementen, und die ueber den Dienstarbeiter zu schleusen
+// wuerde das Blaettern durch neuntausend Lieder spuerbar zaeh machen -
+// fuer Dateien, die niemand herunterladen will.
+function DateiIstGeschuetzt(Art: TWebFileKind): boolean;
+
 // Klaert, ob Path mit einer Datei zu beantworten ist, und liefert deren Pfad.
-// WebRoot ist der Ordner mit index.html und js/.
+// WebRoot ist der Ordner mit index.html und js/. Schutz sagt, ob und womit
+// die Datei zu verschluesseln ist.
 function ResolveFileRequest(Bridge: TWebBridge; const Path, WebRoot: UTF8String;
-                            out FilePath, ContentType: UTF8String): TWebAntwortArt;
+                            out FilePath, ContentType: UTF8String;
+                            out Schutz: TWebDateiSchutz): TWebAntwortArt;
+
+// Schluessel und Einmalwert fuer eine geschuetzte Datei. False heisst: keine
+// oder keine gueltige Sitzung - der Aufrufer antwortet dann mit 403 und
+// liefert NICHTS aus. Es gibt bewusst keinen Weg, dieselbe Datei offen zu
+// bekommen; sonst waere die Verschluesselung nur eine Bitte.
+function SchluesselFuerAnfrage(Sessions: TCryptoSessions;
+                               const Schutz: TWebDateiSchutz;
+                               const Sid: UTF8String;
+                               out Key: TChaChaKey;
+                               out Nonce: TChaChaNonce): boolean;
 
 // Beantwortet eine Anfrage. Rueckgabe ist der HTTP-Status; ContentType und
 // Body werden gesetzt. Query enthaelt die Parameter als Name=Wert.
 function HandleWebRequest(Bridge: TWebBridge; Lobby: TLobbyRegistry;
+                          Sessions: TCryptoSessions;
                           const Path: UTF8String; Query: TStrings;
                           out ContentType, Body: UTF8String): integer;
 
@@ -110,8 +150,32 @@ begin
   else Result := 'application/octet-stream';
 end;
 
+function DateiIstGeschuetzt(Art: TWebFileKind): boolean;
+begin
+  // Der Vorschau-Schnipsel gehoert dazu: Er ist zwar nur eine halbe Minute,
+  // aber dreissigtausend halbe Minuten sind immer noch die Sammlung.
+  Result := Art in [wfkTxt, wfkAudio, wfkVideo, wfkPreview];
+end;
+
+function SchluesselFuerAnfrage(Sessions: TCryptoSessions;
+                               const Schutz: TWebDateiSchutz;
+                               const Sid: UTF8String;
+                               out Key: TChaChaKey;
+                               out Nonce: TChaChaNonce): boolean;
+begin
+  FillChar(Key, SizeOf(Key), 0);
+  FillChar(Nonce, SizeOf(Nonce), 0);
+  Result := False;
+  if not Schutz.Noetig then Exit;
+  if not Assigned(Sessions) then Exit;
+  if not Sessions.LookupKey(Sid, Key) then Exit;
+  Nonce := NonceForFile(Schutz.SongIndex, Schutz.Art);
+  Result := True;
+end;
+
 function ResolveFileRequest(Bridge: TWebBridge; const Path, WebRoot: UTF8String;
-                            out FilePath, ContentType: UTF8String): TWebAntwortArt;
+                            out FilePath, ContentType: UTF8String;
+                            out Schutz: TWebDateiSchutz): TWebAntwortArt;
 var
   I, Index, Schraeg: integer;
   Rest, Name: UTF8String;
@@ -119,6 +183,9 @@ var
 begin
   FilePath := '';
   ContentType := '';
+  Schutz.Noetig := False;
+  Schutz.SongIndex := -1;
+  Schutz.Art := 0;
   Result := waNichts;
 
   // --- Liedateien: /api/song/<index>/txt bzw. /audio ---
@@ -135,6 +202,7 @@ begin
     else if (Name = 'video')      then Art := wfkVideo
     else if (Name = 'background') then Art := wfkBackground
     else if (Name = 'cover')      then Art := wfkCover
+    else if (Name = 'preview')    then Art := wfkPreview
     else Exit;
 
     // -1 als Ausweichwert: StrToIntDef schluckt auch "3x" nicht, und ein
@@ -147,6 +215,9 @@ begin
       Exit;
     end;
     ContentType := MimeTyp(FilePath);
+    Schutz.Noetig := DateiIstGeschuetzt(Art);
+    Schutz.SongIndex := Index;
+    Schutz.Art := Ord(Art);
     Result := waDatei;
     Exit;
   end;
@@ -314,9 +385,12 @@ begin
 end;
 
 function HandleWebRequest(Bridge: TWebBridge; Lobby: TLobbyRegistry;
+                          Sessions: TCryptoSessions;
                           const Path: UTF8String; Query: TStrings;
                           out ContentType, Body: UTF8String): integer;
 var
+  SitzungsSid: UTF8String;
+  SitzungsKey: TChaChaKey;
   Max, Index, Sel, Gesamt: integer;
   Antwort: TJSONObject;
   Treffer: TWebSongArray;
@@ -343,6 +417,35 @@ begin
   begin
     ContentType := 'text/html; charset=utf-8';
     Body := WebPageHTML;
+    Result := 200;
+    Exit;
+  end;
+
+  // Eine neue Sitzung: Kennung und Schluessel fuer die Lieddateien.
+  //
+  // Ja, das gibt den Schluessel heraus - anders koennte der Browser nichts
+  // abspielen. Der Gewinn liegt woanders: Wer die Sammlung haben will, muss
+  // jetzt eine Sitzung anfordern, ChaCha20 nachbauen und den Strom je Datei
+  // richtig aufsetzen, statt einmal wget ueber die Liste laufen zu lassen.
+  if (Path = '/api/session') then
+  begin
+    ContentType := 'application/json; charset=utf-8';
+    if not Assigned(Sessions) then
+    begin
+      Body := '{"error":"keine Sitzungsverwaltung"}';
+      Result := 503;
+      Exit;
+    end;
+    Sessions.NewSession(SitzungsSid, SitzungsKey);
+    Antwort := TJSONObject.Create;
+    try
+      Antwort.Add('sid', SitzungsSid);
+      Antwort.Add('key', BytesToHex(SitzungsKey, SizeOf(SitzungsKey)));
+      Antwort.Add('ttl', CRYPTO_TTL_SECONDS);
+      Body := Antwort.AsJSON;
+    finally
+      Antwort.Free;
+    end;
     Result := 200;
     Exit;
   end;

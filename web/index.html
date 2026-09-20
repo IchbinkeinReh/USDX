@@ -334,6 +334,8 @@ import { bewertung, sterne, STUFEN } from './js/bewertung.js';
 import { LobbyClient, istGueltigerCode, driftKorrektur, sollPositionAus,
          vorschauSollPosition, mitspielerAnzeige, alleBereit, fehlendeBereit,
          ergebnisMitFernspielern, STANDARDNAME } from './js/lobby.js';
+import { starteSitzung } from './js/sitzung.js';
+import { neuerDurchgang } from './js/game.js';
 
 // Wie oft die eigene Wiedergabe gegen den gemeinsamen Anker geprueft wird.
 //
@@ -1266,6 +1268,10 @@ $('singen').addEventListener('click', async () => {
   // Gastgeber ueberholt werden - das Lied liefe los, waehrend man selbst
   // noch auf der Startflaeche steht und gar nicht mitstartet.
   meldeStatus(false, true);
+  // Ein neues Singen: Die alte Durchgangskennung gilt nicht mehr, damit
+  // dieselbe Auffuehrung noch einmal gezaehlt wird. Ein Neuladen MITTEN im
+  // Lied kommt hier nicht vorbei und behaelt deshalb seine Kennung.
+  if (aktuellGeladen !== null) neuerDurchgang(aktuellGeladen);
   syncURL({ singen: 1 }, { push: true });
   // Nimmt die ganze Lobby mit auf die Buehne - nur der Ersteller darf das
   // ueberhaupt (dieser Knopf ist fuer Gaeste ohnehin ausgeblendet).
@@ -1372,7 +1378,9 @@ $('zurueck_zur_liste').addEventListener('click', zurueckZurAuswahl);
 // Noch einmal dasselbe Lied, mit derselben Besetzung.
 $('nochmal').addEventListener('click', async () => {
   // Ein neuer Durchgang: alle zurueck auf die Buehne, wo sie sich neu
-  // bereitmelden und dann gemeinsam starten.
+  // bereitmelden und dann gemeinsam starten. Und eine neue Zaehlkennung -
+  // dasselbe Lied ein zweites Mal gesungen zaehlt ein zweites Mal.
+  if (aktuellGeladen !== null) neuerDurchgang(aktuellGeladen);
   if (binHost) await lobbyClient.setzeZiel('buehne');
   ergebnisseite.classList.add('aus');
   buehne.classList.remove('aus');
@@ -1501,7 +1509,26 @@ document.addEventListener('fullscreenchange', () => {
   setTimeout(passeAn, 100);
 });
 
-anwendenZustand(leseZustandAusURL());
+// Erst die Sitzung, dann die Oberflaeche.
+//
+// In dieser Reihenfolge, weil ohne Dienstarbeiter KEINE Lieddatei lesbar
+// ankommt - Ton, Video und Noten gehen nur verschluesselt ueber die Leitung.
+// Liefe die Auswahl schon vorher an, griffe die erste Vorschau ins Leere und
+// der Fehler saehe aus wie ein kaputtes Lied.
+//
+// Die Liederliste selbst braucht das nicht; sie ist offen. Deshalb wird sie
+// auch dann noch angezeigt, wenn es schiefgeht - man kann dann blaettern und
+// im Spiel auswaehlen, nur eben nicht im Browser singen.
+starteSitzung().then(
+  () => {
+    anwendenZustand(leseZustandAusURL());
+  },
+  (e) => {
+    $('ergebnis').textContent =
+      'Lieder lassen sich nicht abspielen: ' + (e && e.message ? e.message : e);
+    $('ergebnis').classList.remove('aus');
+    anwendenZustand(leseZustandAusURL());
+  });
 passeAn();
 </script>
 </body>

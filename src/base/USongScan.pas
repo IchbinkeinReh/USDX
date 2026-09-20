@@ -217,6 +217,9 @@ begin
       if not ReadSongHeader(Dateien[I], Kopf) then
         Continue;   // keine Lieddatei - etwa eine Liesmich daneben
 
+      Result[Anzahl].PreviewStart := Kopf.PreviewStart;
+      Result[Anzahl].Start        := Kopf.Start;
+      Result[Anzahl].Finish       := Kopf.Finish;
       Result[Anzahl].Index       := Anzahl;
       // Ohne Spiel gibt es nichts auszuwaehlen; der Wert bleibt trotzdem
       // gesetzt, damit er nie zufaellig aus dem Speicher stammt.

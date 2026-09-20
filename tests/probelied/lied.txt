@@ -1,0 +1,13 @@
+#TITLE:Probeton
+#ARTIST:Testlauf
+#MP3:ton.mp3
+#BPM:120
+#GAP:0
+: 0 8 60 Pro~
+: 8 8 62 be~
+: 16 8 64 ton
+- 24
+: 32 6 65 Zwei~
+: 38 6 67 te
+: 44 4 69 Zeile
+E

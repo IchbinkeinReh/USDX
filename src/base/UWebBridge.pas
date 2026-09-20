@@ -33,6 +33,7 @@ uses
   SysUtils,
   Classes,
   SyncObjs,
+  UWebVorschau,
   UUnicodeUtils,
   USongFilter,
   USongSearch;
@@ -58,6 +59,12 @@ type
     Language: UTF8String;
     Year:     integer;
     Duet:     boolean;      // hat zwei Stimmen (P1/P2)
+    // Was der Vorschau-Schnipsel braucht, um dieselbe Stelle zu treffen wie
+    // das Spiel. Alles in Sekunden; Finish ist schon umgerechnet, #END steht
+    // im Format in Millisekunden.
+    PreviewStart: double;
+    Start:        double;
+    Finish:       double;
     // Dateien fuer die Weboberflaeche. Der Browser bekommt sie NIE zu sehen -
     // er schickt nur den Index, und der Server schlaegt den Pfad hier nach.
     // Damit ist ein Ausbruch aus dem Liedordner ueber die URL ausgeschlossen.
@@ -69,7 +76,12 @@ type
   end;
 
   // Welche Datei eines Liedes gemeint ist.
-  TWebFileKind = (wfkTxt, wfkAudio, wfkVideo, wfkBackground, wfkCover);
+  // HINTEN anhaengen, nie dazwischen: Die Ordnungszahl geht in den
+  // Einmalwert der Verschluesselung ein (NonceForFile) und steht so auch im
+  // Browser (web/js/krypto.js). Wer hier umsortiert, macht jede laufende
+  // Sitzung unbrauchbar.
+  TWebFileKind = (wfkTxt, wfkAudio, wfkVideo, wfkBackground, wfkCover,
+                  wfkPreview);
 
   // Vorbereitete Suchtexte zu einem Lied: kleingeschrieben und ins
   // ASCII-Alphabet umgeschrieben, damit "uber" auch "Über" findet.
@@ -127,6 +139,16 @@ type
       // nicht gibt oder das Lied keine solche Datei hat.
       function  SongPath(Index: integer; Art: TWebFileKind;
                          out Path: UTF8String): boolean;
+
+      // Interpret und Titel zu einem Listenplatz - fuer die Zaehlung, die
+      // Namen protokolliert und keine Nummern.
+      function  SongInfo(Index: integer;
+                         out Artist, Titel: UTF8String): boolean;
+
+      // Die Arbeitsliste fuer den Vorschau-Bauer: je Lied mit Tondatei ein
+      // Eintrag. Hier zusammengestellt und nicht beim Aufrufer, weil nur die
+      // Bruecke die Abschrift unter ihrem Schloss kennt.
+      function  VorschauAuftraege: TVorschauAuftragArray;
 
       // Uebersetzt einen Listenplatz in die Kennung, die das Spiel zum
       // Auswaehlen braucht.
@@ -272,6 +294,49 @@ begin
   end;
 end;
 
+function TWebBridge.SongInfo(Index: integer;
+                             out Artist, Titel: UTF8String): boolean;
+begin
+  Artist := '';
+  Titel := '';
+  fLock.Acquire;
+  try
+    Result := (Index >= 0) and (Index <= High(fSongs));
+    if Result then
+    begin
+      Artist := fSongs[Index].Artist;
+      Titel := fSongs[Index].Title;
+    end;
+  finally
+    fLock.Release;
+  end;
+end;
+
+function TWebBridge.VorschauAuftraege: TVorschauAuftragArray;
+var
+  I, N: integer;
+begin
+  SetLength(Result, 0);
+  fLock.Acquire;
+  try
+    SetLength(Result, Length(fSongs));
+    N := 0;
+    for I := 0 to High(fSongs) do
+    begin
+      // Ohne Tondatei gibt es nichts zu schneiden.
+      if (fSongs[I].AudioPath = '') then Continue;
+      Result[N].AudioPfad    := fSongs[I].AudioPath;
+      Result[N].PreviewStart := fSongs[I].PreviewStart;
+      Result[N].Start        := fSongs[I].Start;
+      Result[N].Finish       := fSongs[I].Finish;
+      Inc(N);
+    end;
+    SetLength(Result, N);
+  finally
+    fLock.Release;
+  end;
+end;
+
 function TWebBridge.SongPath(Index: integer; Art: TWebFileKind;
                              out Path: UTF8String): boolean;
 begin
@@ -288,6 +353,10 @@ begin
         wfkVideo:      Path := fSongs[Index].VideoPath;
         wfkBackground: Path := fSongs[Index].BackgPath;
         wfkCover:      Path := fSongs[Index].CoverPath;
+        // Der Schnipsel liegt neben der Tondatei und wird nicht mitgefuehrt,
+        // sondern aus ihrem Pfad gerechnet - er kann jederzeit entstehen,
+        // waehrend der Bauer noch laeuft.
+        wfkPreview:    Path := VorschauPfad(fSongs[Index].AudioPath);
       else
         Path := fSongs[Index].TxtPath;
       end;

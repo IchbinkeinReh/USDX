@@ -11,7 +11,7 @@
 // Aufbau laesst das deshalb gar nicht erst zu, statt hinterher Punkte zu
 // verteilen, die niemand nachvollziehen kann.
 
-import { parseSong, lineAt, nextLineAt, singAbschnitte, previewRange } from './song.js';
+import { parseSong, lineAt, nextLineAt, singAbschnitte } from './song.js';
 import { detectMidi, maxVolume } from './pitch.js';
 import { Pegel } from './pegel.js';
 import { Scorer, LEICHT } from './score.js';
@@ -70,6 +70,50 @@ export function pfad(p, href) {
 // setzen laesst es ruckeln; gar nicht nachzuziehen laesst es davonlaufen.
 const VIDEO_TOLERANZ = 0.30;
 
+// Kennung EINES Singens - damit der Server mitzaehlen kann, wann welches
+// Lied gesungen wurde.
+//
+// Der Server zaehlt beim ersten Byte Ton und merkt sich die Kennung. Daraus
+// ergeben sich die drei Regeln von selbst:
+//
+//   - Drei Leute singen dasselbe Lied: drei Browser, drei Kennungen, drei
+//     Eintraege.
+//   - Einer laedt mitten im Lied neu: Die Kennung steht im sessionStorage
+//     und ueberlebt das Neuladen, also zaehlt es nicht noch einmal.
+//   - Danach dasselbe Lied noch einmal singen: neueDurchgang() wirft die
+//     alte Kennung weg, es zaehlt wieder.
+//
+// sessionStorage und nicht localStorage: Die Kennung soll mit dem Tab
+// verschwinden, nicht ewig liegen bleiben.
+const DURCHGANG_SCHLUESSEL = 'durchgang';
+
+export function durchgangFuer(index) {
+  const schluessel = `${DURCHGANG_SCHLUESSEL}:${index}`;
+  try {
+    const da = sessionStorage.getItem(schluessel);
+    if (da) return da;
+    const neu = (crypto.randomUUID && crypto.randomUUID()) ||
+                String(Date.now()) + Math.random().toString(16).slice(2);
+    sessionStorage.setItem(schluessel, neu);
+    return neu;
+  } catch (e) {
+    // Ohne sessionStorage (privates Fenster, gesperrte Seitendaten) gibt es
+    // je Aufruf eine neue Kennung. Dann zaehlt ein Neuladen eben doppelt -
+    // besser als gar nicht zu zaehlen.
+    return String(Date.now()) + Math.random().toString(16).slice(2);
+  }
+}
+
+// Wirft die Kennung weg, damit das naechste Singen desselben Liedes wieder
+// zaehlt. Gehoert an die Stelle, an der jemand "nochmal" oder ein neues Lied
+// waehlt - NICHT ans Ende des Liedes: Wer nach dem Abspann neu laedt, soll
+// keinen zweiten Eintrag ausloesen.
+export function neuerDurchgang(index) {
+  try {
+    sessionStorage.removeItem(`${DURCHGANG_SCHLUESSEL}:${index}`);
+  } catch (e) { /* siehe oben */ }
+}
+
 // Lautstaerke der Vorschau in der Liedauswahl - Ini.PreviewVolume steht im
 // Original standardmaessig auf 30% (UIni.pas: ReadVolumePercent(..., 30)).
 export const VORSCHAU_LAUTSTAERKE = 0.30;
@@ -112,7 +156,6 @@ export class Game {
     this.vorschauAudio.preload = 'auto';
     this.vorschauAudio.volume = 0;
     this._vorschauGen = 0;
-    this._vorschauWaechterAbmelden = null;
     this.song = null;
     this.saenger = [];      // [{ trackIndex, scorer, analyser, puffer, sungMidi }]
     this.ctx = null;
@@ -254,7 +297,9 @@ export class Game {
     this.song = parseSong(txt);   // wirft bei kaputten Spurwechseln
     // Einmal berechnen, nicht je Bild - das sind alle Zeilen des Liedes.
     this.abschnitte = singAbschnitte(this.song);
-    this.audio.src = pfad(`/api/song/${index}/audio`);
+    // Der Durchgang zaehlt die Auffuehrung, siehe durchgangFuer().
+    this.audio.src = pfad(
+      `/api/song/${index}/audio?lauf=${encodeURIComponent(durchgangFuer(index))}`);
     this.el.titel.textContent = `${this.song.artist} – ${this.song.title}`;
     this.bereiteHintergrund(index, this.song);
     return this.song;
@@ -285,8 +330,9 @@ export class Game {
     });
   }
 
-  // Wartet, bis die Dauer der Vorschau-Audiodatei bekannt ist - erst dann
-  // laesst sich previewRange() berechnen.
+  // Wartet, bis die Dauer des Schnipsels bekannt ist. Gebraucht wird sie
+  // nur noch, um eine von der Lobby vorgegebene Stelle zu pruefen - und um
+  // ueberhaupt zu merken, dass die Datei ladbar war.
   _vorschauDauerAbwarten(audio) {
     return new Promise((resolve, reject) => {
       if (audio.readyState >= 1 && audio.duration > 0) { resolve(); return; }
@@ -305,38 +351,18 @@ export class Game {
     });
   }
 
-  _vorschauEndeAbmelden() {
-    if (this._vorschauWaechterAbmelden) {
-      this._vorschauWaechterAbmelden();
-      this._vorschauWaechterAbmelden = null;
-    }
-  }
-
-  // Wie PreviewEnd im Spiel (TScreenSong.Draw): sobald die Abspielposition
-  // das Ende der Vorschau erreicht, wird angehalten statt in den Rest des
-  // Liedes weiterzulaufen.
-  _vorschauEndeUeberwachen(ende, generation) {
-    this._vorschauEndeAbmelden();
-    const audio = this.vorschauAudio;
-    const pruefen = () => {
-      if (generation !== this._vorschauGen) return;
-      if (ende > 0 && audio.currentTime >= ende) this.vorschauStop();
-    };
-    audio.addEventListener('timeupdate', pruefen);
-    this._vorschauWaechterAbmelden =
-      () => audio.removeEventListener('timeupdate', pruefen);
-  }
-
   // Spielt die Vorschau eines ausgewaehlten Liedes an - wie im Spiel
-  // (TScreenSong.StartMusicPreview): nicht von vorne, sondern ab
-  // previewRange() (song.js), und leiser als beim eigentlichen Singen.
+  // (TScreenSong.StartMusicPreview): nicht ab Liedanfang, sondern ab der
+  // interessanten Stelle, und leiser als beim eigentlichen Singen. Welche
+  // Stelle das ist, steckt schon im Schnipsel, den der Server geschnitten
+  // hat.
   //
   // Anders als im Original wird eine laufende Vorschau erst ausgeblendet,
   // bevor die naechste einblendet - dort wird nur hart umgeschaltet, aber
   // zwei Lieder ohne jeden Uebergang klingt auf einer Auswahlseite falsch,
   // auf der man schneller weiterklickt als im Spiel selbst.
-  // abSekunde setzt die Stelle abweichend von previewRange() - fuer eine
-  // Lobby, in der die Vorschau bei allen an derselben Stelle laufen soll.
+  // abSekunde setzt die Stelle INNERHALB des Schnipsels - fuer eine Lobby,
+  // in der die Vorschau bei allen an derselben Stelle laufen soll.
   //
   // Rueckgabe: 'laeuft', 'verweigert' (Browser laesst ohne Nutzergeste
   // keinen Ton zu) oder 'abgebrochen'/'fehler'. Der Aufrufer kann bei
@@ -349,9 +375,19 @@ export class Game {
     if (gen !== this._vorschauGen) return 'abgebrochen';
 
     const audio = this.vorschauAudio;
-    this._vorschauEndeAbmelden();
     audio.pause();
-    audio.src = pfad(`/api/song/${index}/audio`);
+    // Ein eigener Endpunkt, nicht das ganze Lied.
+    //
+    // Dahinter liegt ein fertig geschnittener Schnipsel von einer halben
+    // Minute, der schon an der richtigen Stelle beginnt - die Rechnung dazu
+    // macht der Server (UWebVorschau.VorschauStelle, dieselbe wie
+    // previewRange() hier). Deshalb wird hier weder die Dauer abgewartet
+    // noch gesprungen: Es gibt nichts zu springen.
+    //
+    // Der Grund fuer die Trennung ist aber ein anderer: Ueber /audio laeuft
+    // die Zaehlung des Gesungenen. Liefe die Vorschau weiter darueber,
+    // zaehlte jedes Durchblaettern der Liste als Auffuehrung.
+    audio.src = pfad(`/api/song/${index}/preview`);
     audio.volume = 0;
     audio.load();
 
@@ -362,16 +398,12 @@ export class Game {
     }
     if (gen !== this._vorschauGen) return 'abgebrochen';
 
-    const bereich = previewRange(song, audio.duration || 0);
-    // Eine vorgegebene Stelle nur uebernehmen, wenn sie ueberhaupt noch im
-    // Lied liegt - sonst liefe die Vorschau ins Leere.
-    const ziel = (abSekunde !== null && abSekunde >= 0 &&
-                  audio.duration > 0 && abSekunde < audio.duration - 0.5)
-      ? abSekunde : bereich.start;
-    audio.currentTime = ziel;
-    // Das Ende der Vorschau gilt weiterhin; bei vorgegebener Stelle darf es
-    // nicht davor liegen, sonst hielte sie sofort wieder an.
-    this._vorschauEndeUeberwachen(Math.max(bereich.end, ziel + 5), gen);
+    // Eine vorgegebene Stelle kommt aus der Lobby und zaehlt jetzt INNERHALB
+    // des Schnipsels - alle Mitglieder hoeren denselben, also bleibt der
+    // Gleichlauf derselbe wie zuvor.
+    if (abSekunde !== null && abSekunde >= 0 &&
+        audio.duration > 0 && abSekunde < audio.duration - 0.5)
+      audio.currentTime = abSekunde;
 
     try {
       await audio.play();
@@ -411,7 +443,6 @@ export class Game {
   // nicht noch eine Sekunde lang leise die Vorschau mitlaufen.
   vorschauStop() {
     this._vorschauGen++;   // laufende Ein-/Ausblendungen brechen sich selbst ab
-    this._vorschauEndeAbmelden();
     this.vorschauAudio.pause();
     this.vorschauAudio.volume = 0;
   }

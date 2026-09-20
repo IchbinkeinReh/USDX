@@ -40,6 +40,16 @@ type
     BackgPath: UTF8String;   // #BACKGROUND, '' wenn keins
     CoverPath: UTF8String;   // #COVER, '' wenn keins
     VideoGap:  double;       // #VIDEOGAP in Sekunden
+    // Was die Vorschau braucht, um dieselbe Stelle zu treffen wie das Spiel
+    // (TSong.GetPreviewRange). Alle drei in SEKUNDEN, 0 heisst "nicht
+    // angegeben" - ausser Finish, wo 0 "bis zum Ende" heisst.
+    //
+    // Achtung, die Einheiten gehen im Format auseinander: #START steht in
+    // Sekunden, #END in MILLISEKUNDEN. Wer das verwechselt, laesst die
+    // Vorschau um Faktor tausend danebenliegen.
+    PreviewStart: double;    // #PREVIEWSTART, Sekunden
+    Start:        double;    // #START, Sekunden
+    Finish:       double;    // #END, hier schon in Sekunden umgerechnet
     Artist:    UTF8String;
     Title:     UTF8String;
     Edition:   UTF8String;
@@ -78,6 +88,13 @@ end;
 
 // Jahreszahlen stehen mal als '1994', mal als '1994-05-01'. Nur die ersten
 // vier Ziffern zaehlen.
+// Kommazahlen stehen im Format mal mit Punkt, mal mit Komma.
+function KommaZahl(const S: UTF8String): double;
+begin
+  Result := StrToFloatDef(
+    StringReplace(S, ',', '.', [rfReplaceAll]), 0, FormatSettings);
+end;
+
 function LiesJahr(const S: UTF8String): integer;
 var
   Ziffern: UTF8String;
@@ -206,8 +223,16 @@ begin
       // VIDEOGAP steht mal mit Punkt, mal mit Komma - wie alle Kommazahlen
       // im Format.
       else if (Schluessel = 'VIDEOGAP') then
-        Header.VideoGap := StrToFloatDef(
-          StringReplace(Wert, ',', '.', [rfReplaceAll]), 0, FormatSettings)
+        Header.VideoGap := KommaZahl(Wert)
+      else if (Schluessel = 'PREVIEWSTART') then
+        Header.PreviewStart := KommaZahl(Wert)
+      else if (Schluessel = 'START') then
+        Header.Start := KommaZahl(Wert)
+      // #END steht in Millisekunden, anders als #START. Hier gleich in
+      // Sekunden umgerechnet, damit sich weiter unten niemand mehr daran
+      // vertut.
+      else if (Schluessel = 'END') then
+        Header.Finish := KommaZahl(Wert) / 1000
       else if (Schluessel = 'MP3') and (TonName = '') then TonName := Wert;
     end;
   finally

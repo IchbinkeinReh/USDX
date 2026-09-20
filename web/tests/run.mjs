@@ -25,6 +25,9 @@ import { LobbyClient,
          mitspielerAnzeige, alleBereit, fehlendeBereit, sollPositionAus,
          vorschauSollPosition, STANDARDNAME,
          TOTZONE, SPRUNG_AB, MAX_RATE_ABWEICHUNG } from '../js/lobby.js';
+import { chacha20XOR, nonceForFile, hexToBytes, bytesToHex, geschuetzteDatei,
+         startStelle, ART_TXT, ART_AUDIO, ART_VIDEO,
+         ART_PREVIEW } from '../js/krypto.js';
 
 // Aufzeichnender Ersatz fuer den Zeichenkontext. Zeichnen laesst sich hier
 // nicht pruefen - WAS gezeichnet wird und WIE GROSS aber schon, und genau
@@ -1734,6 +1737,142 @@ console.log('Lobby: Abfrageschleife (Reaktionen nicht doppelt)');
   gast.stop();
 
   globalThis.fetch = echterFetch;
+}
+
+// ---------- Verschluesselung ----------
+//
+// Die Gegenprobe zu tests/testwebcrypto.pas: DIESELBEN Werte aus RFC 8439.
+// Server und Browser rufen einander nicht auf - dass beide dasselbe rechnen,
+// zeigt nur, dass beide gegen den RFC stimmen. Weicht eine Seite ab, faellt
+// es hier auf und nicht erst als stummes Lied im Browser.
+console.log();
+console.log('Verschluesselung');
+{
+  const ohneLeer = (s) => s.replace(/ /g, '');
+  const rfcKey = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) rfcKey[i] = i;
+
+  // Abschnitt 2.3.2
+  const nonce232 = new Uint8Array(12);
+  nonce232[3] = 0x09;
+  nonce232[7] = 0x4a;
+  const block = new Uint8Array(64);
+  chacha20XOR(rfcKey, nonce232, 64, block);
+  check('ChaCha20-Block stimmt mit RFC 8439 2.3.2 ueberein',
+        bytesToHex(block) === ohneLeer(
+          '10f1e7e4 d13b5915 500fdd1f a32071c4 ' +
+          'c7d1f4c7 33c06803 0422aa9a c3d46c4e ' +
+          'd2826446 079faa09 14c2d705 d98b02a2 ' +
+          'b5129cd1 de164eb9 cbd083e8 a2503c4e'),
+        bytesToHex(block));
+
+  // Abschnitt 2.4.2 - ANDERER Einmalwert als 2.3.2, die Stelle uebersieht
+  // man leicht.
+  const nonce242 = new Uint8Array(12);
+  nonce242[7] = 0x4a;
+  const satz = "Ladies and Gentlemen of the class of '99: If I could offer " +
+               'you only one tip for the future, sunscreen would be it.';
+  const daten = new Uint8Array(satz.length);
+  for (let i = 0; i < satz.length; i++) daten[i] = satz.charCodeAt(i);
+  chacha20XOR(rfcKey, nonce242, 64, daten);
+  check('ChaCha20 verschluesselt den RFC-Satz richtig',
+        bytesToHex(daten) === ohneLeer(
+          '6e2e359a 2568f980 41ba0728 dd0d6981 ' +
+          'e97e7aec 1d4360c2 0a27afcc fd9fae0b ' +
+          'f91b65c5 524733ab 8f593dab cd62b357 ' +
+          '1639d624 e65152ab 8f530c35 9f0861d8 ' +
+          '07ca0dbf 500d6a61 56a38e08 8a22b65e ' +
+          '52bc514d 16ccf806 818ce91a b7793736 ' +
+          '5af90bbf 74a35be6 b40b8eed f2785e42 ' +
+          '874d'),
+        bytesToHex(daten));
+
+  // Der Punkt, an dem das Springen im Lied haengt: Ein Stueck ab Stelle N
+  // muss dasselbe ergeben wie der Durchlauf von vorne. Ausdruecklich mit
+  // krummen Stuecken - an einer Blockgrenze faellt ein falscher Einstieg
+  // NICHT auf.
+  const nonce = nonceForFile(7, ART_AUDIO);
+  const amStueck = new Uint8Array(5000);
+  const stueckweise = new Uint8Array(5000);
+  for (let i = 0; i < 5000; i++) { amStueck[i] = i & 0xff; stueckweise[i] = i & 0xff; }
+  chacha20XOR(rfcKey, nonce, 0, amStueck);
+  let stelle = 0, laenge = 1;
+  while (stelle < stueckweise.length) {
+    if (stelle + laenge > stueckweise.length) laenge = stueckweise.length - stelle;
+    chacha20XOR(rfcKey, nonce, stelle,
+                stueckweise.subarray(stelle, stelle + laenge));
+    stelle += laenge;
+    laenge = ((laenge * 3) % 97) + 1;
+  }
+  check('stueckweise ab beliebiger Stelle ergibt dasselbe',
+        amStueck.every((b, i) => b === stueckweise[i]));
+
+  // Zweimal angewandt ist wieder der Klartext - sonst waere ein erneutes
+  // Abspielen nach dem Zurueckspulen kaputt.
+  const hin = new Uint8Array([1, 2, 3, 250, 251, 0, 255]);
+  const kopie = Uint8Array.from(hin);
+  chacha20XOR(rfcKey, nonce, 123, hin);
+  check('verschluesselt sieht anders aus', !hin.every((b, i) => b === kopie[i]));
+  chacha20XOR(rfcKey, nonce, 123, hin);
+  check('zweimal angewandt ergibt den Klartext',
+        hin.every((b, i) => b === kopie[i]));
+
+  // Verschiedene Dateien derselben Sitzung duerfen nicht denselben Strom
+  // bekommen - sonst verriete eine bekannte .txt den Ton daneben.
+  check('Ton und Noten bekommen verschiedene Einmalwerte',
+        bytesToHex(nonceForFile(5, ART_AUDIO)) !==
+        bytesToHex(nonceForFile(5, ART_TXT)));
+  check('verschiedene Lieder ebenso',
+        bytesToHex(nonceForFile(5, ART_AUDIO)) !==
+        bytesToHex(nonceForFile(6, ART_AUDIO)));
+  // Und die Einmalwerte muessen zu NonceForFile in UWebCrypto.pas passen.
+  check('Einmalwert ist so gebaut wie im Server',
+        bytesToHex(nonceForFile(7, ART_VIDEO)) === '02000000' + '0700000000000000',
+        bytesToHex(nonceForFile(7, ART_VIDEO)));
+
+  check('Hex hin und zurueck', bytesToHex(hexToBytes('00ff10')) === '00ff10');
+
+  // Welche Adressen ueberhaupt durch den Dienstarbeiter laufen. Steht das
+  // hier anders als in UWebApi.DateiIstGeschuetzt, bleibt entweder etwas
+  // unverschluesselt oder etwas Unverschluesseltes wird entschluesselt.
+  check('Ton laeuft ueber den Dienstarbeiter',
+        geschuetzteDatei('/api/song/3/audio')?.art === ART_AUDIO);
+  check('Video ebenso', geschuetzteDatei('/api/song/3/video')?.art === ART_VIDEO);
+  check('Noten ebenso', geschuetzteDatei('/api/song/3/txt')?.art === ART_TXT);
+  check('Vorschau ebenso',
+        geschuetzteDatei('/api/song/3/preview')?.art === ART_PREVIEW);
+  // Vorschau und Ton sind verschiedene Dateien und brauchen deshalb
+  // verschiedene Einmalwerte - sonst liefe derselbe Schluesselstrom zweimal.
+  check('Vorschau und Ton bekommen verschiedene Einmalwerte',
+        bytesToHex(nonceForFile(3, ART_PREVIEW)) !==
+        bytesToHex(nonceForFile(3, ART_AUDIO)));
+  check('mit richtiger Liednummer',
+        geschuetzteDatei('/api/song/42/audio')?.index === 42);
+  check('Titelbild NICHT', geschuetzteDatei('/api/song/3/cover') === null);
+  check('Hintergrund NICHT', geschuetzteDatei('/api/song/3/background') === null);
+  check('die Liederliste NICHT', geschuetzteDatei('/api/songs') === null);
+  check('und nichts Erfundenes', geschuetzteDatei('/api/song/x/audio') === null);
+}
+
+// Wo ein Stueck im Strom beginnt - daran haengt, ob ein Teilbereich richtig
+// entschluesselt wird. Aus der ANTWORT gelesen, nicht aus der Anfrage: Der
+// Server darf weniger schicken als gefragt.
+console.log();
+console.log('Dienstarbeiter');
+{
+  const antwort = (status, bereich) => ({
+    status,
+    headers: { get: (n) => (n.toLowerCase() === 'content-range' ? bereich : null) },
+  });
+  check('ohne Teilbereich faengt es bei 0 an',
+        startStelle(antwort(200, null)) === 0);
+  check('mit Teilbereich an der genannten Stelle',
+        startStelle(antwort(206, 'bytes 500-999/5000')) === 500);
+  check('auch bei grossen Stellen',
+        startStelle(antwort(206, 'bytes 8388608-16777215/99999999')) === 8388608);
+  // Ein 206 ohne brauchbare Angabe darf nicht raten: 0 ist der einzige
+  // Wert, der nicht stillschweigend Rauschen ergibt.
+  check('ohne lesbare Angabe bei 0', startStelle(antwort(206, 'quatsch')) === 0);
 }
 
 console.log();

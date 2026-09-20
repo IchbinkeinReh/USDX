@@ -27,6 +27,8 @@ uses
   UWebBridge,
   UWebLobby,
   UWebServer,
+  UWebVorschau,
+  UWebZaehler,
   USongScan;
 
 // Startet den Server und laeuft, bis abgebrochen wird.
@@ -62,6 +64,14 @@ begin
   Flush(Output);
 end;
 
+// Der Bauer meldet ohne Fehlerkennzeichen - seine Meldungen sind
+// Fortschritt, kein Problem.
+procedure MeldeVorschau(const Nachricht: UTF8String);
+begin
+  WriteLn(Nachricht);
+  Flush(Output);
+end;
+
 // Sucht den Ordner mit der Weboberflaeche. Ohne ihn laeuft nur die
 // Fernbedienung - im kopflosen Betrieb ist das wenig sinnvoll, aber immer
 // noch besser als gar nicht zu starten.
@@ -92,9 +102,10 @@ var
   Bridge: TWebBridge;
   Lobby: TLobbyRegistry;
   Server: TWebServerThread;
+  Bauer: TVorschauBauer;
   Ordner: TStringList;
   Lieder: TWebSongArray;
-  WebOrdner, Ini: UTF8String;
+  WebOrdner, Ini, ZOrdner: UTF8String;
   Cmd: TWebCommand;
   I: integer;
 begin
@@ -112,6 +123,7 @@ begin
   Bridge := TWebBridge.Create;
   Lobby := TLobbyRegistry.Create;
   Server := nil;
+  Bauer := nil;
   try
     Ini := FindConfigIni;
     if (Ini <> '') then
@@ -149,7 +161,27 @@ begin
       WriteLn('Weboberflaeche: ', WebOrdner);
 
     WebLogHandler := Melde;
-    Server := TWebServerThread.Create(Bridge, Lobby, Port, WebOrdner, Adresse);
+
+    // Vorschau-Schnipsel im Hintergrund bauen.
+    //
+    // Im Hintergrund, weil der erste Lauf ueber eine grosse Sammlung Stunden
+    // dauert: Der Server muss sofort ansprechbar sein, und die Vorschauen
+    // tauchen nach und nach auf. Beim naechsten Start ist fast alles schon
+    // da, dann sind es Sekunden.
+    VorschauLogHandler := MeldeVorschau;
+    Bauer := TVorschauBauer.Create(Bridge.VorschauAuftraege);
+
+    // Gezaehlt wird dorthin, wo auch die Einstellungen liegen - der
+    // Liederordner ist im Dienstbetrieb oft nur lesbar.
+    ZOrdner := ZaehlerOrdner(Ini);
+    if (ZOrdner <> '') then
+      WriteLn('Zaehlung: ', ZOrdner + PROTOKOLL_NAME)
+    else
+      WriteLn(StdErr, 'Warnung: kein beschreibbarer Ordner fuer die ',
+                      'Zaehlung - es wird nichts mitgeschrieben.');
+
+    Server := TWebServerThread.Create(Bridge, Lobby, Port, WebOrdner, Adresse,
+                                      ZOrdner);
 
     if (Adresse <> '') then
       WriteLn('Bereit auf ', Adresse, ' Port ', Port, ' - mit Strg-C beenden.')
@@ -177,6 +209,14 @@ begin
       Server.Stop;
       Server.WaitFor;
       Server.Free;
+    end;
+    // Den Bauer ordentlich abbrechen. Ohne Terminate liefe er nach dem
+    // Beenden noch stundenlang weiter und hielte den Prozess am Leben.
+    if Assigned(Bauer) then
+    begin
+      Bauer.Terminate;
+      Bauer.WaitFor;
+      Bauer.Free;
     end;
     Bridge.Free;
     Lobby.Free;

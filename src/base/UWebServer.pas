@@ -32,7 +32,9 @@ uses
   httpdefs,
   ssockets,
   UWebBridge,
-  UWebLobby;
+  UWebCrypto,
+  UWebLobby,
+  UWebZaehler;
 
 type
   // TFPHttpServer veroeffentlicht die Bindeadresse nicht - sie liegt im
@@ -45,13 +47,18 @@ type
 
   TWebServerThread = class(TThread)
     private
-      fServer:  TBindbarerServer;
-      fBridge:  TWebBridge;
-      fLobby:   TLobbyRegistry;
-      fPort:    word;
-      fWebRoot: UTF8String;
-      fAdresse: UTF8String;
+      fServer:   TBindbarerServer;
+      fBridge:   TWebBridge;
+      fLobby:    TLobbyRegistry;
+      fSessions: TCryptoSessions;
+      fZaehler:  TWebZaehler;
+      fPort:     word;
+      fWebRoot:  UTF8String;
+      fAdresse:  UTF8String;
+      // Schluesseln <> nil heisst: den Inhalt vor dem Senden verschluesseln.
       procedure SendeDatei(const Pfad, ContentType: UTF8String;
+                           Schluesseln: boolean;
+                           const Key: TChaChaKey; const Nonce: TChaChaNonce;
                            var ARequest: TFPHTTPConnectionRequest;
                            var AResponse: TFPHTTPConnectionResponse);
       procedure HandleRequest(Sender: TObject; var ARequest: TFPHTTPConnectionRequest;
@@ -68,7 +75,10 @@ type
       // direkt aus dem Netz erreichbar, und die Anmeldung ist wertlos.
       constructor Create(ABridge: TWebBridge; ALobby: TLobbyRegistry; APort: word;
                          const AWebRoot: UTF8String = '';
-                         const AAdresse: UTF8String = '');
+                         const AAdresse: UTF8String = '';
+                         const AZaehlerOrdner: UTF8String = '');
+      // Nur zum Nachsehen in Tests - der Server besitzt den Zaehler.
+      property Zaehler: TWebZaehler read fZaehler;
       destructor Destroy; override;
       procedure Stop;
   end;
@@ -108,13 +118,19 @@ end;
 constructor TWebServerThread.Create(ABridge: TWebBridge; ALobby: TLobbyRegistry;
                                    APort: word;
                                    const AWebRoot: UTF8String = '';
-                                   const AAdresse: UTF8String = '');
+                                   const AAdresse: UTF8String = '';
+                                   const AZaehlerOrdner: UTF8String = '');
 begin
   fBridge := ABridge;
   fLobby := ALobby;
   fPort := APort;
   fWebRoot := AWebRoot;
   fAdresse := AAdresse;
+  // Die Sitzungsschluessel gehoeren dem Server und leben genau so lange wie
+  // er. Ein Neustart macht alle ausgegebenen Schluessel ungueltig - das ist
+  // gewollt: Sie stehen nirgends auf der Platte.
+  fSessions := TCryptoSessions.Create;
+  fZaehler := TWebZaehler.Create(AZaehlerOrdner);
   FreeOnTerminate := false;
   inherited Create(false);
 end;
@@ -122,6 +138,8 @@ end;
 destructor TWebServerThread.Destroy;
 begin
   fServer.Free;
+  fSessions.Free;
+  fZaehler.Free;
   inherited;
 end;
 
@@ -152,6 +170,8 @@ end;
 // laengeren Aufnahmen keine Dauer an und kann nicht springen - man koennte
 // ein Lied nur von vorne bis hinten hoeren.
 procedure TWebServerThread.SendeDatei(const Pfad, ContentType: UTF8String;
+  Schluesseln: boolean;
+  const Key: TChaChaKey; const Nonce: TChaChaNonce;
   var ARequest: TFPHTTPConnectionRequest;
   var AResponse: TFPHTTPConnectionResponse);
 var
@@ -207,6 +227,15 @@ begin
       Datei.Position := Von;
       Teil.CopyFrom(Datei, Bis - Von + 1);
     end;
+
+    // Verschluesseln, NACHDEM das Stueck feststeht, und mit Von als Stelle
+    // im Strom. Dass beides zusammenpasst, ist der ganze Grund fuer ein
+    // Stromverfahren: Die Laenge bleibt gleich, Content-Range und
+    // Content-Length stimmen weiter, und der Browser kann ab jeder Stelle
+    // einsteigen, ohne den Anfang der Datei gesehen zu haben.
+    if Schluesseln and (Teil.Size > 0) then
+      ChaCha20XOR(Key, Nonce, Von, Teil.Memory^, Teil.Size);
+
     Teil.Position := 0;
 
     AResponse.ContentType := ContentType;
@@ -237,6 +266,11 @@ procedure TWebServerThread.HandleRequest(Sender: TObject;
   var AResponse: TFPHTTPConnectionResponse);
 var
   ContentType, Body, Pfad: UTF8String;
+  Schutz: TWebDateiSchutz;
+  Key: TChaChaKey;
+  Nonce: TChaChaNonce;
+  Schluesseln: boolean;
+  ZArtist, ZTitel: UTF8String;
 begin
   // "Connection: close" gehoert an JEDE Antwort, und zwar zuerst, damit kein
   // Weg hier unten sie vergisst.
@@ -255,9 +289,25 @@ begin
     // Erst pruefen, ob eine Datei gefragt ist. Die Entscheidung faellt in
     // UWebApi, damit sie ohne laufenden Server pruefbar bleibt.
     case ResolveFileRequest(fBridge, ARequest.PathInfo, fWebRoot,
-                            Pfad, ContentType) of
+                            Pfad, ContentType, Schutz) of
       waDatei:
         begin
+          // Geschuetzte Dateien gibt es NUR verschluesselt. Ohne gueltige
+          // Sitzung ist hier Schluss - es gibt bewusst keinen Rueckfall auf
+          // die offene Datei, sonst genuegte das Weglassen des Parameters,
+          // um die Verschluesselung zu umgehen.
+          Schluesseln := Schutz.Noetig;
+          if Schluesseln and
+             not SchluesselFuerAnfrage(fSessions, Schutz,
+                                       ARequest.QueryFields.Values['sid'],
+                                       Key, Nonce) then
+          begin
+            AResponse.Code := 403;
+            AResponse.ContentType := 'text/plain; charset=utf-8';
+            AResponse.SetCustomHeader('Cache-Control', 'no-store');
+            AResponse.Content := 'Keine gueltige Sitzung';
+            Exit;
+          end;
           // Lieddateien duerfen zwischengespeichert werden, die Oberflaeche
           // nicht.
           //
@@ -269,11 +319,37 @@ begin
           //
           // Fuer index.html und die Module gilt das ausdruecklich NICHT:
           // Sonst liefe nach einer Aktualisierung tagelang die alte Fassung.
-          if (Copy(ARequest.PathInfo, 1, 10) = '/api/song/') then
+          //
+          // Verschluesselte Dateien duerfen NICHT "public" sein: Die Bytes
+          // gelten nur fuer diese eine Sitzung, und ein Vorschalt-Server
+          // darf sie nicht an den naechsten Benutzer weiterreichen. "private"
+          // erlaubt dem Browser selbst weiterhin, sie zu behalten - ohne das
+          // holte er beim Zurueckspulen alles noch einmal.
+          if Schluesseln then
+            AResponse.SetCustomHeader('Cache-Control',
+              Format('private, max-age=%d', [CRYPTO_TTL_SECONDS]))
+          else if (Copy(ARequest.PathInfo, 1, 10) = '/api/song/') then
             AResponse.SetCustomHeader('Cache-Control', 'public, max-age=86400')
           else
             AResponse.SetCustomHeader('Cache-Control', 'no-cache');
-          SendeDatei(Pfad, ContentType, ARequest, AResponse);
+          // Zaehlen, bevor das erste Byte hinausgeht.
+          //
+          // Am Ton haengt es, nicht an der Vorschau: Die Vorschau ist seit
+          // dem eigenen Endpunkt sauber getrennt, und wer nur durch die
+          // Liste blaettert, hat nichts gesungen.
+          //
+          // Der Durchgang kommt vom Browser und ueberlebt dort ein
+          // Neuladen. Damit zaehlt dasselbe Singen nur einmal, ein zweites
+          // Singen desselben Liedes aber wieder - und drei Leute, die
+          // dasselbe Lied singen, dreimal.
+          if (Schutz.Art = Ord(wfkAudio)) and
+             (ARequest.QueryFields.Values['lauf'] <> '') and
+             fBridge.SongInfo(Schutz.SongIndex, ZArtist, ZTitel) then
+            fZaehler.Zaehle(ARequest.QueryFields.Values['lauf'],
+                            Schutz.SongIndex, ZArtist, ZTitel);
+
+          SendeDatei(Pfad, ContentType, Schluesseln, Key, Nonce,
+                     ARequest, AResponse);
           Exit;
         end;
       waFehlt:
@@ -286,10 +362,14 @@ begin
     end;
 
     // Die Wegewahl liegt in UWebApi - dort ohne SDL und damit pruefbar.
-    AResponse.Code := HandleWebRequest(fBridge, fLobby, ARequest.PathInfo,
+    AResponse.Code := HandleWebRequest(fBridge, fLobby, fSessions,
+                                       ARequest.PathInfo,
                                        ARequest.QueryFields,
                                        ContentType, Body);
     AResponse.ContentType := ContentType;
+    // Ein ausgegebener Schluessel gehoert in keinen Zwischenspeicher.
+    if (ARequest.PathInfo = '/api/session') then
+      AResponse.SetCustomHeader('Cache-Control', 'no-store');
     AResponse.Content := Body;
   except
     on E: Exception do

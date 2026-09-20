@@ -578,9 +578,10 @@ Dort ist genug Platz, und ein erzwungenes Vollbild stört mehr, als es hilft.
 ## Sicherheit
 
 **Es gibt keine Anmeldung.** Wer den Port erreicht, kann die Liederliste
-sehen, Lieder auswählen und alle Lied-, Ton- und Videodateien herunterladen.
-Für ein Heimnetz ist das gewollt — offen ins Internet gehört dieser Port
-nicht.
+sehen und Lieder auswählen. Ton, Video und Noten gehen nur verschlüsselt und
+nur gegen eine Sitzung heraus (siehe unten) — das ist eine Hürde, keine
+Mauer. Für ein Heimnetz ist das gewollt; offen ins Internet gehört dieser
+Port nicht.
 
 Soll er doch von außen erreichbar sein, gehört ein Vorschalt-Server davor,
 der die Anmeldung prüft. Dann **muss** `--webhost 127.0.0.1` gesetzt sein:
@@ -598,6 +599,91 @@ Ausgeliefert werden nur zwei Arten von Dateien:
 Aus dem Netz kommt damit nie ein Pfad, sondern immer nur eine Zahl oder ein
 Name aus der Liste. Ein `../` kann also gar nicht erst irgendwo ankommen, wo
 es wirken könnte. Tests in `testwebapi` und `testwebserver` halten das fest.
+
+### Lieddateien werden verschlüsselt ausgeliefert
+
+Ton, Video und Noten (`/api/song/N/audio`, `/video`, `/txt`) gehen **nur
+verschlüsselt** hinaus und **nur gegen eine Sitzung**. Ohne `?sid=` kommt
+403 — es gibt bewusst keinen Rückfall auf die offene Datei, sonst genügte
+das Weglassen des Parameters.
+
+Der Grund: Vorher lag hinter `/api/song/N/audio` eine fertige MP3. Wer die
+Adresse kannte, lud mit einer Zeile `wget` die ganze Sammlung herunter; die
+Anmeldung am Vorschalt-Server schützt die Liste, nicht die Dateien dahinter,
+sobald ein Zugang einmal vergeben ist.
+
+**Was das nicht leistet:** Der Browser muss den Schlüssel haben, sonst könnte
+er nichts abspielen — `POST /api/session` gibt ihn heraus. Wer die
+Entwicklerwerkzeuge aufmacht, kommt also heran. Das Ziel ist die Hürde, nicht
+die Unmöglichkeit: aus „Adresse aufrufen" wird „Sitzung anfordern, ChaCha20
+nachbauen, den Strom je Datei richtig aufsetzen".
+
+Titelbilder und Hintergründe bleiben **offen**. Sie hängen in der Liste an
+tausenden `<img>`-Elementen; die über den Dienstarbeiter zu schleusen würde
+das Blättern durch neuntausend Lieder zäh machen — für Dateien, die niemand
+herunterladen will.
+
+#### Warum ChaCha20 und warum ein Stromverfahren
+
+FPC 3.2.2 bringt kein brauchbares AES mit (`blowfish` ist alles, was in
+`fcl-base` steht), und eine weitere Bibliothek wollen wir hier so wenig wie
+den HTTP-Server oder das JSON. ChaCha20 ist in hundert Zeilen vollständig
+hinzuschreiben — im Server (`UWebCrypto`) wie im Browser (`web/js/krypto.js`).
+
+Entscheidend ist aber die **Betriebsart**: Bei einem Stromverfahren hängt das
+Byte an Stelle N nur von N ab, von keinem anderen Byte. Damit bleibt `Range`
+genau so, wie es war — der Server verschlüsselt ab Stelle N weiter, ohne dass
+der Browser je den Anfang der Datei gesehen haben muss, und die Länge ändert
+sich nicht, also stimmen `Content-Length` und `Content-Range` weiterhin. Mit
+CBC oder ähnlichem wäre Springen im Lied nicht mehr möglich, und ohne Springen
+gibt es weder Dauer-Anzeige noch Vorschau ab der Mitte.
+
+Der Einmalwert wird **nicht übertragen**, sondern auf beiden Seiten aus
+Liednummer und Dateiart gerechnet (`NonceForFile` / `nonceForFile`). Er muss
+je Schlüssel eindeutig sein, geheim muss er nicht sein. Dass Ton und Noten
+desselben Liedes verschiedene bekommen, ist wichtig: Sonst verriete der
+bekannte Klartext einer `.txt` den Strom für die Tondatei daneben.
+
+Die Schlüssel kommen aus `/dev/urandom` bzw. der CryptoAPI — ausdrücklich
+**nicht** aus `Random()`. Das ist ein Mersenne-Twister mit der Uhrzeit
+angestoßen; für einen Lobby-Code recht, als Schlüssel in Minuten
+durchprobiert. Lässt sich keine Quelle öffnen, fliegt eine Ausnahme: lieber
+keine Sitzung als eine mit vorhersagbarem Schlüssel.
+
+Eine Sitzung gilt eine Stunde, jeder Zugriff verlängert sie (ein Lied kann
+länger dauern als die Frist, und mitten im Refrain den Ton zu verlieren wäre
+die ärgerlichste Art abzulaufen). Sie leben nur im Speicher des Servers; ein
+Neustart macht alle ausgegebenen Schlüssel ungültig.
+
+#### Warum ein Dienstarbeiter (Service Worker)
+
+Taktgeber des ganzen Spiels ist die Abspielposition des `<audio>`-Elements.
+Daran hängen Springen, Dauer, Pause und der Gleichlauf in der Lobby. Würde
+die Seite den Ton selbst entschlüsseln, müsste sie ihn auch selbst abspielen
+— und damit fiele genau dieser Taktgeber weg.
+
+`web/sw.js` fängt die Anfrage stattdessen ab, holt die verschlüsselten Bytes,
+entschlüsselt sie **stückweise im Durchlauf** (`TransformStream`) und gibt
+eine ganz gewöhnliche Tonantwort zurück. `<audio>.src` zeigt weiter auf
+`/api/song/N/audio`, das Element merkt nichts davon, und das ganze Lied liegt
+nie am Stück im Speicher. Woher ein Stück kommt, steht in `Content-Range` der
+**Antwort** — nicht in der Anfrage, denn der Server darf weniger schicken als
+gefragt (siehe `WEB_MAX_STUECK`).
+
+Der Dienstarbeiter liegt an der **Wurzel** (`/sw.js`), nicht unter `js/`: Sein
+Geltungsbereich reicht nur so weit wie sein eigener Ordner, von `/js/` aus
+sähe er `/api/song/…` gar nicht.
+
+Der Schlüssel liegt nur im Speicher des Dienstarbeiters. Der Browser darf ihn
+jederzeit beenden und neu starten — dann fragt er bei der Seite nach
+(`schluessel-bitte`), statt stumm Rauschen durchzureichen.
+
+**Ohne sicheren Kontext geht nichts.** Dienstarbeiter gibt es nur über HTTPS
+(oder auf `localhost`). Das ist keine neue Einschränkung: `getUserMedia`
+verlangt denselben sicheren Kontext, über einfaches HTTP bliebe das Mikrofon
+ohnehin stumm und es ließe sich nichts werten. Die Seite sagt es an, statt
+das Lied stumm scheitern zu lassen; die Liederliste bleibt bedienbar, damit
+sich am Gerät weiterhin ein Lied auswählen lässt.
 
 ## Hinter einem Vorschalt-Server betreiben
 
@@ -617,8 +703,40 @@ ExecStart=/usr/local/lib/ultrastar-web/ultrastardx --web-only \
     --webhost 127.0.0.1 --webport 8942 --songpath /pfad/zu/den/liedern
 ProtectSystem=strict
 ProtectHome=read-only
-ReadOnlyPaths=/pfad/zu/den/liedern
+
+# Wohin gezählt wird. systemd legt /var/lib/ultrastar-web an und gibt den
+# Ordner als $STATE_DIRECTORY mit; der Dienst findet ihn von selbst. Ohne
+# das landete die Zählung in ~/.ultrastardx, und das ist wegen
+# ProtectHome=read-only nicht beschreibbar.
+StateDirectory=ultrastar-web
+
+# Beschreibbar, NICHT ReadOnlyPaths: Die Vorschau-Schnipsel werden beim
+# Start neben die Tondateien geschnitten. Bleibt der Ordner nur lesbar,
+# entsteht kein einziger und die Liedauswahl bleibt stumm.
+ReadWritePaths=/pfad/zu/den/liedern
+
+# Damit der Eigentümer der Sammlung die erzeugten Schnipsel noch lesen kann.
+UMask=0027
+
+# Während des Bauens läuft ein ffmpeg daneben und zählt in dieselbe
+# Speichergruppe.
+MemoryMax=2048M
 ```
+
+Und der Dienstbenutzer muss in die Liederordner schreiben dürfen. Wenn er
+bereits in der Gruppe des Sammlungsbesitzers ist (`SupplementaryGroups=`),
+genügt Schreibrecht für die Gruppe — **nur auf den Ordnern**, die Lieder
+selbst werden nicht angefasst:
+
+```sh
+find /pfad/zu/den/liedern -type d -exec chmod g+ws {} +
+```
+
+Das `s` ist das setgid-Bit: Neu erzeugte Schnipsel erben damit die Gruppe des
+Ordners, und zusammen mit `UMask=0027` bleiben sie für die Gruppe lesbar.
+
+Wer die Sammlung unangetastet lassen will, kann das — dann gibt es eben keine
+Vorschau. Der Dienst sagt es beim Start und läuft normal weiter.
 
 Und davor, hier mit Apache:
 
@@ -671,6 +789,9 @@ funktioniert also auch über den Proxy.
 | Unit | Aufgabe |
 | --- | --- |
 | `UWebBridge` | Übergabe zwischen Spiel- und Webthread, Pfade zu den Dateien |
+| `UWebCrypto` | ChaCha20 und die Sitzungsschlüssel |
+| `UWebVorschau` | Vorschau-Schnipsel schneiden (ffmpeg) |
+| `UWebZaehler` | wann welches Lied gesungen wurde |
 | `UWebApi` | Wegewahl, JSON, Zuordnung Index → Datei |
 | `UWebPage` | die Fernbedienung als eingebettete Zeichenkette |
 | `UWebServer` | HTTP-Thread, Ausliefern der Dateien |
@@ -681,6 +802,9 @@ funktioniert also auch über den Proxy.
 | Datei in `web/` | Aufgabe |
 | --- | --- |
 | `index.html` | Seite, Liedauswahl |
+| `sw.js` | Dienstarbeiter: entschlüsselt Lieddateien im Durchlauf |
+| `js/krypto.js` | ChaCha20 im Browser, Einmalwerte, geschützte Adressen |
+| `js/sitzung.js` | Sitzung holen, Dienstarbeiter aufstellen |
 | `js/song.js` | `.txt` einlesen, Spuren, Schlag ↔ Zeit |
 | `js/pitch.js` | Tonhöhe aus dem Mikrofon |
 | `js/score.js` | Wertung, je Stimme eine |
@@ -794,6 +918,114 @@ angefordert, antwortet der Server mit weniger und sagt das über
 `Content-Range`; das ist erlaubt (RFC 7233) und die übliche Arbeitsweise beim
 Streamen. Der Browser holt sich den Rest mit der nächsten Anfrage.
 
+## Vorschau in der Liedauswahl
+
+Die Vorschau hat einen **eigenen Endpunkt** und eine **eigene Datei**:
+`/api/song/N/preview` liefert einen fertig geschnittenen Schnipsel von
+höchstens **30 Sekunden**, verschlüsselt wie alles andere.
+
+### Warum eine eigene Datei und kein Stück aus dem Lied
+
+Weil sich ein MP4 **nicht byteweise schneiden lässt** — und die Sammlung hier
+besteht praktisch vollständig aus `.m4a`. Nachgemessen in Chrome:
+
+| ausgeliefert | spielt |
+| --- | --- |
+| MP3 ganz | ja |
+| **MP3 Stück aus der Mitte** | ja, meldet sogar die richtige Dauer |
+| MP3 vorne abgeschnitten | ja |
+| M4A ganz | ja |
+| **M4A Stück aus der Mitte** | nein, `MEDIA_ERR_SRC_NOT_SUPPORTED` |
+| M4A vorne abgeschnitten | nein, dasselbe |
+| M4A faststart, Stück aus der Mitte | nein, dasselbe |
+| M4A faststart, vorne abgeschnitten | ja, behauptet aber die volle Dauer |
+
+MP3 ist rahmenweise aufgebaut, ein Decoder findet überall wieder hinein. Ein
+MP4 braucht `ftyp` und `moov`; ffmpeg legt `moov` standardmäßig **hinter**
+`mdat`, also fehlt bei jedem Schnitt das Entscheidende.
+
+Deshalb schneidet **ffmpeg** einmal einen richtigen Schnipsel, und
+ausgeliefert wird danach eine ganz gewöhnliche Datei. Damit ist die
+Längenbegrenzung auch keine Zusage mehr, auf die man vertrauen muss: Was
+nicht im Schnipsel steht, kann niemand abrufen.
+
+### Wann und wo geschnitten wird
+
+Beim Start, in einem **Hintergrund-Thread**. Der erste Lauf über eine große
+Sammlung dauert Stunden (gemessen: rund eine halbe Sekunde je Lied); der
+Server ist dabei sofort ansprechbar, und die Vorschauen tauchen nach und
+nach auf. Beim nächsten Start ist alles schon da und der Durchlauf dauert
+Sekunden — vorhandene Schnipsel werden übersprungen, solange sie nicht älter
+sind als die Tondatei.
+
+Der Schnipsel liegt **neben der Tondatei**, als `<tondatei>.vorschau.mp3`
+(30 s, mono, 44,1 kHz, 96 kbit/s — rund 350 kB). An den ganzen Namen
+angehängt und nicht die Endung ersetzt, sonst zeigten `Lied.mp3` und
+`Lied.m4a` im selben Ordner auf dieselbe Vorschau.
+
+Zwei Dinge, die dabei leicht untergehen:
+
+- Vor **jedem** Schnitt wird der freie Platz geprüft, nicht nur einmal am
+  Anfang. Auf der Platte liegt mehr als die Lieder, und eine volle Platte
+  reißt mehr mit als nur die Vorschau. Bleibt weniger als 1 GB, hört der
+  Bauer auf und sagt es.
+- Steht der Liederordner **nur lesbar** (`ProtectSystem=strict` /
+  `ReadOnlyPaths` in der Dienstdatei), scheitert das Schneiden. Dann gibt es
+  eben keine Vorschau; alles andere läuft weiter. Wer sie haben will, muss
+  den Liederordner beschreibbar machen.
+
+### Ab welcher Stelle
+
+Dieselbe Rechnung wie im Spiel (`TSong.GetPreviewRange`) und im Browser
+(`previewRange` in `web/js/song.js`), nachgebaut in
+`UWebVorschau.VorschauStelle`: ein eigener `#PREVIEWSTART` gilt, sonst ein
+Viertel in das von `#START` und `#END` begrenzte Stück hinein. Die
+Sonderregel darin sieht falsch aus und ist trotzdem gewollt: Ab zwei Minuten
+Versatz wird **nicht** gedeckelt, sondern auf eine Minute zurückgesetzt.
+
+Dafür liest `USongHeader` jetzt auch `#PREVIEWSTART`, `#START` und `#END`.
+Achtung bei den Einheiten: `#START` steht in Sekunden, `#END` in
+**Millisekunden**; umgerechnet wird beim Lesen, danach gilt überall Sekunden.
+
+`testwebvorschau` prüft `VorschauStelle` gegen dieselbe Tabelle, die auch in
+`web/tests/run.mjs` gegen `previewRange` läuft.
+
+## Zählen, wann welches Lied gesungen wurde
+
+Zwei Textdateien neben der `config.ini`:
+
+```
+web-gesungen.tsv    2026-09-21T00:45:46	ABBA	Dancing Queen
+web-zaehler.tsv     ABBA	Dancing Queen	3
+```
+
+Das Protokoll ist maßgeblich, die Zählerdatei ist daraus ableitbar — sie
+steht trotzdem daneben, damit „wie oft" nicht bedeutet, zehntausende Zeilen
+zu lesen.
+
+Gezählt wird **beim ersten Byte Ton**, das an einen Sänger geht. Dass das
+nicht schon beim Durchblättern der Liste passiert, ist der zweite Grund für
+den eigenen Vorschau-Endpunkt: Vorher lief die Vorschau über `/audio`, und
+jedes Antippen eines Liedes hätte als Aufführung gezählt.
+
+Unterschieden werden Aufführungen am **Durchgang** — einer Kennung, die der
+Browser beim Beginn des Singens würfelt und in den `sessionStorage` legt.
+Daraus ergeben sich die drei Regeln von selbst:
+
+| Fall | warum |
+| --- | --- |
+| Drei Leute singen dasselbe Lied → **dreimal** | drei Browser, drei Kennungen |
+| Einer lädt mitten im Lied neu → **nicht noch einmal** | `sessionStorage` übersteht das Neuladen, die Kennung kommt unverändert wieder |
+| Danach noch einmal dasselbe Lied → **wieder** | „Singen"/„Nochmal singen" wirft die alte Kennung weg |
+
+Der Browser holt den Ton in vielen Stücken; gezählt wird nur das erste je
+Durchgang. Ohne Kennung wird **gar nicht** gezählt — sonst zählte jedes
+einzelne Stück mit.
+
+Warum nicht die Datenbank des Spiels: `UDataBase` hängt über `USong` und
+`USongs` an der Grafikkette und lässt sich im kopflosen Betrieb nicht einmal
+übersetzen. Außerdem kennt sie nur „wie oft", nicht „wann".
+
 ## Mehrspieler-Lobbys
 
 Jeder, der die Seite öffnet, bekommt automatisch eine eigene Lobby — im
@@ -853,9 +1085,11 @@ Erstellers in dieser Fassung. Das nächste Poll eines Gasts bekommt dann ein
 | `GET /api/status` | Anzahl Lieder, Stand der Abschrift |
 | `GET /api/songs?q=&mode=&max=` | Suche, höchstens 200 Treffer; `duet` je Eintrag |
 | `GET /api/select?index=N` | Lied im Spiel auswählen |
-| `GET /api/song/N/txt` | die Lieddatei |
-| `GET /api/song/N/audio` | die Tondatei, mit `Range` |
-| `GET /api/song/N/video` | das Video, mit `Range`; 404 wenn keins |
+| `POST /api/session` | Sitzung anlegen: `sid`, `key` (Hex), `ttl` |
+| `GET /api/song/N/preview?sid=` | Vorschau-Schnipsel (30 s), verschlüsselt; 403 ohne Sitzung |
+| `GET /api/song/N/txt?sid=` | die Lieddatei, verschlüsselt; 403 ohne Sitzung |
+| `GET /api/song/N/audio?sid=&lauf=` | die Tondatei, verschlüsselt, mit `Range`; 403 ohne Sitzung. `lauf` zählt die Aufführung |
+| `GET /api/song/N/video?sid=` | das Video, verschlüsselt, mit `Range`; 404 wenn keins, 403 ohne Sitzung |
 | `GET /api/song/N/background` | das Hintergrundbild; 404 wenn keins |
 | `POST /api/lobby/create?token=&name=` | eigene Lobby erstellen |
 | `POST /api/lobby/<code>/join?token=&name=` | einer Lobby beitreten |
@@ -868,7 +1102,78 @@ Erstellers in dieser Fassung. Das nächste Poll eines Gasts bekommt dann ein
 ## Tests
 
 `tests/run.sh` baut das Spiel, führt die Pascal-Tests aus, startet dann
-`tests/headless.sh` und zuletzt `web/tests/run.mjs` unter node.
+`tests/headless.sh`, danach `web/tests/run.mjs` unter node und zuletzt
+`tests/browser.sh` in einem echten Browser.
+
+### Die Verschlüsselung prüfen vier Stellen
+
+Sie greifen ineinander, und keine ersetzt eine andere:
+
+| wo | was |
+| --- | --- |
+| `tests/testwebcrypto.pas` | ChaCha20 im **Server** gegen die Werte aus RFC 8439 |
+| `web/tests/run.mjs` | ChaCha20 im **Browser** gegen dieselben Werte |
+| `web/tests/strom.mjs` | beide **zusammen** über echtes HTTP, ohne Browser |
+| `web/tests/browser.mjs` | Dienstarbeiter und `<audio>`, nur im Browser |
+
+Dass Server und Browser dasselbe rechnen, zeigt sich **nicht** daran, dass
+sie einander aufrufen — sie tun es nie. Es zeigt sich daran, dass beide
+gegen den RFC stimmen. Weicht eine Seite ab, fällt es in ihrem eigenen Test
+auf und nicht erst als stummes Lied.
+
+Ein selbstgebautes Stromverfahren ver- und entschlüsselt auch dann
+fehlerfrei mit sich selbst, wenn es an einer Drehung oder einer
+Bytereihenfolge danebenliegt. Deshalb die festen Werte aus dem RFC, und
+deshalb prüft `strom.mjs` zusätzlich, dass über die Leitung **etwas anderes**
+geht als die Datei auf der Platte: Ohne diese Gegenprobe bliebe die Sammlung
+grün, selbst wenn gar nicht verschlüsselt würde.
+
+### Vorschau und Zählung prüfen
+
+`testwebvorschau` prüft die Startstelle gegen dieselbe Tabelle wie
+`web/tests/run.mjs` und schneidet dann wirklich — einmal aus einer `.m4a`,
+einmal aus einer `.mp3`, beides mit ffmpeg erzeugt. Fehlt ffmpeg, überspringt
+sich der Schneide-Teil, statt fehlzuschlagen.
+
+`testwebzaehler` fährt die drei Regeln einzeln durch: mehrere Stücke
+desselben Durchgangs, ein Neuladen mit derselben Kennung, ein zweiter Sänger
+und ein zweites Singen.
+
+### Der Browsertest
+
+`tests/browser.sh` startet Server und Browser, `web/tests/browser.mjs`
+spricht über CDP mit ihm. Geprüft wird, was sich sonst nirgends zeigt: dass
+der Dienstarbeiter die Anfrage wirklich abfängt und `<audio>` mit dem
+entschlüsselten Strom Dauer, Springen und Wiedergabe hinbekommt.
+
+Der Nachweis, dass der Dienstarbeiter dazwischensitzt, steckt im Test
+selbst: Die Seite fragt **ohne** `sid`. Käme die Anfrage so beim Server an,
+wäre sie 403. Ein 200 mit lesbarem Inhalt kann es also nur geben, wenn er die
+Sitzung angehängt und entschlüsselt hat.
+
+Dazu gehört ein **eingecheckter Probeton**: `tests/probelied/` mit `ton.mp3`
+(6,0 s, mono, 16 kHz, 16 kbit/s — rund 12 kB) und der passenden `lied.txt`.
+Erzeugt statt heruntergeladen, damit der Test nichts aus dem Netz braucht;
+bewusst nicht 8 kHz, denn das wäre MPEG-2.5 und damit die ausgefallenste
+MP3-Spielart, die nicht jeder Decoder mag.
+
+Der Test **überspringt sich selbst**, wenn kein Browser da ist — ein
+fehlender Browser ist kein Fehlschlag des Codes. Gesucht wird in dieser
+Reihenfolge: `$CHROME`, ein eigenständig geladenes Chrome unter
+`~/.cache/puppeteer`, dann das System. Dabei wird nicht geprüft, ob die Datei
+existiert, sondern ob sie **startet**: Auf Rechnern, deren `/tmp` ein Symlink
+ist, scheitert jeder streng eingesperrte Snap in `snap-confine`
+(`cannot create temporary directory for the root file system`), und
+`chromium` wie `firefox` sind auf Ubuntu genau das. Einen brauchbaren
+Browser holt man sich ohne Root mit:
+
+```
+npx -y @puppeteer/browsers install chrome@stable --path "$HOME/.cache/puppeteer"
+```
+
+Gesprochen wird über CDP von Hand — node bringt seit Fassung 22 einen
+WebSocket-Client mit, und Puppeteer wäre eine Abhängigkeit, die das Projekt
+sonst nirgends braucht.
 
 `testwebserver` startet einen echten Server auf Port 8099 und spricht ihn
 über einen rohen TCP-Anschluss an — mit einer HTTP-Bibliothek prüfte man am
