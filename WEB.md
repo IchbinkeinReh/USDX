@@ -754,8 +754,51 @@ Und davor, hier mit Apache:
 		AuthUserFile /etc/apache2/auth/ultrastar.htpasswd
 		Require valid-user
 	</Location>
+
+	# Diese beiden MUESSEN ohne Anmeldung ladbar sein - siehe unten.
+	<Location "/sw.js">
+		Require all granted
+	</Location>
+	<Location "/js/krypto.js">
+		Require all granted
+	</Location>
 </VirtualHost>
 ```
+
+### Der Dienstarbeiter darf nicht hinter der Anmeldung stehen
+
+Die zwei `Require all granted` oben sind kein Schönheitsfehler, sondern
+Bedingung. `navigator.serviceWorker.register(…, { type: 'module' })` holt das
+Worker-Skript **ohne Zugangsdaten** — anders als bei einem klassischen
+Worker, wo der Browser sie mitschickt. Steht die Anmeldung davor, antwortet
+der Vorschalt-Server mit **401**, der Dienstarbeiter wird nie angemeldet, und
+weil Ton, Video und Noten nur verschlüsselt herausgehen, kommt danach auf
+jede Lieddatei ein **403**.
+
+Im Browser sieht das nicht nach einem Rechteproblem aus, sondern nach einem
+kaputten Lied: *„Lied lässt sich nicht laden"*. Die Titelbilder laden weiter,
+weil sie gar nicht verschlüsselt sind — die Liste wirkt also halb lebendig.
+Genau so ist es im Betrieb passiert. Im Zugriffsprotokoll steht es
+unmissverständlich:
+
+```
+200  GET  /js/sitzung.js     aus der Seite heraus: Zugangsdaten dabei
+200  POST /api/session
+401  GET  /sw.js             als Worker-Skript: keine Zugangsdaten
+403  GET  /api/song/2/txt    also fehlt danach ueberall die Sitzung
+```
+
+Preisgegeben wird durch die Ausnahme nichts: In beiden Dateien stehen nur
+ChaCha20 und die Wegewahl, kein Schlüssel. Die Lieder bleiben hinter der
+Anmeldung — und zusätzlich hinter der Sitzung, die es nur über
+`/api/session` gibt. Die eigenen Abrufe des Dienstarbeiters tragen die
+Zugangsdaten übrigens weiterhin; nachgemessen mit einem
+Basic-Auth-Vorschaltserver davor.
+
+Wer das nicht will, muss den Dienstarbeiter als **klassisches** Skript
+anmelden statt als Modul — dann schickt der Browser die Zugangsdaten von
+selbst. Das setzt voraus, dass `js/krypto.js` ohne ES-Module auskommt, und
+die Tests laden es genau so.
 
 Alle Adressen im Browser werden gegen eine **bereinigte Basis** aufgelöst.
 Wer die Seite mit Zugangsdaten in der Adresse aufruft — also
