@@ -316,21 +316,49 @@ export class Game {
     return this.song;
   }
 
-  // Haengt Ton und Bild an die Elemente. Erst hier, nicht beim Auswaehlen.
+  // Haengt Ton, Video und Hintergrundbild an die Elemente.
   //
-  // Der Durchgang in der Adresse zaehlt die Auffuehrung, siehe
-  // durchgangFuer(): Er entsteht beim Antippen von "Singen" neu und
-  // ueberlebt ein Neuladen mitten im Lied.
+  // Gerufen beim Betreten der BUEHNE, nicht erst beim Tippen auf "Los
+  // geht's": Bis dahin stand dort sonst noch das Bild des vorigen Liedes,
+  // und der Ton begann erst nach dem Tippen zu laden.
+  //
+  // In der Liste passiert weiterhin nichts - dort wird hin und her getippt,
+  // und jedes Antippen haette ein paar Megabyte gekostet.
+  //
+  // OHNE Durchgang in der Adresse: Gezaehlt wird getrennt, siehe
+  // zaehleAuffuehrung(). Wer die Buehne betritt und es sich anders
+  // ueberlegt, hat nicht gesungen.
   bereiteMedien() {
     const index = this.geladenerIndex;
     if (index === null || index === undefined || !this.song) return;
-    const quelle = pfad(
-      `/api/song/${index}/audio?lauf=${encodeURIComponent(durchgangFuer(index))}`);
+    const quelle = pfad(`/api/song/${index}/audio`);
     // Nur neu setzen, wenn sich wirklich etwas aendert: Ein erneutes
     // Zuweisen derselben Adresse wirft den Puffer weg und laedt von vorne -
     // bei "Nochmal singen" waere das jedes Mal das ganze Lied.
     if (this.audio.src !== quelle) this.audio.src = quelle;
     this.bereiteHintergrund(index, this.song);
+  }
+
+  // Meldet dem Server, dass dieses Lied jetzt wirklich gesungen wird.
+  //
+  // Ein Byte genuegt: Der Server zaehlt beim ersten Ton-Byte, das zu einem
+  // Durchgang gehoert (siehe UWebZaehler.Zaehle), und mehr als das erste
+  // braucht es dafuer nicht. Der Rest des Liedes liegt laengst im Puffer und
+  // wird davon nicht angeruehrt.
+  //
+  // Getrennt vom Vorladen, weil beides verschiedene Fragen beantwortet:
+  // "hol schon mal" und "es wird gesungen". Haengte der Durchgang an der
+  // Vorlade-Adresse, zaehlte schon das Betreten der Buehne - und wer wieder
+  // hinausgeht und erneut hineinkommt, zaehlte zweimal.
+  zaehleAuffuehrung() {
+    const index = this.geladenerIndex;
+    if (index === null || index === undefined) return;
+    const adresse = pfad(`/api/song/${index}/audio?lauf=` +
+                         encodeURIComponent(durchgangFuer(index)));
+    // Ohne await: Die Zaehlung darf das Losgehen nie aufhalten, und ob sie
+    // ankommt, aendert am Singen nichts.
+    fetch(adresse, { headers: { Range: 'bytes=0-0' }, cache: 'no-store' })
+      .catch(() => { /* gezaehlt wird dann eben nicht */ });
   }
 
   // Blendet die Lautstaerke der Vorschau ueber DAUER Millisekunden auf ZIEL.
@@ -551,10 +579,14 @@ export class Game {
   async start(besetzung, schwierigkeit = LEICHT, seekSekunden = 0) {
     if (!this.song) return;
 
-    // Jetzt erst Ton und Video holen - vorher stand in der Liste nur die
-    // Vorschau zur Verfuegung. Zuerst angestossen, damit waehrend der
-    // Mikrofonfreigabe darunter schon geladen wird.
+    // Normalerweise haengt beides schon am Element - die Buehne hat es beim
+    // Betreten vorbereitet. Hier noch einmal fuer den Fall, dass start()
+    // ohne diesen Weg gerufen wird (etwa aus dem Zustand in der Adresse);
+    // ist die Quelle dieselbe, passiert nichts.
     this.bereiteMedien();
+
+    // Ab hier gilt es als gesungen.
+    this.zaehleAuffuehrung();
 
     const belegt = new Set();
     for (const b of besetzung) {

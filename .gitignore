@@ -63,6 +63,9 @@ ppaslink.sh
 /game/config.ini
 /game/*.db
 /game/*.log
+# Laufzeitdaten der Weboberflaeche: wann welches Lied gesungen wurde.
+/game/web-gesungen.tsv
+/game/web-zaehler.tsv
 /game/ultrastardx
 
 # created by dldlls.py on Windows

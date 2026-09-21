@@ -1057,6 +1057,14 @@ sind Voraussetzung:
   Rest). Sonst lud jedes Antippen in der Liste ein paar Megabyte — und weil
   beim ersten Byte gezählt wird, galt schon das als gesungen.
 
+Das Vorladen auf der Bühne trägt deshalb **keinen** Durchgang in der
+Adresse: Wer die Bühne betritt und es sich anders überlegt, hat nicht
+gesungen, und wer zweimal hineingeht, hat nicht zweimal gesungen. Gemeldet
+wird getrennt, beim Tippen auf „Los geht's" — `zaehleAuffuehrung()` holt ein
+einzelnes Byte (`Range: bytes=0-0`) unter der Adresse **mit** Durchgang. Mehr
+braucht es nicht: Gezählt wird beim ersten Ton-Byte, das zu einem Durchgang
+gehört, und der Rest des Liedes liegt da längst im Puffer.
+
 Unterschieden werden Aufführungen am **Durchgang** — einer Kennung, die der
 Browser beim Beginn des Singens würfelt und in den `sessionStorage` legt.
 Daraus ergeben sich die drei Regeln von selbst:

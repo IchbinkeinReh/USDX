@@ -183,7 +183,7 @@ const laden = await werte(`(async () => {
     noten: !!g.song,
   };
   g.bereiteMedien();
-  return { nachAuswahl, nachStart: { src: g.audio.src } };
+  return { nachAuswahl, nachBuehne: { src: g.audio.src } };
 })()`);
 
 check('Noten sind nach dem Auswaehlen da',
@@ -192,11 +192,37 @@ check('aber der Ton haengt noch nicht am Element',
       laden.nachAuswahl.src === '', JSON.stringify(laden.nachAuswahl));
 check('und es wurde nichts von Ton oder Video geholt',
       laden.nachAuswahl.abrufe === 0, JSON.stringify(laden.nachAuswahl));
-check('erst beim Singen kommt der Ton dazu',
-      /\/api\/song\/0\/audio/.test(laden.nachStart.src), JSON.stringify(laden.nachStart));
-// Ohne Durchgang zaehlt der Server nicht (siehe UWebZaehler.Zaehle).
+check('auf der Buehne kommt der Ton dazu',
+      /\/api\/song\/0\/audio/.test(laden.nachBuehne.src),
+      JSON.stringify(laden.nachBuehne));
+// Das Vorladen darf NICHT zaehlen: Wer die Buehne betritt und es sich
+// anders ueberlegt, hat nicht gesungen. Gezaehlt wird getrennt, siehe
+// zaehleAuffuehrung().
+check('aber noch ohne Durchgang, zaehlt also nicht',
+      !/[?&]lauf=/.test(laden.nachBuehne.src), JSON.stringify(laden.nachBuehne));
+
+// Und beim tatsaechlichen Losgehen muss die Meldung rausgehen, sonst
+// erschiene das Lied nie in web-gesungen.tsv.
+const zaehlung = await werte(`(async () => {
+  const m = await import('/js/game.js');
+  const g = new m.Game(document.createElement('canvas'), {
+    titel: document.createElement('div'),
+    hinweis: { textContent: '' },
+    video: null, bild: null,
+  });
+  await g.ladeLied(0);
+  const vorher = performance.getEntriesByType('resource').length;
+  g.zaehleAuffuehrung();
+  await new Promise((r) => setTimeout(r, 1500));
+  const neu = performance.getEntriesByType('resource')
+    .slice(vorher).map((e) => e.name)
+    .filter((n) => /\\/api\\/song\\/0\\/audio/.test(n));
+  return { neu };
+})()`);
+check('beim Losgehen wird die Auffuehrung gemeldet',
+      zaehlung.neu.length === 1, JSON.stringify(zaehlung));
 check('und zwar mit Durchgangskennung',
-      /[?&]lauf=[^&]+/.test(laden.nachStart.src), JSON.stringify(laden.nachStart));
+      /[?&]lauf=[^&]+/.test(zaehlung.neu[0] || ''), JSON.stringify(zaehlung));
 
 console.log('Vorschau');
 

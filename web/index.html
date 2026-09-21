@@ -638,6 +638,9 @@ async function folgeZiel(ziel) {
     ergebnisseite.classList.add('aus');
     auswahl.classList.add('aus');
     buehne.classList.remove('aus');
+    // Siehe oben: Bild und Ton gehoeren auf die Buehne, nicht erst hinter
+    // den Startknopf.
+    spiel.bereiteMedien();
     $('startflaeche').style.display = 'flex';
     $('startnotiz').textContent = 'Antippen, sobald der Hinweis des Browsers weg ist.';
     el.hinweis.textContent = '';
@@ -1260,6 +1263,9 @@ $('singen').addEventListener('click', async () => {
   auswahl.classList.add('aus');
   zeigeLeiste(false);
   buehne.classList.remove('aus');
+  // Ton, Video und Hintergrundbild jetzt holen, nicht erst beim Tippen auf
+  // "Los geht's" - sonst stand hier noch das Bild des vorigen Liedes.
+  spiel.bereiteMedien();
   $('startflaeche').style.display = 'flex';
   $('startnotiz').textContent = 'Antippen, sobald der Hinweis des Browsers weg ist.';
   el.hinweis.textContent = '';
@@ -1384,6 +1390,9 @@ $('nochmal').addEventListener('click', async () => {
   if (binHost) await lobbyClient.setzeZiel('buehne');
   ergebnisseite.classList.add('aus');
   buehne.classList.remove('aus');
+  // Ton, Video und Hintergrundbild jetzt holen, nicht erst beim Tippen auf
+  // "Los geht's" - sonst stand hier noch das Bild des vorigen Liedes.
+  spiel.bereiteMedien();
   $('startflaeche').style.display = 'flex';
   $('startnotiz').textContent = 'Antippen, sobald der Hinweis des Browsers weg ist.';
   el.hinweis.textContent = '';
