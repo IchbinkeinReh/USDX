@@ -1047,9 +1047,15 @@ steht trotzdem daneben, damit „wie oft" nicht bedeutet, zehntausende Zeilen
 zu lesen.
 
 Gezählt wird **beim ersten Byte Ton**, das an einen Sänger geht. Dass das
-nicht schon beim Durchblättern der Liste passiert, ist der zweite Grund für
-den eigenen Vorschau-Endpunkt: Vorher lief die Vorschau über `/audio`, und
-jedes Antippen eines Liedes hätte als Aufführung gezählt.
+nicht schon beim Durchblättern der Liste passiert, hat zwei Gründe, und beide
+sind Voraussetzung:
+
+- Die Vorschau läuft über einen **eigenen Endpunkt**. Vorher lief sie über
+  `/audio`, und jedes Antippen eines Liedes hätte als Aufführung gezählt.
+- Ton und Video hängen erst **beim Betreten der Bühne** am Element, nicht
+  schon beim Auswählen (`ladeLied` lädt nur die Noten, `bereiteMedien` den
+  Rest). Sonst lud jedes Antippen in der Liste ein paar Megabyte — und weil
+  beim ersten Byte gezählt wird, galt schon das als gesungen.
 
 Unterschieden werden Aufführungen am **Durchgang** — einer Kennung, die der
 Browser beim Beginn des Singens würfelt und in den `sessionStorage` legt.

@@ -156,6 +156,48 @@ check('Wiedergabe laeuft an', ton.spiel === 'ok' && ton.laeuft === true,
 check('und die Abspielposition laeuft weiter',
       ton.nachher > ton.vorher, JSON.stringify(ton));
 
+console.log('Nichts vorladen, solange niemand singt');
+
+// In der Liste wird hin und her getippt. Haengt dabei schon die Tondatei am
+// Element, laufen je Antippen ein paar Megabyte los - und schlimmer: Gezaehlt
+// wird beim ersten Byte Ton, das blosse Antippen galt also als Auffuehrung.
+const laden = await werte(`(async () => {
+  const m = await import('/js/game.js');
+  const g = new m.Game(document.createElement('canvas'), {
+    titel: document.createElement('div'),
+    hinweis: { textContent: '' },
+    video: null, bild: null,
+  });
+  // Gezaehlt wird nur, was WAEHREND des Ladens dazukommt - die Pruefungen
+  // weiter oben haben selbst schon Ton geholt und stuenden sonst mit drin.
+  const medienAbrufe = () => performance.getEntriesByType('resource')
+    .map((e) => e.name)
+    .filter((n) => /\\/api\\/song\\/0\\/(audio|video)/.test(n)).length;
+  const vorher = medienAbrufe();
+  await g.ladeLied(0);
+  // Ein Abruf braucht einen Moment, bis er in der Liste steht.
+  await new Promise((r) => setTimeout(r, 1500));
+  const nachAuswahl = {
+    src: g.audio.src,
+    abrufe: medienAbrufe() - vorher,
+    noten: !!g.song,
+  };
+  g.bereiteMedien();
+  return { nachAuswahl, nachStart: { src: g.audio.src } };
+})()`);
+
+check('Noten sind nach dem Auswaehlen da',
+      laden.nachAuswahl.noten === true, JSON.stringify(laden));
+check('aber der Ton haengt noch nicht am Element',
+      laden.nachAuswahl.src === '', JSON.stringify(laden.nachAuswahl));
+check('und es wurde nichts von Ton oder Video geholt',
+      laden.nachAuswahl.abrufe === 0, JSON.stringify(laden.nachAuswahl));
+check('erst beim Singen kommt der Ton dazu',
+      /\/api\/song\/0\/audio/.test(laden.nachStart.src), JSON.stringify(laden.nachStart));
+// Ohne Durchgang zaehlt der Server nicht (siehe UWebZaehler.Zaehle).
+check('und zwar mit Durchgangskennung',
+      /[?&]lauf=[^&]+/.test(laden.nachStart.src), JSON.stringify(laden.nachStart));
+
 console.log('Vorschau');
 
 // Der Schnipsel ist eine eigene Datei mit eigenem Endpunkt. Er muss

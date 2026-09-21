@@ -157,6 +157,9 @@ export class Game {
     this.vorschauAudio.volume = 0;
     this._vorschauGen = 0;
     this.song = null;
+    // Welches Lied geladen ist. Gebraucht, weil Ton und Video erst beim
+    // Singen angehaengt werden und die Nummer dann noch zur Hand sein muss.
+    this.geladenerIndex = null;
     this.saenger = [];      // [{ trackIndex, scorer, analyser, puffer, sungMidi }]
     this.ctx = null;
     this.laeuft = false;
@@ -289,6 +292,17 @@ export class Game {
 
   get pausiert() { return this.laeuft && this.audio.paused; }
 
+  // Laedt NUR die Noten - kein Ton, kein Video.
+  //
+  // Beides haengt erst in start() am Element (siehe bereiteMedien). In der
+  // Liste wird hin und her getippt; wuerde hier schon die Tondatei gesetzt,
+  // liefe bei jedem Antippen ein paar Megabyte los, und das Video kaeme
+  // obendrauf. Gehoert hat man davon nichts - die Vorschau ist eine eigene,
+  // viel kleinere Datei.
+  //
+  // Und es waere schlimmer als nur Verkehr: Gezaehlt wird beim ersten Byte
+  // Ton (siehe UWebZaehler). Das blosse Antippen eines Liedes galt damit als
+  // Auffuehrung.
   async ladeLied(index) {
     const txt = await fetch(pfad(`/api/song/${index}/txt`)).then((r) => {
       if (!r.ok) throw new Error('Lied nicht ladbar');
@@ -297,12 +311,26 @@ export class Game {
     this.song = parseSong(txt);   // wirft bei kaputten Spurwechseln
     // Einmal berechnen, nicht je Bild - das sind alle Zeilen des Liedes.
     this.abschnitte = singAbschnitte(this.song);
-    // Der Durchgang zaehlt die Auffuehrung, siehe durchgangFuer().
-    this.audio.src = pfad(
-      `/api/song/${index}/audio?lauf=${encodeURIComponent(durchgangFuer(index))}`);
+    this.geladenerIndex = index;
     this.el.titel.textContent = `${this.song.artist} – ${this.song.title}`;
-    this.bereiteHintergrund(index, this.song);
     return this.song;
+  }
+
+  // Haengt Ton und Bild an die Elemente. Erst hier, nicht beim Auswaehlen.
+  //
+  // Der Durchgang in der Adresse zaehlt die Auffuehrung, siehe
+  // durchgangFuer(): Er entsteht beim Antippen von "Singen" neu und
+  // ueberlebt ein Neuladen mitten im Lied.
+  bereiteMedien() {
+    const index = this.geladenerIndex;
+    if (index === null || index === undefined || !this.song) return;
+    const quelle = pfad(
+      `/api/song/${index}/audio?lauf=${encodeURIComponent(durchgangFuer(index))}`);
+    // Nur neu setzen, wenn sich wirklich etwas aendert: Ein erneutes
+    // Zuweisen derselben Adresse wirft den Puffer weg und laedt von vorne -
+    // bei "Nochmal singen" waere das jedes Mal das ganze Lied.
+    if (this.audio.src !== quelle) this.audio.src = quelle;
+    this.bereiteHintergrund(index, this.song);
   }
 
   // Blendet die Lautstaerke der Vorschau ueber DAUER Millisekunden auf ZIEL.
@@ -330,10 +358,13 @@ export class Game {
     });
   }
 
-  // Wartet, bis die Dauer des Schnipsels bekannt ist. Gebraucht wird sie
-  // nur noch, um eine von der Lobby vorgegebene Stelle zu pruefen - und um
-  // ueberhaupt zu merken, dass die Datei ladbar war.
-  _vorschauDauerAbwarten(audio) {
+  // Wartet, bis die Kopfdaten eines Tonelements gelesen sind.
+  //
+  // Fuer beide Elemente: beim Schnipsel, um eine von der Lobby vorgegebene
+  // Stelle pruefen zu koennen, beim Lied, um vor dem Springen die Dauer zu
+  // kennen. Und in beiden Faellen, um ueberhaupt zu merken, dass die Datei
+  // ladbar war.
+  _dauerAbwarten(audio) {
     return new Promise((resolve, reject) => {
       if (audio.readyState >= 1 && audio.duration > 0) { resolve(); return; }
       const weg = () => {
@@ -392,7 +423,7 @@ export class Game {
     audio.load();
 
     try {
-      await this._vorschauDauerAbwarten(audio);
+      await this._dauerAbwarten(audio);
     } catch (e) {
       return 'fehler';
     }
@@ -520,6 +551,11 @@ export class Game {
   async start(besetzung, schwierigkeit = LEICHT, seekSekunden = 0) {
     if (!this.song) return;
 
+    // Jetzt erst Ton und Video holen - vorher stand in der Liste nur die
+    // Vorschau zur Verfuegung. Zuerst angestossen, damit waehrend der
+    // Mikrofonfreigabe darunter schon geladen wird.
+    this.bereiteMedien();
+
     const belegt = new Set();
     for (const b of besetzung) {
       if (b.deviceId && belegt.has(b.deviceId))
@@ -564,6 +600,18 @@ export class Game {
     this.el.hinweis.textContent = hinweise.length
       ? hinweise.join(' · ') + ' - wird nicht gewertet.'
       : '';
+
+    // Auf die Kopfdaten warten, bevor gesprungen wird.
+    //
+    // Der Ton haengt erst seit bereiteMedien() am Element und ist meist noch
+    // am Laden. Ein currentTime davor gilt nur als Wunsch fuer den Start -
+    // fuer das Zurueckspulen bei "Nochmal singen" reicht das, fuer eine
+    // Lobby, die mitten im Lied dazukommt, nicht.
+    try {
+      await this._dauerAbwarten(this.audio);
+    } catch (e) {
+      // Laesst sich der Ton nicht laden, faellt das unten beim play() auf.
+    }
 
     // Von vorne beginnen (oder auf die vorgegebene Stelle, siehe
     // seekSekunden) - sonst haengt bei "Nochmal singen" die Zeit vom
