@@ -103,14 +103,26 @@ export async function starteSitzung() {
   if (!('serviceWorker' in navigator))
     throw new Error('Dieser Browser kennt keine Dienstarbeiter.');
 
-  sitzung = await holeSitzung();
+  // Beides GLEICHZEITIG anstossen, und die Anmeldung zuerst.
+  //
+  // Vorher wartete die Anmeldung auf die Antwort von /api/session - eine
+  // Netzrunde, die sie gar nicht braucht: Den Schluessel bekommt der
+  // Dienstarbeiter hinterher zugeschickt, und fragt er vorher danach,
+  // antwortet beantworteNachfragen(). Hintereinander war er damit um genau
+  // diese Runde spaeter da als noetig, und auf einer langsamen Verbindung
+  // ist das die Zeit, in der die Liste schon dasteht.
   beantworteNachfragen();
+  const anmeldung = meldeAn();
+  const holen = holeSitzung();
+  // Beide gelten als behandelt, auch wenn wir gleich an der einen
+  // aussteigen: Sonst meldete der Browser die andere als unbehandelte
+  // Zurueckweisung. Am spaeteren await aendert das nichts.
+  anmeldung.catch(() => {});
+  holen.catch(() => {});
 
-  // Als Modul angemeldet, weil sw.js selbst importiert. Der Geltungsbereich
-  // ergibt sich aus dem Ort der Datei - deshalb liegt sie an der Wurzel und
-  // nicht unter js/, sonst saehe sie /api/song/... gar nicht.
-  const reg = await meldeAn();
+  const reg = await anmeldung;
   await navigator.serviceWorker.ready;
+  sitzung = await holen;
 
   const worker = reg.active || navigator.serviceWorker.controller;
   if (!worker) throw new Error('Dienstarbeiter ist nicht angelaufen.');
