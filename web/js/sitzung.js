@@ -56,6 +56,42 @@ function beantworteNachfragen() {
   });
 }
 
+// Meldet den Dienstarbeiter an - und gibt nicht beim ersten Nein auf.
+//
+// Als Modul angemeldet, weil sw.js selbst importiert. Der Geltungsbereich
+// ergibt sich aus dem Ort der Datei - deshalb liegt sie an der Wurzel und
+// nicht unter js/, sonst saehe sie /api/song/... gar nicht.
+//
+// Warum ueberhaupt Versuche: Chrome bricht die Anmeldung gelegentlich mit
+// "Operation has been aborted" ab, wenn im Browser noch eine alte, kaputte
+// Anmeldung fuer denselben Geltungsbereich liegt - etwa eine, die frueher
+// an einer 401 gescheitert ist. Der zweite Versuch raeumt sie deshalb weg.
+// Ohne das bleibt die Seite dauerhaft tot, und niemand kaeme darauf, dass
+// ein "Websitedaten loeschen" hilft.
+async function meldeAn() {
+  let letzter;
+  for (let versuch = 0; versuch < 3; versuch++) {
+    if (versuch === 2) {
+      // Letzter Versuch: erst die alte Anmeldung wegraeumen.
+      try {
+        const alt = await navigator.serviceWorker.getRegistration();
+        if (alt) await alt.unregister();
+      } catch (e) { /* dann eben nicht */ }
+    }
+    try {
+      return await navigator.serviceWorker.register(pfad('/sw.js'),
+                                                    { type: 'module' });
+    } catch (e) {
+      letzter = e;
+      await new Promise((r) => setTimeout(r, 250 * (versuch + 1)));
+    }
+  }
+  throw new Error(
+    `Dienstarbeiter liess sich nicht anmelden (${letzter && letzter.message}). ` +
+    'Hilft ein Neuladen nicht, in den Browsereinstellungen die Websitedaten ' +
+    'dieser Seite loeschen.');
+}
+
 // Stellt alles auf. Wirft, wenn es nicht geht - der Aufrufer zeigt das dann
 // an, statt das Lied stumm scheitern zu lassen.
 export async function starteSitzung() {
@@ -73,8 +109,7 @@ export async function starteSitzung() {
   // Als Modul angemeldet, weil sw.js selbst importiert. Der Geltungsbereich
   // ergibt sich aus dem Ort der Datei - deshalb liegt sie an der Wurzel und
   // nicht unter js/, sonst saehe sie /api/song/... gar nicht.
-  const reg = await navigator.serviceWorker.register(pfad('/sw.js'),
-                                                    { type: 'module' });
+  const reg = await meldeAn();
   await navigator.serviceWorker.ready;
 
   const worker = reg.active || navigator.serviceWorker.controller;
