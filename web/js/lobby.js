@@ -530,6 +530,21 @@ export class LobbyClient {
     }
   }
 
+  // Karaoke (ohne Gesang) oder Original fuer das gewaehlte Lied (nur
+  // Ersteller). Gilt fuer alle gleich - jedes Geraet spielt seinen Ton
+  // lokal ab, waeren sie uneins, hoerte man im selben Raum zwei
+  // verschiedene Abmischungen uebereinander.
+  async setzeKaraoke(an) {
+    if (!this._code) return false;
+    const p = new URLSearchParams({ token: this.token, an: an ? '1' : '0' });
+    try {
+      const antwort = await anfrage(`/api/lobby/${this._code}/karaoke?${p}`, 'POST');
+      return antwort.ok;
+    } catch (e) {
+      return false;
+    }
+  }
+
   // Sagt der Lobby, ab wann die Vorschau laeuft (nur Ersteller).
   async vorschau(serverStartMs) {
     if (!this._code) return false;

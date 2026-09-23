@@ -160,6 +160,11 @@ export class Game {
     // Welches Lied geladen ist. Gebraucht, weil Ton und Video erst beim
     // Singen angehaengt werden und die Nummer dann noch zur Hand sein muss.
     this.geladenerIndex = null;
+    // Karaoke (ohne Gesang) statt der normalen Tonspur - siehe ladeLied()
+    // und _tonWeg(). hatKaraoke sagt, ob es das fuer DIESES Lied ueberhaupt
+    // gibt; karaokeGewuenscht, was gerade gewaehlt ist.
+    this.hatKaraoke = false;
+    this.karaokeGewuenscht = false;
     this.saenger = [];      // [{ trackIndex, scorer, analyser, puffer, sungMidi }]
     this.ctx = null;
     this.laeuft = false;
@@ -304,16 +309,34 @@ export class Game {
   // Ton (siehe UWebZaehler). Das blosse Antippen eines Liedes galt damit als
   // Auffuehrung.
   async ladeLied(index) {
-    const txt = await fetch(pfad(`/api/song/${index}/txt`)).then((r) => {
-      if (!r.ok) throw new Error('Lied nicht ladbar');
-      return r.text();
-    });
+    const antwort = await fetch(pfad(`/api/song/${index}/txt`));
+    if (!antwort.ok) throw new Error('Lied nicht ladbar');
+    const txt = await antwort.text();
     this.song = parseSong(txt);   // wirft bei kaputten Spurwechseln
     // Einmal berechnen, nicht je Bild - das sind alle Zeilen des Liedes.
     this.abschnitte = singAbschnitte(this.song);
     this.geladenerIndex = index;
+    // Ob es eine Karaoke-Tonspur gibt, reist als Kopfzeile mit derselben
+    // Antwort mit (siehe UWebServer.pas) - kein zweiter Umweg fuer eine
+    // Frage, die der Server ohnehin schon beantwortet, waehrend er die
+    // Noten ausliefert. Der Dienstarbeiter reicht Kopfzeilen unveraendert
+    // durch, die Verschluesselung steht also nicht im Weg.
+    this.hatKaraoke = antwort.headers.get('X-Karaoke') === '1';
+    // Voreinstellung: Karaoke, sofern es sie gibt. Wird ueberschrieben,
+    // sobald jemand am Dropdown dreht (Ersteller) oder eine Lobby ihre
+    // eigene Wahl meldet (Gast) - beides in index.html, nicht hier, denn
+    // nur dort steht die Oberflaeche.
+    this.karaokeGewuenscht = this.hatKaraoke;
     this.el.titel.textContent = `${this.song.artist} – ${this.song.title}`;
     return this.song;
+  }
+
+  // Welcher Weg fuer die eigentliche Tondatei gilt - 'audio' oder
+  // 'karaoke'. Eine Stelle fuer beide Nutzer (bereiteMedien,
+  // zaehleAuffuehrung), damit nie das eine die eine Spur laedt und das
+  // andere die andere zaehlt.
+  _tonWeg() {
+    return (this.karaokeGewuenscht && this.hatKaraoke) ? 'karaoke' : 'audio';
   }
 
   // Haengt Ton, Video und Hintergrundbild an die Elemente.
@@ -331,7 +354,7 @@ export class Game {
   bereiteMedien() {
     const index = this.geladenerIndex;
     if (index === null || index === undefined || !this.song) return;
-    const quelle = pfad(`/api/song/${index}/audio`);
+    const quelle = pfad(`/api/song/${index}/${this._tonWeg()}`);
     // Nur neu setzen, wenn sich wirklich etwas aendert: Ein erneutes
     // Zuweisen derselben Adresse wirft den Puffer weg und laedt von vorne -
     // bei "Nochmal singen" waere das jedes Mal das ganze Lied.
@@ -353,7 +376,7 @@ export class Game {
   zaehleAuffuehrung() {
     const index = this.geladenerIndex;
     if (index === null || index === undefined) return;
-    const adresse = pfad(`/api/song/${index}/audio?lauf=` +
+    const adresse = pfad(`/api/song/${index}/${this._tonWeg()}?lauf=` +
                          encodeURIComponent(durchgangFuer(index)));
     // Ohne await: Die Zaehlung darf das Losgehen nie aufhalten, und ob sie
     // ankommt, aendert am Singen nichts.

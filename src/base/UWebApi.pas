@@ -153,8 +153,10 @@ end;
 function DateiIstGeschuetzt(Art: TWebFileKind): boolean;
 begin
   // Der Vorschau-Schnipsel gehoert dazu: Er ist zwar nur eine halbe Minute,
-  // aber dreissigtausend halbe Minuten sind immer noch die Sammlung.
-  Result := Art in [wfkTxt, wfkAudio, wfkVideo, wfkPreview];
+  // aber dreissigtausend halbe Minuten sind immer noch die Sammlung. Die
+  // Karaoke-Tonspur ist ein vollstaendiges Lied wie wfkAudio selbst.
+  Result := Art in [wfkTxt, wfkAudio, wfkVideo, wfkPreview,
+                    wfkAudioInstrumental];
 end;
 
 function SchluesselFuerAnfrage(Sessions: TCryptoSessions;
@@ -203,6 +205,9 @@ begin
     else if (Name = 'background') then Art := wfkBackground
     else if (Name = 'cover')      then Art := wfkCover
     else if (Name = 'preview')    then Art := wfkPreview
+    // 'karaoke', nicht 'audio-instrumental' o.ae. - das Wort, mit dem der
+    // Anfordernde ohnehin schon denkt, direkt als Weg.
+    else if (Name = 'karaoke')    then Art := wfkAudioInstrumental
     else Exit;
 
     // -1 als Ausweichwert: StrToIntDef schluckt auch "3x" nicht, und ein
@@ -353,6 +358,7 @@ begin
   Result.Add('pausiert', Z.Pausiert);
   Result.Add('pausePosMs', Z.PausePosMs);
   Result.Add('vorschauStartMs', Z.VorschauStartMs);
+  Result.Add('karaoke', Z.Karaoke);
 
   SpielerListe := TJSONArray.Create;
   for I := 0 to High(Z.Spieler) do
@@ -398,7 +404,7 @@ var
   LobbySchraeg: integer;
   Since, ServerStartMs, Seq: int64;
   Punkte, MeldeBereit, MeldeSingt: integer;
-  FalscherToken, KeinLied, PauseAn: boolean;
+  FalscherToken, KeinLied, PauseAn, KaraokeAn: boolean;
   ReaktionsArt: TReaktionsArt;
   LobbyZiel: TLobbyZiel;
   Zustand: TLobbyZustand;
@@ -682,6 +688,27 @@ begin
             else if FalscherToken then
             begin
               Antwort.Add('error', 'nur der Ersteller darf pausieren');
+              Result := 403;
+            end
+            else
+              Antwort.Add('error', 'unbekannte Lobby');
+          end
+
+          else if (LobbyAktion = 'karaoke') then
+          begin
+            // Eigener, schlanker Weg statt an 'select' drangehaengt: Das
+            // setzt bei jedem Aufruf alle auf "nicht bereit" zurueck (siehe
+            // SelectSong), und allein die Tonspur zu wechseln soll niemanden
+            // aus der Bereitschaft werfen.
+            KaraokeAn := Query.Values['an'] <> '0';
+            if Lobby.SetKaraoke(LobbyCode, Token, KaraokeAn, FalscherToken) then
+            begin
+              Antwort.Add('karaoke', KaraokeAn);
+              Result := 200;
+            end
+            else if FalscherToken then
+            begin
+              Antwort.Add('error', 'nur der Ersteller waehlt die Tonspur');
               Result := 403;
             end
             else

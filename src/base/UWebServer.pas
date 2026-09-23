@@ -336,17 +336,29 @@ begin
           //
           // Am Ton haengt es, nicht an der Vorschau: Die Vorschau ist seit
           // dem eigenen Endpunkt sauber getrennt, und wer nur durch die
-          // Liste blaettert, hat nichts gesungen.
+          // Liste blaettert, hat nichts gesungen. Die Karaoke-Tonspur zaehlt
+          // GENAUSO wie die normale - gesungen wird so oder so, nur eben
+          // ohne die Gesangsspur der Aufnahme.
           //
           // Der Durchgang kommt vom Browser und ueberlebt dort ein
           // Neuladen. Damit zaehlt dasselbe Singen nur einmal, ein zweites
           // Singen desselben Liedes aber wieder - und drei Leute, die
           // dasselbe Lied singen, dreimal.
-          if (Schutz.Art = Ord(wfkAudio)) and
+          if (Schutz.Art in [Ord(wfkAudio), Ord(wfkAudioInstrumental)]) and
              (ARequest.QueryFields.Values['lauf'] <> '') and
              fBridge.SongInfo(Schutz.SongIndex, ZArtist, ZTitel) then
             fZaehler.Zaehle(ARequest.QueryFields.Values['lauf'],
                             Schutz.SongIndex, ZArtist, ZTitel);
+
+          // Ob es eine Karaoke-Tonspur gibt, reist mit der Notendatei mit -
+          // ein eigener Umweg ueber /api/songs waere eine zweite Anfrage fuer
+          // etwas, das der Browser ohnehin schon abruft. Der Dienstarbeiter
+          // reicht Kopfzeilen unveraendert durch (new Response(...,
+          // {headers: antwort.headers}) in sw.js), die Seite liest sie also
+          // trotz Verschluesselung.
+          if (Schutz.Art = Ord(wfkTxt)) then
+            AResponse.SetCustomHeader('X-Karaoke',
+              IfThen(fBridge.HatInstrumental(Schutz.SongIndex), '1', '0'));
 
           SendeDatei(Pfad, ContentType, Schluesseln, Key, Nonce,
                      ARequest, AResponse);

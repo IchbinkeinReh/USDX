@@ -270,6 +270,16 @@
         <option value="2">Schwer – auf den Punkt</option>
       </select>
     </div>
+    <!-- Nur sichtbar, wenn das Lied eine Karaoke-Tonspur hat (siehe
+         zeigeVersion()). Fuer Gaeste gesperrt: Alle in der Lobby hoeren
+         dieselbe Tonspur, sonst klaenge es im selben Raum doppelt. -->
+    <div class="stimme aus" id="versionZeile">
+      <label>Version</label>
+      <select id="version">
+        <option value="karaoke" selected>Karaoke – ohne Gesang</option>
+        <option value="normal">Original – mit Gesang</option>
+      </select>
+    </div>
     <div class="warnung" id="warnung"></div>
     <div class="reaktion_knoepfe aus" id="reaktion_knoepfe">
       <button id="reagieren_hoch">👍</button>
@@ -557,6 +567,15 @@ async function verarbeiteLobbyZustand(zustand) {
     zeigeLeiste(false);
     aktuellGeladen = null;
   }
+
+  // Version (Karaoke/Original): NACH einem moeglichen waehleLied() oben,
+  // sonst reichte hier noch der Standardwert des VORIGEN Liedes. Gilt fuer
+  // alle gleich - auch fuer den Ersteller selbst, etwa nach einem Neuladen
+  // der Seite, wo sonst kurz wieder der Standardwert des Liedes staende
+  // statt dem, was in der Lobby laengst vereinbart ist. Aendern kann daran
+  // trotzdem nur der Ersteller, siehe die 'change'-Behandlung von #version.
+  if (spiel.hatKaraoke) spiel.karaokeGewuenscht = !!zustand.karaoke;
+  zeigeVersion();
 
   // Andere Lobby? Dann faengt die Zaehlung von vorn an, und der alte Stand
   // sagt nichts mehr aus.
@@ -996,6 +1015,9 @@ $('zufall').addEventListener('click', async () => {
     if (!treffer.length) return;
     await waehleLied(treffer[0].index);
     lobbyClient.waehle(treffer[0].index);
+    // Siehe der Kommentar beim Listenklick: die Voreinstellung sofort
+    // mitteilen, statt bis zum naechsten Dropdown-Tastendruck zu warten.
+    if (spiel.hatKaraoke) lobbyClient.setzeKaraoke(spiel.karaokeGewuenscht);
     syncURL({ lied: treffer[0].index, singen: null }, { push: true });
   } catch (e) { /* Verbindung weg - der Knopf bleibt einfach ohne Wirkung */ }
 });
@@ -1081,6 +1103,29 @@ $('ergebnis_verlassen').addEventListener('click', lobbyVerlassen);
 
 $('reagieren_hoch').addEventListener('click', () => lobbyClient.reagiere('hoch'));
 $('reagieren_runter').addEventListener('click', () => lobbyClient.reagiere('runter'));
+
+// Zeigt die Versionswahl nur, wenn DIESES Lied ueberhaupt eine
+// Karaoke-Tonspur hat (spiel.hatKaraoke, gesetzt in ladeLied()). Der
+// Ersteller waehlt, Gaeste sehen nur mit - alle muessen dieselbe Tonspur
+// hoeren, sonst klaenge es im selben Raum doppelt (siehe setzeKaraoke() in
+// lobby.js). Aufgerufen sowohl nach dem Laden eines Liedes als auch bei
+// jeder Lobby-Abfrage, damit ein Umschalten des Erstellers bei allen
+// ankommt, auch ohne dass sich am Lied selbst etwas aendert.
+function zeigeVersion() {
+  $('versionZeile').classList.toggle('aus', !spiel.hatKaraoke);
+  if (!spiel.hatKaraoke) return;
+  $('version').value = spiel.karaokeGewuenscht ? 'karaoke' : 'normal';
+  $('version').disabled = !binHost;
+}
+
+$('version').addEventListener('change', () => {
+  if (!binHost) return;
+  spiel.karaokeGewuenscht = $('version').value === 'karaoke';
+  // Nicht abgewartet, wie lobbyClient.waehle() im Klick-Handler auch nicht:
+  // Das eigene Singen haengt nicht davon ab, ob die Meldung ankommt - nur
+  // davon, ob die anderen mithoeren, was gerade gilt.
+  lobbyClient.setzeKaraoke(spiel.karaokeGewuenscht);
+});
 
 function zeigeBesetzung(song) {
   $('stimmen').innerHTML = '';
@@ -1204,6 +1249,7 @@ async function waehleLied(index) {
       ? 'Duett – beide Stimmen zuordnen'
       : 'Zu zweit? Zweitem Sänger ein eigenes Mikrofon zuordnen.';
     zeigeBesetzung(song);
+    zeigeVersion();
     // Kein scrollIntoView mehr: Die Leiste steht ohnehin im Bild, und ein
     // Sprung waehrend des Nachladens riss die Liste unter dem Finger weg.
   } catch (err) {
@@ -1222,6 +1268,11 @@ $('liste').addEventListener('click', async (e) => {
   // die Liste heran (Gaeste sehen #durchsuchen gar nicht), ein Wachposten
   // ist trotzdem billig.
   lobbyClient.waehle(index);
+  // Die Voreinstellung DIESES Liedes (Karaoke, falls vorhanden) sofort
+  // mitteilen - sonst hoerten die anderen bis zum naechsten Tastendruck am
+  // Dropdown noch die Tonspur des VORIGEN Liedes, falls die zufaellig
+  // "Original" war.
+  if (spiel.hatKaraoke) lobbyClient.setzeKaraoke(spiel.karaokeGewuenscht);
   syncURL({ lied: index, singen: null }, { push: true });
 });
 

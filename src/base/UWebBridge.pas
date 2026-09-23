@@ -81,7 +81,7 @@ type
   // Browser (web/js/krypto.js). Wer hier umsortiert, macht jede laufende
   // Sitzung unbrauchbar.
   TWebFileKind = (wfkTxt, wfkAudio, wfkVideo, wfkBackground, wfkCover,
-                  wfkPreview);
+                  wfkPreview, wfkAudioInstrumental);
 
   // Vorbereitete Suchtexte zu einem Lied: kleingeschrieben und ins
   // ASCII-Alphabet umgeschrieben, damit "uber" auch "Über" findet.
@@ -145,6 +145,11 @@ type
       function  SongInfo(Index: integer;
                          out Artist, Titel: UTF8String): boolean;
 
+      // Ob es zu diesem Lied eine Karaoke-Tonspur gibt (Instrumentalversion
+      // ohne Gesang, "<Tondatei ohne Endung> [INSTR].m4a" im selben Ordner).
+      // Die Weboberflaeche zeigt die Auswahl nur dann ueberhaupt an.
+      function  HatInstrumental(Index: integer): boolean;
+
       // Die Arbeitsliste fuer den Vorschau-Bauer: je Lied mit Tondatei ein
       // Eintrag. Hier zusammengestellt und nicht beim Aufrufer, weil nur die
       // Bruecke die Abschrift unter ihrem Schloss kennt.
@@ -183,6 +188,27 @@ end;
 function SuchForm(const Text: UTF8String): UTF8String;
 begin
   Result := LowerCase(TransliterateToASCII(Text));
+end;
+
+// Pfad der Karaoke-Tonspur zu einer Tondatei - '', wenn es keine gibt.
+//
+// Liegt NEBEN der Tondatei, mit demselben Namen ohne deren Endung plus
+// " [INSTR].m4a" - so benennt sie das Werkzeug, mit dem die Sammlung hier
+// bestueckt wird, IMMER als .m4a, unabhaengig davon, ob die Hauptdatei
+// .m4a, .mp3 oder etwas anderes ist. Kein Hintergrundbau wie beim
+// Vorschau-Schnipsel (UWebVorschau) - die Datei liegt schon da oder eben
+// nicht, es gibt hier nichts zu erzeugen.
+function InstrumentalPfad(const AudioPath: UTF8String): UTF8String;
+var
+  Kandidat: UTF8String;
+begin
+  Result := '';
+  if (AudioPath = '') then Exit;
+  Kandidat := ExtractFilePath(AudioPath) +
+              ChangeFileExt(ExtractFileName(AudioPath), '') +
+              ' [INSTR].m4a';
+  if FileExists(Kandidat) then
+    Result := Kandidat;
 end;
 
 procedure TWebBridge.PublishSongs(const Songs: TWebSongArray);
@@ -357,11 +383,26 @@ begin
         // sondern aus ihrem Pfad gerechnet - er kann jederzeit entstehen,
         // waehrend der Bauer noch laeuft.
         wfkPreview:    Path := VorschauPfad(fSongs[Index].AudioPath);
+        // Ebenso nicht mitgefuehrt, sondern aus dem Pfad der Hauptdatei
+        // gerechnet - anders als die Vorschau entsteht sie nie im
+        // Hintergrund, sie liegt schon da oder eben nicht.
+        wfkAudioInstrumental: Path := InstrumentalPfad(fSongs[Index].AudioPath);
       else
         Path := fSongs[Index].TxtPath;
       end;
       Result := Path <> '';
     end;
+  finally
+    fLock.Release;
+  end;
+end;
+
+function TWebBridge.HatInstrumental(Index: integer): boolean;
+begin
+  fLock.Acquire;
+  try
+    Result := (Index >= 0) and (Index <= High(fSongs)) and
+              (InstrumentalPfad(fSongs[Index].AudioPath) <> '');
   finally
     fLock.Release;
   end;

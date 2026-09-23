@@ -27,7 +27,7 @@ import { LobbyClient,
          TOTZONE, SPRUNG_AB, MAX_RATE_ABWEICHUNG } from '../js/lobby.js';
 import { chacha20XOR, nonceForFile, hexToBytes, bytesToHex, geschuetzteDatei,
          startStelle, ART_TXT, ART_AUDIO, ART_VIDEO,
-         ART_PREVIEW } from '../js/krypto.js';
+         ART_PREVIEW, ART_AUDIO_INSTRUMENTAL } from '../js/krypto.js';
 
 // Aufzeichnender Ersatz fuer den Zeichenkontext. Zeichnen laesst sich hier
 // nicht pruefen - WAS gezeichnet wird und WIE GROSS aber schon, und genau
@@ -1841,10 +1841,18 @@ console.log('Verschluesselung');
   check('Noten ebenso', geschuetzteDatei('/api/song/3/txt')?.art === ART_TXT);
   check('Vorschau ebenso',
         geschuetzteDatei('/api/song/3/preview')?.art === ART_PREVIEW);
+  check('Karaoke-Tonspur ebenso',
+        geschuetzteDatei('/api/song/3/karaoke')?.art === ART_AUDIO_INSTRUMENTAL);
   // Vorschau und Ton sind verschiedene Dateien und brauchen deshalb
   // verschiedene Einmalwerte - sonst liefe derselbe Schluesselstrom zweimal.
   check('Vorschau und Ton bekommen verschiedene Einmalwerte',
         bytesToHex(nonceForFile(3, ART_PREVIEW)) !==
+        bytesToHex(nonceForFile(3, ART_AUDIO)));
+  // Ebenso Karaoke und normaler Ton: Sonst liefe fuer beide derselbe
+  // Schluesselstrom, und der bekannte Klartext der einen Spur verriete die
+  // andere.
+  check('Karaoke und normaler Ton bekommen verschiedene Einmalwerte',
+        bytesToHex(nonceForFile(3, ART_AUDIO_INSTRUMENTAL)) !==
         bytesToHex(nonceForFile(3, ART_AUDIO)));
   check('mit richtiger Liednummer',
         geschuetzteDatei('/api/song/42/audio')?.index === 42);

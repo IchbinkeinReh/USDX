@@ -128,6 +128,9 @@ begin
   // Der Schnipsel ist nur eine halbe Minute - dreissigtausend halbe Minuten
   // sind trotzdem die Sammlung.
   Check('Vorschau ist geschuetzt', DateiIstGeschuetzt(wfkPreview));
+  // Die Karaoke-Tonspur ist ein vollstaendiges Lied wie wfkAudio selbst.
+  Check('Karaoke-Tonspur ist geschuetzt',
+        DateiIstGeschuetzt(wfkAudioInstrumental));
   // Titelbilder und Hintergruende bleiben offen - sie haengen in der Liste
   // an tausenden <img>-Elementen.
   Check('Titelbild ist nicht geschuetzt', not DateiIstGeschuetzt(wfkCover));
@@ -556,6 +559,27 @@ begin
             TJSONObject(D).Strings['phase'] = 'singt');
   finally D.Free; end;
 
+  WriteLn('Karaoke oder Original');
+  Status := Ruf('/api/lobby/' + LobbyCode + '/karaoke',
+                ['token', 'host-tok', 'an', '0']);
+  Check('Umschalten liefert 200', Status = 200, IntToStr(Status));
+  D := GetJSON(Body);
+  try
+    Check('Antwort meldet karaoke:false',
+          not TJSONObject(D).Booleans['karaoke']);
+  finally D.Free; end;
+
+  Status := Ruf('/api/lobby/' + LobbyCode + '/state', ['token', 'host-tok']);
+  D := GetJSON(Body);
+  try
+    Check('und der Zustand zeigt es ebenso',
+          not TJSONObject(D).Booleans['karaoke']);
+  finally D.Free; end;
+
+  Status := Ruf('/api/lobby/' + LobbyCode + '/karaoke',
+                ['token', 'gast-tok', 'an', '1']);
+  Check('Gast darf nicht umschalten: 403', Status = 403, IntToStr(Status));
+
   WriteLn('Reaktionen');
   Status := Ruf('/api/lobby/' + LobbyCode + '/react',
                 ['token', 'gast-tok', 'art', 'hoch']);
@@ -594,6 +618,7 @@ begin
   Check('select: 404', Ruf('/api/lobby/999999/select', ['token','x','index','0']) = 404);
   Check('start: 404', Ruf('/api/lobby/999999/start', ['token','x','serverStartMs','1']) = 404);
   Check('react: 404', Ruf('/api/lobby/999999/react', ['token','x','art','hoch']) = 404);
+  Check('karaoke: 404', Ruf('/api/lobby/999999/karaoke', ['token','x','an','1']) = 404);
 
   WriteLn;
   WriteLn('Verschluesselung');

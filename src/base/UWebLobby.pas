@@ -81,6 +81,12 @@ type
     HostToken: UTF8String;      // NIE nach aussen (JSON) weitergeben!
     Spieler: array of TLobbySpieler;   // Spieler[i].Token ebenfalls geheim halten
     SongIndex: integer;         // -1 = nichts gewaehlt
+    // Welche Tonspur des gewaehlten Liedes laeuft: True = Karaoke (ohne
+    // Gesang, sofern das Lied eine hat), False = Original. Gilt fuer ALLE
+    // in der Lobby - jedes Geraet spielt seinen eigenen Ton lokal ab (siehe
+    // "Transport: Abfragen" in WEB.md), waeren die Geraete uneins, hoerte
+    // man im selben Raum zwei verschiedene Abmischungen uebereinander.
+    Karaoke: boolean;
     Phase: TLobbyPhase;
     Ziel: TLobbyZiel;
     // Zaehlt jedes Mal hoch, wenn der Ersteller ein Ziel vorgibt.
@@ -156,6 +162,14 @@ type
     // damit sie bei allen an derselben Stelle spielt.
     function SetVorschau(const Code, Token: UTF8String; StartMs: int64;
                         out FalscherToken: boolean): boolean;
+
+    // Karaoke (ohne Gesang) oder Original fuer das GEWAEHLTE Lied - gilt
+    // fuer alle gleich, siehe Karaoke in TLobbyZustand. Bewusst ein
+    // eigener, schlanker Weg statt an SelectSong drangehaengt: SelectSong
+    // setzt bei jedem Aufruf alle auf "nicht bereit" zurueck, und allein
+    // die Tonspur zu wechseln soll niemanden aus der Bereitschaft werfen.
+    function SetKaraoke(const Code, Token: UTF8String; An: boolean;
+                       out FalscherToken: boolean): boolean;
 
     function React(const Code, Token: UTF8String; Art: TReaktionsArt;
                    out Seq: int64): boolean;
@@ -305,6 +319,9 @@ begin
     Z.Spieler[0].Singt := False;
     Z.Spieler[0].LastSeen := Now;
     Z.SongIndex := -1;
+    // Voreinstellung, bis ein Lied gewaehlt ist - dann setzt der Client sie
+    // (siehe UWebApi "karaoke"-Weg) auf das, was fuer DIESES Lied gilt.
+    Z.Karaoke := True;
     Z.Phase := lphWartet;
     Z.Ziel := lzAuswahl;
     Z.ZielNr := 0;
@@ -632,6 +649,33 @@ begin
     end;
 
     fLobbies[Idx].VorschauStartMs := StartMs;
+    Inc(fLobbies[Idx].Revision);
+    Result := True;
+  finally
+    fLock.Release;
+  end;
+end;
+
+function TLobbyRegistry.SetKaraoke(const Code, Token: UTF8String; An: boolean;
+                                   out FalscherToken: boolean): boolean;
+var
+  Idx: integer;
+begin
+  Result := False;
+  FalscherToken := False;
+  fLock.Acquire;
+  try
+    Aufraeumen(Now);
+    Idx := IndexVonCode(Code);
+    if (Idx < 0) then Exit;
+
+    if (fLobbies[Idx].HostToken <> Token) then
+    begin
+      FalscherToken := True;
+      Exit;
+    end;
+
+    fLobbies[Idx].Karaoke := An;
     Inc(fLobbies[Idx].Revision);
     Result := True;
   finally

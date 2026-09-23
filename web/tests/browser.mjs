@@ -182,6 +182,11 @@ const laden = await werte(`(async () => {
     abrufe: medienAbrufe() - vorher,
     noten: !!g.song,
   };
+  // Dieser Test gilt dem ZEITPUNKT des Ladens, nicht der Tonspur - das
+  // Probelied hat inzwischen eine Karaoke-Version, deren eigenes Verhalten
+  // weiter unten geprueft wird (Abschnitt "Karaoke"). Ausdruecklich auf die
+  // normale Spur gestellt, damit dieser Test unabhaengig davon bleibt.
+  g.karaokeGewuenscht = false;
   g.bereiteMedien();
   return { nachAuswahl, nachBuehne: { src: g.audio.src } };
 })()`);
@@ -211,6 +216,9 @@ const zaehlung = await werte(`(async () => {
     video: null, bild: null,
   });
   await g.ladeLied(0);
+  // Siehe die gleiche Anmerkung beim vorigen Test: bewusst auf die normale
+  // Spur gestellt, unabhaengig von der Karaoke-Voreinstellung des Liedes.
+  g.karaokeGewuenscht = false;
   const vorher = performance.getEntriesByType('resource').length;
   g.zaehleAuffuehrung();
   await new Promise((r) => setTimeout(r, 1500));
@@ -223,6 +231,77 @@ check('beim Losgehen wird die Auffuehrung gemeldet',
       zaehlung.neu.length === 1, JSON.stringify(zaehlung));
 check('und zwar mit Durchgangskennung',
       /[?&]lauf=[^&]+/.test(zaehlung.neu[0] || ''), JSON.stringify(zaehlung));
+
+console.log('Karaoke');
+
+// Das Probelied hat seit tests/probelied/"ton [INSTR].m4a" eine
+// Karaoke-Tonspur - andere Dauer als ton.mp3 (6,08 s), damit sich anhand der
+// tatsaechlichen Wiedergabedauer nachweisen laesst, welche Datei wirklich
+// ankam, nicht nur, welche Adresse angefordert wurde.
+const kar = await werte(`(async () => {
+  const kopf = await fetch('/api/song/0/txt');
+  const m = await import('/js/game.js');
+  const g = new m.Game(document.createElement('canvas'), {
+    titel: document.createElement('div'),
+    hinweis: { textContent: '' },
+    video: null, bild: null,
+  });
+  await g.ladeLied(0);
+  const nachLaden = { hatKaraoke: g.hatKaraoke, karaokeGewuenscht: g.karaokeGewuenscht };
+
+  g.bereiteMedien();
+  await new Promise((ok) => {
+    const t = setTimeout(ok, 15000);
+    g.audio.addEventListener('loadedmetadata', () => { clearTimeout(t); ok(); }, { once: true });
+  });
+  const alsKaraoke = { src: g.audio.src, dauer: g.audio.duration };
+
+  g.karaokeGewuenscht = false;
+  g.bereiteMedien();
+  await new Promise((ok) => {
+    const t = setTimeout(ok, 15000);
+    g.audio.addEventListener('loadedmetadata', () => { clearTimeout(t); ok(); }, { once: true });
+  });
+  const alsNormal = { src: g.audio.src, dauer: g.audio.duration };
+
+  g.karaokeGewuenscht = true;
+  // Geleert statt nur gezaehlt: Bis hierher sind schon etliche Abrufe
+  // gelaufen (zwei volle Downloads oben, plus alles vor diesem Abschnitt im
+  // selben Testlauf) - der Ringpuffer fuer Ressourcen-Zeitmessung ist
+  // begrenzt, und ein Schnappschuss der LAENGE traf hier einmal knapp daneben,
+  // weil aeltere Eintraege schon herausgefallen waren. Leeren macht den
+  // naechsten Abruf eindeutig, egal wie voll der Puffer vorher war.
+  performance.clearResourceTimings();
+  g.zaehleAuffuehrung();
+  let gezaehlt = [];
+  for (let i = 0; i < 30; i++) {
+    gezaehlt = performance.getEntriesByType('resource').map((e) => e.name)
+      .filter((n) => /\\/api\\/song\\/0\\/karaoke/.test(n));
+    if (gezaehlt.length > 0) break;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+
+  return {
+    xKaraoke: kopf.headers.get('X-Karaoke'),
+    nachLaden, alsKaraoke, alsNormal, gezaehlt,
+  };
+})()`);
+
+check('X-Karaoke steht bei der Notendatei auf 1', kar.xKaraoke === '1', kar);
+check('hatKaraoke wird aus der Kopfzeile gesetzt',
+      kar.nachLaden.hatKaraoke === true, kar.nachLaden);
+check('Voreinstellung ist Karaoke', kar.nachLaden.karaokeGewuenscht === true,
+      kar.nachLaden);
+check('bereiteMedien() zeigt dann auf /karaoke',
+      /\/karaoke(\?|$)/.test(kar.alsKaraoke.src), kar.alsKaraoke);
+check('und liefert tatsaechlich die Instrumentalversion (8 s, nicht 6)',
+      Math.abs(kar.alsKaraoke.dauer - 8) < 0.5, kar.alsKaraoke);
+check('nach Umschalten zeigt bereiteMedien() auf /audio',
+      /\/audio(\?|$)/.test(kar.alsNormal.src), kar.alsNormal);
+check('und liefert wieder die normale Aufnahme (~6 s, nicht 8)',
+      Math.abs(kar.alsNormal.dauer - 6.084) < 0.5, kar.alsNormal);
+check('zaehleAuffuehrung() meldet die Auffuehrung unter /karaoke, wenn gewaehlt',
+      kar.gezaehlt.length === 1, kar);
 
 console.log('Vorschau');
 

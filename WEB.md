@@ -1083,6 +1083,74 @@ Warum nicht die Datenbank des Spiels: `UDataBase` hängt über `USong` und
 `USongs` an der Grafikkette und lässt sich im kopflosen Betrieb nicht einmal
 übersetzen. Außerdem kennt sie nur „wie oft", nicht „wann".
 
+## Karaoke: Original oder ohne Gesang
+
+Liegt neben einer Tondatei `<Name>.<Endung>` eine `<Name> [INSTR].m4a` —
+dieselbe Sammlung enthält davon rund ein Fünftel —, zeigt die Liedauswahl
+eine zweite Auswahl neben der Schwierigkeit: **Karaoke** (voreingestellt,
+sofern vorhanden) oder **Original**. `[INSTR]` ist die Schreibweise des
+Werkzeugs, mit dem die Sammlung hier bestückt wird — die Endung ist dabei
+immer `.m4a`, unabhängig davon, ob die Hauptdatei `.m4a`, `.mp3` oder etwas
+anderes ist.
+
+### Woher die Karaoke-Tonspur kommt
+
+`UWebBridge.InstrumentalPfad` rechnet den Pfad aus der Tondatei — kein
+zweites Feld in der Liederliste, keine Suche beim Veröffentlichen. Genau wie
+beim Vorschau-Schnipsel (`VorschauPfad`) entscheidet allein, ob die Datei
+**gerade jetzt** auf der Platte liegt; ein späteres Hinzufügen wirkt sofort,
+ohne dass irgendwo neu eingelesen werden müsste.
+
+Ausgeliefert wird sie über `/api/song/N/karaoke` — verschlüsselt wie
+`/audio`, mit eigenem Einmalwert (`wfkAudioInstrumental`, hinten an
+`TWebFileKind` angehängt, siehe die Warnung dort im Quelltext). 404, wenn es
+sie nicht gibt; **kein** Rückfall auf die normale Spur, damit die
+Weboberfläche nie eine falsche annimmt, ohne es zu merken.
+
+Ob es sie gibt, erfährt der Browser **ohne zweite Anfrage**: Die Antwort auf
+`/api/song/N/txt` trägt die Kopfzeile `X-Karaoke: 1` oder `0` — derselbe
+Abruf, den `ladeLied()` ohnehin macht. Der Dienstarbeiter reicht Kopfzeilen
+unverändert durch (`new Response(strom, { headers: antwort.headers })` in
+`sw.js`), die Verschlüsselung steht also nicht im Weg.
+
+### Wann sich der Browser für eine Spur entscheidet
+
+`bereiteMedien()` (siehe „Zählen, wann welches Lied gesungen wurde" oben)
+wählt zwischen `/audio` und `/karaoke` über `Game.karaokeGewuenscht` — und
+zwar dieselbe Stelle wie jede andere Medienvorbereitung: erst beim Betreten
+der **Bühne**, nie schon beim Antippen in der Liste. Die Auswahl selbst
+lebt in der `#vorbereitung`-Leiste, wo bislang nur die Schwierigkeit stand,
+und ist nur sichtbar, wenn `X-Karaoke: 1` kam.
+
+### Warum das eine LOBBY-Einstellung ist, keine persönliche
+
+Anders als die Schwierigkeit — die darf jeder für sich wählen, sie beeinflusst
+nur die eigene Wertung — hört **jedes Gerät seinen eigenen Ton** (siehe
+„Transport: Abfragen statt WebSocket" unten): Wären zwei Geräte im selben
+Raum uneins, liefe die Originalspur bei dem einen und die Karaoke-Spur beim
+anderen gleichzeitig — zwei verschiedene Abmischungen übereinander.
+
+Deshalb ist Karaoke/Original ein Feld in `TLobbyZustand`
+(`UWebLobby.SetKaraoke`), nicht nur lokaler Zustand im Browser: Nur der
+**Ersteller** ändert es (`POST /api/lobby/<code>/karaoke`), alle anderen
+übernehmen es aus dem abgefragten Zustand. Ein eigener, schlanker Weg statt
+an `SelectSong` drangehängt — das setzt bei jedem Aufruf alle auf „nicht
+bereit" zurück, und allein die Tonspur zu wechseln soll niemanden aus der
+Startbereitschaft werfen.
+
+Wählt der Ersteller ein **neues** Lied, schickt die Oberfläche die für
+dieses Lied frisch berechnete Voreinstellung sofort mit (`setzeKaraoke`
+direkt nach `waehle`) — sonst hörten die anderen bis zum nächsten
+Dropdown-Tastendruck noch die Tonspur des vorigen Liedes. Der Abgleich läuft
+danach bei **jeder** Abfrage weiter, auch für den Ersteller selbst: Nach
+einem Neuladen der Seite stünde sonst kurz wieder die Voreinstellung des
+Liedes, statt dem, was in der Lobby längst vereinbart ist.
+
+Gezählt wird die Karaoke-Aufführung genauso wie die normale — `lauf` gilt
+für beide Tonspuren gleich (`Schutz.Art in [Ord(wfkAudio),
+Ord(wfkAudioInstrumental)]` in `UWebServer.pas`): Gesungen wird so oder so,
+nur eben ohne die Gesangsspur der Aufnahme.
+
 ## Mehrspieler-Lobbys
 
 Jeder, der die Seite öffnet, bekommt automatisch eine eigene Lobby — im
@@ -1146,6 +1214,7 @@ Erstellers in dieser Fassung. Das nächste Poll eines Gasts bekommt dann ein
 | `GET /api/song/N/preview?sid=` | Vorschau-Schnipsel (30 s), verschlüsselt; 403 ohne Sitzung |
 | `GET /api/song/N/txt?sid=` | die Lieddatei, verschlüsselt; 403 ohne Sitzung |
 | `GET /api/song/N/audio?sid=&lauf=` | die Tondatei, verschlüsselt, mit `Range`; 403 ohne Sitzung. `lauf` zählt die Aufführung |
+| `GET /api/song/N/karaoke?sid=&lauf=` | dieselbe Tondatei ohne Gesang, sofern vorhanden; sonst 404 |
 | `GET /api/song/N/video?sid=` | das Video, verschlüsselt, mit `Range`; 404 wenn keins, 403 ohne Sitzung |
 | `GET /api/song/N/background` | das Hintergrundbild; 404 wenn keins |
 | `POST /api/lobby/create?token=&name=` | eigene Lobby erstellen |
@@ -1155,6 +1224,7 @@ Erstellers in dieser Fassung. Das nächste Poll eines Gasts bekommt dann ein
 | `POST /api/lobby/<code>/select?token=&index=` | Lied auswählen (nur Ersteller) |
 | `POST /api/lobby/<code>/start?token=&serverStartMs=` | Singen beginnen (nur Ersteller) |
 | `POST /api/lobby/<code>/react?token=&art=` | Daumen hoch/runter senden |
+| `POST /api/lobby/<code>/karaoke?token=&an=1\|0` | Original oder Karaoke fürs gewählte Lied (nur Ersteller) |
 
 ## Tests
 
@@ -1196,6 +1266,12 @@ sich der Schneide-Teil, statt fehlzuschlagen.
 desselben Durchgangs, ein Neuladen mit derselben Kennung, ein zweiter Sänger
 und ein zweites Singen.
 
+`testwebserver` legt einem Testlied eine echte `[INSTR]`-Datei mit eigenem
+Inhalt daneben und prüft `X-Karaoke`, den `/karaoke`-Weg (samt 404 ohne
+Datei) und dass auch diese Spur nicht im Klartext über die Leitung geht.
+`testweblobby` prüft `SetKaraoke`: nur der Ersteller darf, die Voreinstellung
+ist Karaoke, und ein Wechsel lässt die Bereitschaft der Mitspieler in Ruhe.
+
 ### Der Browsertest
 
 `tests/browser.sh` startet Server und Browser, `web/tests/browser.mjs`
@@ -1213,6 +1289,13 @@ Dazu gehört ein **eingecheckter Probeton**: `tests/probelied/` mit `ton.mp3`
 Erzeugt statt heruntergeladen, damit der Test nichts aus dem Netz braucht;
 bewusst nicht 8 kHz, denn das wäre MPEG-2.5 und damit die ausgefallenste
 MP3-Spielart, die nicht jeder Decoder mag.
+
+Daneben liegt `ton [INSTR].m4a` (AAC, 6 kbit/s, 8 s — rund 7 kB, absichtlich
+eine ANDERE Dauer als `ton.mp3`). Der Karaoke-Abschnitt weist damit nicht
+nur nach, dass `bereiteMedien()` die richtige *Adresse* wählt, sondern dass
+die tatsächlich abgespielte Datei die richtige *Dauer* hat — ein Test, der
+nur die URL prüft, könnte eine vertauschte Zuordnung nicht von einer
+richtigen unterscheiden.
 
 Der Test **überspringt sich selbst**, wenn kein Browser da ist — ein
 fehlender Browser ist kein Fehlschlag des Codes. Gesucht wird in dieser

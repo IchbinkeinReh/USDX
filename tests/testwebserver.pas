@@ -21,7 +21,7 @@ var
   B: TWebBridge;
   Lobby: TLobbyRegistry;
   S: TWebServerThread;
-  Ordner, Lied, Ton, Roh, Gross: string;
+  Ordner, Lied, Ton, Roh, Gross, Instr: string;
   I: integer;
   RohStrom: TFileStream;
   RohBytes: RawByteString;
@@ -170,6 +170,14 @@ begin
   AssignFile(F, Ton); Rewrite(F);
   Write(F, '0123456789'); CloseFile(F);   // 10 Zeichen, gut nachzurechnen
 
+  // Die Karaoke-Tonspur zu "lied.mp3" - Name ohne deren Endung plus
+  // " [INSTR].m4a", genau wie InstrumentalPfad (UWebBridge.pas) es
+  // zusammenbaut. Eigener, unterscheidbarer Inhalt, damit ein Test, der aus
+  // Versehen die falsche Datei liest, nicht zufaellig gruen bleibt.
+  Instr := Ordner + 'lied [INSTR].m4a';
+  AssignFile(F, Instr); Rewrite(F);
+  Write(F, 'KARAOKEBYTES'); CloseFile(F);   // 12 Zeichen
+
   // Zweite Datei mit den Bytes, an denen eine Textbehandlung scheitert:
   // Nullbyte, CR, LF. Eine echte MP3 ist voll davon.
   Roh := Ordner + 'roh.mp3';
@@ -257,6 +265,32 @@ begin
   Check('Bytes kommen unveraendert an',
         (Status = 200) and (Body = RohBytes) and (Length(Body) = 9),
         IntToStr(Status) + ' Laenge ' + IntToStr(Length(Body)));
+
+  WriteLn('Karaoke');
+  // Song 0 hat "lied [INSTR].m4a" daneben liegen (siehe Aufbau oben),
+  // Song 1 (Roh) hat keine - die einzige Quelle fuer den Unterschied ist,
+  // ob die Datei auf der Platte liegt.
+  Status := Hole('/api/song/0/txt?sid=' + Sid, Body);
+  Check('X-Karaoke steht bei einem Lied MIT Instrumentalversion auf 1',
+        Pos('x-karaoke: 1', LowerCase(LetzterKopf)) > 0, LetzterKopf);
+  Status := Hole('/api/song/1/txt?sid=' + Sid, Body);
+  Check('und bei einem Lied OHNE auf 0',
+        Pos('x-karaoke: 0', LowerCase(LetzterKopf)) > 0, LetzterKopf);
+
+  Status := HoleLied(0, wfkAudioInstrumental, 'karaoke', Body);
+  Check('Karaoke-Tonspur kommt an', (Status = 200) and (Body = 'KARAOKEBYTES'),
+        IntToStr(Status) + ' ' + Body);
+
+  // Auch hier: Was ueber die Leitung geht, muss anders aussehen als die
+  // Datei auf der Platte - sonst wuerde eine ausbleibende Verschluesselung
+  // nicht auffallen.
+  Hole('/api/song/0/karaoke?sid=' + Sid, Roher);
+  Check('auch die Karaoke-Tonspur geht nicht im Klartext ueber die Leitung',
+        (Length(Roher) = 12) and (Roher <> 'KARAOKEBYTES'), Roher);
+
+  Status := Hole('/api/song/1/karaoke?sid=' + Sid, Body);
+  Check('ohne Instrumentalversion: 404, kein Rueckfall auf die normale Spur',
+        Status = 404, IntToStr(Status));
 
   WriteLn('Teilbereiche');
   // Hier zahlt sich das Stromverfahren aus: Der Teilbereich wird an seiner

@@ -101,6 +101,7 @@ export const ART_VIDEO = 2;
 export const ART_BACKGROUND = 3;
 export const ART_COVER = 4;
 export const ART_PREVIEW = 5;
+export const ART_AUDIO_INSTRUMENTAL = 6;
 
 // Muss mit NonceForFile in UWebCrypto.pas uebereinstimmen. Geheim muss der
 // Wert nicht sein, nur je Schluessel eindeutig - deshalb wird er gerechnet
@@ -147,6 +148,8 @@ const GESCHUETZT = {
   // Der Vorschau-Schnipsel geht denselben Weg. Er ist nur eine halbe
   // Minute - aber dreissigtausend halbe Minuten sind die Sammlung.
   preview: ART_PREVIEW,
+  // Die Karaoke-Tonspur (ohne Gesang) - ein vollstaendiges Lied wie audio.
+  karaoke: ART_AUDIO_INSTRUMENTAL,
 };
 
 // Wo im Strom das erste Byte einer Antwort steht.

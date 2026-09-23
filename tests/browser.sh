@@ -90,7 +90,8 @@ BROWSERPID=""
 # Datei im Arbeitsverzeichnis - und beim naechsten git status im Weg.
 LIEDER="$ORDNER/lieder"
 mkdir -p "$LIEDER/Probe"
-cp tests/probelied/lied.txt tests/probelied/ton.mp3 "$LIEDER/Probe/"
+cp tests/probelied/lied.txt tests/probelied/ton.mp3 \
+   "tests/probelied/ton [INSTR].m4a" "$LIEDER/Probe/"
 
 # Immer per PID beenden, nie mit pkill ueber den Programmnamen: Auf einem
 # Rechner, auf dem der Dienst selbst laeuft, traefe ein Muster wie
