@@ -308,6 +308,42 @@ install-data-recursive:
 	  fi; \
 	done
 
+##
+# Deploy der --web-only Karaoke-Weboberflaeche auf DIESEM Rechner - eine
+# Sache dieses Forks, mit der Installation oben (install/install-all)
+# NICHTS zu tun. Die kennt kein --web-only, kein WEB_INSTALL_DIR und keinen
+# systemd-Dienst; sie bleibt bewusst unveraendert, weil Gentoo-Ebuild und
+# dists/linux/tasks.sh sich auf "make install" im urspruenglichen Sinn
+# verlassen (vollstaendige Spielinstallation, siehe deren Aufrufe).
+#
+# Erwartet root (WEB_INSTALL_DIR gehoert root, und der Dienst wird als root
+# neu gestartet) - also: sudo make install-web. Baut vorher neu, sofern
+# noetig; anders als "install" oben ist das hier kein Paketierungsschritt
+# mit eigenem Bauschritt davor, sondern das taegliche "ich habe was
+# geaendert, jetzt soll es live sein".
+#
+# Der systemd-Dienst selbst (Name, Konfiguration) wird hier nicht angelegt -
+# das WEB.md-Beispiel unter "Hinter einem Vorschalt-Server betreiben" zeigt,
+# wie er aussieht. Ohne einen vorhandenen Dienst dieses Namens bricht der
+# letzte Schritt hier bewusst laut ab, statt still weiterzumachen.
+##
+
+WEB_INSTALL_DIR  ?= /usr/local/lib/ultrastar-web
+WEB_SERVICE_NAME ?= ultrastar-web
+
+.PHONY: install-web
+install-web: all
+	$(MKDIR) "$(WEB_INSTALL_DIR)"
+	$(INSTALL_PROGRAM) "$(USDX_BIN)" "$(WEB_INSTALL_DIR)/$(USDX_BIN_NAME)"
+	$(MKDIR) "$(WEB_INSTALL_DIR)/web/js"
+	$(INSTALL_DATA) "$(top_srcdir)/web/index.html" "$(top_srcdir)/web/sw.js" \
+	                "$(top_srcdir)/web/favicon.png" "$(WEB_INSTALL_DIR)/web"
+	$(INSTALL_DATA) "$(top_srcdir)/web/js"/*.js "$(WEB_INSTALL_DIR)/web/js"
+	systemctl restart "$(WEB_SERVICE_NAME)"
+	@echo "--------------------------------"
+	@echo "$(WEB_SERVICE_NAME) neu gestartet, Stand: $(WEB_INSTALL_DIR)"
+	@echo "--------------------------------"
+
 .PHONY: uninstall
 uninstall: uninstall-all
 
