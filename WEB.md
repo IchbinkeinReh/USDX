@@ -1087,8 +1087,8 @@ Warum nicht die Datenbank des Spiels: `UDataBase` hängt über `USong` und
 
 Liegt neben einer Tondatei `<Name>.<Endung>` eine `<Name> [INSTR].m4a` —
 dieselbe Sammlung enthält davon rund ein Fünftel —, zeigt die Liedauswahl
-eine zweite Auswahl neben der Schwierigkeit: **Karaoke** (voreingestellt,
-sofern vorhanden) oder **Original**. `[INSTR]` ist die Schreibweise des
+eine zweite Auswahl neben der Schwierigkeit: **Original** (voreingestellt)
+oder **Karaoke**. `[INSTR]` ist die Schreibweise des
 Werkzeugs, mit dem die Sammlung hier bestückt wird — die Endung ist dabei
 immer `.m4a`, unabhängig davon, ob die Hauptdatei `.m4a`, `.mp3` oder etwas
 anderes ist.
@@ -1270,7 +1270,7 @@ und ein zweites Singen.
 Inhalt daneben und prüft `X-Karaoke`, den `/karaoke`-Weg (samt 404 ohne
 Datei) und dass auch diese Spur nicht im Klartext über die Leitung geht.
 `testweblobby` prüft `SetKaraoke`: nur der Ersteller darf, die Voreinstellung
-ist Karaoke, und ein Wechsel lässt die Bereitschaft der Mitspieler in Ruhe.
+ist Original, und ein Wechsel lässt die Bereitschaft der Mitspieler in Ruhe.
 
 ### Der Browsertest
 

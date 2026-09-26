@@ -762,6 +762,34 @@ E`);
           duett.length === 2 ? String(duett[1][3]) : '-');
   }
 
+  // Duett mit einer Stimme auf "nicht werten": Ihr Text bleibt stehen, nur
+  // ihre Noten fallen weg.
+  {
+    const male = (scoreB) => {
+      const ctx = stubKontext();
+      const r = new Renderer({ width: 0, height: 0, getContext: () => ctx });
+      r.passeGroesseAn(800, 600, 1);
+      r.draw([
+        { line: lied.lines[0], nextLine: null, bars: [], name: 'A', score: 0 },
+        { line: lied.lines[0], nextLine: null, bars: [], name: 'B', score: scoreB },
+      ], 5, false, null, true);
+      return {
+        texte: ctx.ops.filter((o) => o[0] === 'fillText' && o[1] === 'hallo'),
+        // Notenbalken der unteren Bahn: oberhalb ihres Textbands (ab 300).
+        balkenUnten: ctx.ops.filter((o) => o[0] === 'roundRect' &&
+                                           o[2] > 300 && o[2] < 480).length,
+      };
+    };
+    const beide = male(0);
+    const eine = male(undefined);
+    check('Duett, eine Stimme ungewertet: beide Texte bleiben',
+          eine.texte.length === 2, String(eine.texte.length));
+    check('gewertet hat die untere Bahn Notenbalken', beide.balkenUnten > 0,
+          String(beide.balkenUnten));
+    check('ungewertet hat sie keine', eine.balkenUnten === 0,
+          String(eine.balkenUnten));
+  }
+
   // obenVersatz: Platz fuer die Mitspieler-Anzeige (HTML-Element ueber dem
   // Canvas), die sonst genau auf dem oberen Duett-Text laege.
   {

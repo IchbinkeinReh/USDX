@@ -441,25 +441,25 @@ begin
   KaraokeCode := Registry.CreateLobby('ka-host', 'KaH');
   Registry.JoinLobby(KaraokeCode, 'ka-gast', 'KaG');
   Registry.GetState(KaraokeCode, 'ka-host', -1, -1, -1, Zustand);
-  Check('Voreinstellung ist Karaoke', Zustand.Karaoke);
+  Check('Voreinstellung ist Original', not Zustand.Karaoke);
 
   Check('Gast darf die Tonspur nicht waehlen',
-        (not Registry.SetKaraoke(KaraokeCode, 'ka-gast', False, FalscherToken))
+        (not Registry.SetKaraoke(KaraokeCode, 'ka-gast', True, FalscherToken))
         and FalscherToken);
   Registry.GetState(KaraokeCode, 'ka-host', -1, -1, -1, Zustand);
-  Check('und die Voreinstellung bleibt unangetastet', Zustand.Karaoke);
+  Check('und die Voreinstellung bleibt unangetastet', not Zustand.Karaoke);
 
-  Check('der Host darf', Registry.SetKaraoke(KaraokeCode, 'ka-host', False,
+  Check('der Host darf', Registry.SetKaraoke(KaraokeCode, 'ka-host', True,
                                              FalscherToken));
   Registry.GetState(KaraokeCode, 'ka-host', -1, -1, -1, Zustand);
-  Check('jetzt steht sie auf Original', not Zustand.Karaoke);
+  Check('jetzt steht sie auf Karaoke', Zustand.Karaoke);
 
   // Ein einzelner Tonspur-Wechsel darf NICHT die Bereitschaft zuruecksetzen -
   // anders als ein neues Lied (SelectSong) oder ein neues Ziel (SetZiel).
   // Sonst wuerfe allein das Umschalten alle wieder aus der Startbereitschaft.
   Registry.SelectSong(KaraokeCode, 'ka-host', 3, FalscherToken);
   Registry.GetState(KaraokeCode, 'ka-gast', -1, 1, -1, Zustand);
-  Registry.SetKaraoke(KaraokeCode, 'ka-host', True, FalscherToken);
+  Registry.SetKaraoke(KaraokeCode, 'ka-host', False, FalscherToken);
   Registry.GetState(KaraokeCode, 'ka-host', -1, -1, -1, Zustand);
   Check('Umschalten laesst die Bereitschaft in Ruhe',
         Zustand.Spieler[1].Bereit);

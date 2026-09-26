@@ -327,7 +327,11 @@ export class Renderer {
       return;
     }
 
-    if (this.ohneNoten) {
+    // Ohne Mikrofon im Duett: nur der Text dieser Stimme, keine Noten -
+    // zu treffen gibt es fuer sie nichts. Ohne eigenes Textband (alle auf
+    // derselben Spur) blieben die Noten dagegen stehen, sonst waere die
+    // Bahn ganz leer.
+    if (this.ohneNoten || (hatBand && bahn.score === undefined)) {
       if (hatBand)
         this.textBand(bahn, beat, w, bandY, bandH, schrift, zeilenH, helferH);
       ctx.restore();

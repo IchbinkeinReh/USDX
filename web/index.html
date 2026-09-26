@@ -276,8 +276,8 @@
     <div class="stimme aus" id="versionZeile">
       <label>Version</label>
       <select id="version">
-        <option value="karaoke" selected>Karaoke – ohne Gesang</option>
-        <option value="normal">Original – mit Gesang</option>
+        <option value="normal" selected>Original – mit Gesang</option>
+        <option value="karaoke">Karaoke – ohne Gesang</option>
       </select>
     </div>
     <div class="warnung" id="warnung"></div>
@@ -1268,7 +1268,7 @@ $('liste').addEventListener('click', async (e) => {
   // die Liste heran (Gaeste sehen #durchsuchen gar nicht), ein Wachposten
   // ist trotzdem billig.
   lobbyClient.waehle(index);
-  // Die Voreinstellung DIESES Liedes (Karaoke, falls vorhanden) sofort
+  // Die Voreinstellung DIESES Liedes (Original) sofort
   // mitteilen - sonst hoerten die anderen bis zum naechsten Tastendruck am
   // Dropdown noch die Tonspur des VORIGEN Liedes, falls die zufaellig
   // "Original" war.

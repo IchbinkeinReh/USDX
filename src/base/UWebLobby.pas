@@ -321,7 +321,7 @@ begin
     Z.SongIndex := -1;
     // Voreinstellung, bis ein Lied gewaehlt ist - dann setzt der Client sie
     // (siehe UWebApi "karaoke"-Weg) auf das, was fuer DIESES Lied gilt.
-    Z.Karaoke := True;
+    Z.Karaoke := False;
     Z.Phase := lphWartet;
     Z.Ziel := lzAuswahl;
     Z.ZielNr := 0;

@@ -217,7 +217,7 @@ const zaehlung = await werte(`(async () => {
   });
   await g.ladeLied(0);
   // Siehe die gleiche Anmerkung beim vorigen Test: bewusst auf die normale
-  // Spur gestellt, unabhaengig von der Karaoke-Voreinstellung des Liedes.
+  // Spur gestellt, unabhaengig von der Voreinstellung des Liedes.
   g.karaokeGewuenscht = false;
   const vorher = performance.getEntriesByType('resource').length;
   g.zaehleAuffuehrung();
@@ -249,6 +249,7 @@ const kar = await werte(`(async () => {
   await g.ladeLied(0);
   const nachLaden = { hatKaraoke: g.hatKaraoke, karaokeGewuenscht: g.karaokeGewuenscht };
 
+  g.karaokeGewuenscht = true;
   g.bereiteMedien();
   await new Promise((ok) => {
     const t = setTimeout(ok, 15000);
@@ -290,9 +291,9 @@ const kar = await werte(`(async () => {
 check('X-Karaoke steht bei der Notendatei auf 1', kar.xKaraoke === '1', kar);
 check('hatKaraoke wird aus der Kopfzeile gesetzt',
       kar.nachLaden.hatKaraoke === true, kar.nachLaden);
-check('Voreinstellung ist Karaoke', kar.nachLaden.karaokeGewuenscht === true,
-      kar.nachLaden);
-check('bereiteMedien() zeigt dann auf /karaoke',
+check('Voreinstellung ist Original, nicht Karaoke',
+      kar.nachLaden.karaokeGewuenscht === false, kar.nachLaden);
+check('mit Karaoke gewaehlt zeigt bereiteMedien() auf /karaoke',
       /\/karaoke(\?|$)/.test(kar.alsKaraoke.src), kar.alsKaraoke);
 check('und liefert tatsaechlich die Instrumentalversion (8 s, nicht 6)',
       Math.abs(kar.alsKaraoke.dauer - 8) < 0.5, kar.alsKaraoke);

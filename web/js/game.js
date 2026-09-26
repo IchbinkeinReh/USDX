@@ -322,11 +322,11 @@ export class Game {
     // Noten ausliefert. Der Dienstarbeiter reicht Kopfzeilen unveraendert
     // durch, die Verschluesselung steht also nicht im Weg.
     this.hatKaraoke = antwort.headers.get('X-Karaoke') === '1';
-    // Voreinstellung: Karaoke, sofern es sie gibt. Wird ueberschrieben,
-    // sobald jemand am Dropdown dreht (Ersteller) oder eine Lobby ihre
-    // eigene Wahl meldet (Gast) - beides in index.html, nicht hier, denn
-    // nur dort steht die Oberflaeche.
-    this.karaokeGewuenscht = this.hatKaraoke;
+    // Voreinstellung: Original mit Gesang, auch wenn es Karaoke gibt. Wird
+    // ueberschrieben, sobald jemand am Dropdown dreht (Ersteller) oder eine
+    // Lobby ihre eigene Wahl meldet (Gast) - beides in index.html, nicht
+    // hier, denn nur dort steht die Oberflaeche.
+    this.karaokeGewuenscht = false;
     this.el.titel.textContent = `${this.song.artist} – ${this.song.title}`;
     return this.song;
   }
@@ -752,13 +752,11 @@ export class Game {
     // auf derselben Note an - man bekaeme fuers Stehenbleiben Punkte.
     const pausiert = this.audio.paused;
 
-    // Im Duett bekommt jede Stimme ihre eigene, halbierte Bahn - ohne
-    // Mikrofon waere das nur eine leere Haelfte des Bildes fuer eine Stimme,
-    // die gar nicht mitsingt. Beim Solo zu zweit bleibt eine unbesetzte
-    // Stimme dagegen sichtbar (nur ungewertet) - das ist dort gewollt, siehe
-    // start().
+    // Im Duett bekommt jede Stimme ihre eigene, halbierte Bahn - auch eine
+    // ungewertete ("nicht werten"): Deren Text braucht man trotzdem, um zu
+    // sehen, wann die andere Stimme dran ist. Nur ihre Noten laesst die
+    // Anzeige dann weg, siehe zeichneBahn().
     const bahnen = this.saenger
-      .filter((s) => !this.song.isDuet || s.analyser)
       .map((s) => {
         s.sungMidi = -1;
         if (s.analyser && !pausiert) {
