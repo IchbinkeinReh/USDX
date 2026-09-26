@@ -134,6 +134,9 @@ var
   // Wohin der Bauer meldet - dieselbe Bauart wie WebLogHandler in
   // UWebServer, damit diese Einheit nicht an ULog und damit an SDL haengt.
   VorschauLogHandler: procedure(const Nachricht: UTF8String) = nil;
+  // Wem ein fertig gebauter Schnipsel gemeldet wird (TWebBridge.VorschauFertig,
+  // das Lied erscheint dann in der Liste). Aus dem Thread des Bauers gerufen.
+  VorschauFertigHandler: procedure(const AudioPfad: UTF8String) of object = nil;
 
 implementation
 
@@ -497,9 +500,17 @@ begin
                                fAuftraege[I].Finish,
                                Dauer);
       if ErzeugeVorschau(fAuftraege[I].AudioPfad, Ziel, Stelle) then
-        Inc(Gebaut)
+      begin
+        Inc(Gebaut);
+        if Assigned(VorschauFertigHandler) then
+          VorschauFertigHandler(fAuftraege[I].AudioPfad);
+      end
       else
+      begin
         Inc(Fehler);
+        Melde('Warnung: Vorschau liess sich nicht bauen, Lied bleibt ' +
+              'ausgeblendet: ' + fAuftraege[I].AudioPfad);
+      end;
     end;
 
     fLock.Acquire;

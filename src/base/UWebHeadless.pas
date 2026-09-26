@@ -72,6 +72,13 @@ begin
   Flush(Output);
 end;
 
+procedure MeldeWarnung(const Text: UTF8String);
+begin
+  WriteLn(StdErr, Text);
+  // Sonst stand die Warnung erst beim Beenden im Journal.
+  Flush(StdErr);
+end;
+
 // Sucht den Ordner mit der Weboberflaeche. Ohne ihn laeuft nur die
 // Fernbedienung - im kopflosen Betrieb ist das wenig sinnvoll, aber immer
 // noch besser als gar nicht zu starten.
@@ -150,6 +157,7 @@ begin
     WriteLn(Length(Lieder), ' gefunden');
     if (Length(Lieder) = 0) then
       WriteLn(StdErr, 'Warnung: In den Ordnern steht keine lesbare .txt.');
+    Lieder := PruefeLiedDateien(Lieder, MeldeWarnung);
 
     Bridge.PublishSongs(Lieder);
 
@@ -169,6 +177,7 @@ begin
     // tauchen nach und nach auf. Beim naechsten Start ist fast alles schon
     // da, dann sind es Sekunden.
     VorschauLogHandler := MeldeVorschau;
+    VorschauFertigHandler := Bridge.VorschauFertig;
     Bauer := TVorschauBauer.Create(Bridge.VorschauAuftraege);
 
     // Gezaehlt wird dorthin, wo auch die Einstellungen liegen - der
@@ -218,6 +227,7 @@ begin
       Bauer.WaitFor;
       Bauer.Free;
     end;
+    VorschauFertigHandler := nil;
     Bridge.Free;
     Lobby.Free;
     Ordner.Free;

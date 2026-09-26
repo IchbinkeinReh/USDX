@@ -43,10 +43,20 @@ mkdir -p "$ORDNER/lieder/Solo" "$ORDNER/lieder/Duo"
 printf '#TITLE:Solo\n#ARTIST:Einer\n#YEAR:1976\n#MP3:t.mp3\n#BPM:100\n: 0 4 60 a\nE\n' \
     > "$ORDNER/lieder/Solo/lied.txt"
 head -c 200000 /dev/urandom > "$ORDNER/lieder/Solo/t.mp3"
-printf '#TITLE:Zusammen\n#ARTIST:Duo\n#BPM:120\n#VIDEO:v.mp4\n#BACKGROUND:b.jpg\n#VIDEOGAP:1.5\nP1\n: 0 4 60 a\nP2\n: 0 4 67 b\nE\n' \
+printf '#TITLE:Zusammen\n#ARTIST:Duo\n#BPM:120\n#MP3:d.mp3\n#VIDEO:v.mp4\n#BACKGROUND:b.jpg\n#VIDEOGAP:1.5\nP1\n: 0 4 60 a\nP2\n: 0 4 67 b\nE\n' \
     > "$ORDNER/lieder/Duo/lied.txt"
+head -c 1000 /dev/urandom > "$ORDNER/lieder/Duo/d.mp3"
 printf 'VIDEO' > "$ORDNER/lieder/Duo/v.mp4"
 printf 'BILD' > "$ORDNER/lieder/Duo/b.jpg"
+# Angezeigt wird nur, was Ton UND Vorschau hat (PruefeLiedDateien). Aus
+# Zufallsbytes baut ffmpeg keine, also liegen sie gleich daneben - nach dem
+# Ton angelegt, damit der Bauer sie fuer aktuell haelt.
+printf 'VORSCHAU' > "$ORDNER/lieder/Solo/t.mp3.vorschau.mp3"
+printf 'VORSCHAU' > "$ORDNER/lieder/Duo/d.mp3.vorschau.mp3"
+# Ein Lied ohne Tondatei darf gar nicht erst in der Liste stehen.
+mkdir -p "$ORDNER/lieder/Stumm"
+printf '#TITLE:Stumm\n#ARTIST:Keiner\n#MP3:fehlt.mp3\n#BPM:100\n: 0 4 60 a\nE\n' \
+    > "$ORDNER/lieder/Stumm/lied.txt"
 printf 'kein Lied\n' > "$ORDNER/lieder/liesmich.txt"
 
 # --webhost 127.0.0.1: Der Test prueft gleich mit, dass die Bindung wirkt.
@@ -92,7 +102,9 @@ pruefe "Oberflaeche wird ausgeliefert" "$(hole /)" "200"
 pruefe "Modul wird ausgeliefert" "$(hole /js/song.js)" "200"
 
 ANZAHL=$(curl -s "http://127.0.0.1:$PORT/api/songs" | grep -o '"index"' | wc -l)
-pruefe "beide Lieder gefunden, die Liesmich nicht" "$(echo "$ANZAHL" | tr -d ' ')" "2"
+pruefe "beide Lieder gefunden, weder Liesmich noch das ohne Ton" "$(echo "$ANZAHL" | tr -d ' ')" "2"
+pruefe "das Lied ohne Ton steht als Warnung im Log" \
+    "$(grep -c 'Tondatei fehlt.*Stumm' "$LOG")" "1"
 
 DUETTE=$(curl -s "http://127.0.0.1:$PORT/api/songs" | grep -o '"duet" : true' | wc -l)
 pruefe "genau ein Duett erkannt" "$(echo "$DUETTE" | tr -d ' ')" "1"

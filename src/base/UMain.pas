@@ -164,6 +164,11 @@ begin
   Log.LogStatus(Nachricht, 'UWebVorschau');
 end;
 
+procedure WebLiedWarnung(const Text: UTF8String);
+begin
+  Log.LogWarn(Text, 'UWebBridge');
+end;
+
 // Sucht den Ordner mit index.html an den Stellen, an denen er nach einem
 // Bau oder im Quellbaum liegt.
 function FindeWebOrdner: UTF8String;
@@ -250,7 +255,7 @@ begin
     Inc(Anzahl);
   end;
   SetLength(Liste, Anzahl);
-  WebBridge.PublishSongs(Liste);
+  WebBridge.PublishSongs(PruefeLiedDateien(Liste, WebLiedWarnung));
 end;
 
 procedure Main;
@@ -410,6 +415,7 @@ begin
       // kopflosen Betrieb. Das Spiel selbst wartet darauf nicht: Es soll
       // sofort spielbar sein, und die Vorschauen tauchen nach und nach auf.
       VorschauLogHandler := WebVorschauLog;
+      VorschauFertigHandler := WebBridge.VorschauFertig;
       WebBauer := TVorschauBauer.Create(WebBridge.VorschauAuftraege);
 
       // --webport schlaegt die Voreinstellung; 0 heisst "nicht angegeben".
@@ -431,6 +437,7 @@ begin
       WebBauer.WaitFor;
       WebBauer.Free;
       WebBauer := nil;
+      VorschauFertigHandler := nil;
     end;
     if Assigned(WebServer) then
     begin

@@ -16,12 +16,14 @@ uses
   SysUtils,
   Classes,
   USongFilter,
+  UWebVorschau,
   UWebBridge;
 
 var
   Bestanden, Fehlgeschlagen: integer;
   Bruecke: TWebBridge;
   Stoerung: boolean;
+  Warnungen: TStringList;
 
 procedure Check(const Was: string; Bedingung: boolean; const Detail: string = '');
 begin
@@ -34,6 +36,76 @@ begin
   begin
     Inc(Fehlgeschlagen);
     WriteLn('  FEHL ', Was, '   ', Detail);
+  end;
+end;
+
+procedure MerkeWarnung(const Text: UTF8String);
+begin
+  Warnungen.Add(Text);
+end;
+
+procedure LeereDatei(const Pfad: UTF8String);
+var F: TFileStream;
+begin
+  F := TFileStream.Create(Pfad, fmCreate);
+  F.Free;
+end;
+
+// Nur Lieder mit echter Tondatei und fertiger Vorschau in der Liste.
+procedure PruefeDateien;
+var
+  Ordner: UTF8String;
+  L, Geprueft, Treffer: TWebSongArray;
+  B: TWebBridge;
+begin
+  WriteLn('Nur Lieder mit Ton und Vorschau');
+  Ordner := GetTempDir + 'usdxbruecke' + IntToStr(Random(100000)) + PathDelim;
+  ForceDirectories(Ordner);
+  LeereDatei(Ordner + 'voll.mp3');
+  LeereDatei(VorschauPfad(Ordner + 'voll.mp3'));
+  LeereDatei(Ordner + 'halb.mp3');     // ohne Vorschau
+
+  SetLength(L, 4);
+  L[0].Artist := 'A'; L[0].Title := 'voll';  L[0].TxtPath := 'voll.txt';
+  L[0].AudioPath := Ordner + 'voll.mp3';
+  L[1].Artist := 'B'; L[1].Title := 'halb';  L[1].TxtPath := 'halb.txt';
+  L[1].AudioPath := Ordner + 'halb.mp3';
+  L[2].Artist := 'C'; L[2].Title := 'weg';   L[2].TxtPath := 'weg.txt';
+  L[2].AudioPath := Ordner + 'gibtsnicht.mp3';
+  L[3].Artist := 'D'; L[3].Title := 'leer';  L[3].TxtPath := 'leer.txt';
+  L[3].AudioPath := '';
+
+  Warnungen := TStringList.Create;
+  B := TWebBridge.Create;
+  try
+    Geprueft := PruefeLiedDateien(L, MerkeWarnung);
+    Check('ohne Tondatei faellt das Lied ganz weg', Length(Geprueft) = 2,
+          IntToStr(Length(Geprueft)));
+    Check('je fehlender Datei eine Warnung', Warnungen.Count = 3,
+          Warnungen.Text);
+    Check('die Warnung nennt das Lied',
+          (Warnungen.Count > 0) and (Pos('weg.txt', Warnungen.Text) > 0),
+          Warnungen.Text);
+
+    B.PublishSongs(Geprueft);
+    Treffer := B.FindSongs('', fltAll, 100);
+    Check('ohne Vorschau wird es nicht angezeigt',
+          (Length(Treffer) = 1) and (Treffer[0].Title = 'voll'),
+          IntToStr(Length(Treffer)));
+    Check('der Bauer bekommt es trotzdem', Length(B.VorschauAuftraege) = 2,
+          IntToStr(Length(B.VorschauAuftraege)));
+
+    B.VorschauFertig(Ordner + 'halb.mp3');
+    Treffer := B.FindSongs('', fltAll, 100);
+    Check('ist die Vorschau gebaut, erscheint es', Length(Treffer) = 2,
+          IntToStr(Length(Treffer)));
+  finally
+    B.Free;
+    Warnungen.Free;
+    DeleteFile(Ordner + 'voll.mp3');
+    DeleteFile(VorschauPfad(Ordner + 'voll.mp3'));
+    DeleteFile(Ordner + 'halb.mp3');
+    RemoveDir(Ordner);
   end;
 end;
 
@@ -285,6 +357,8 @@ begin
   Check('Stand wurde hochgezaehlt', Bruecke.Stand > 200, IntToStr(Bruecke.Stand));
 
   Bruecke.Free;
+
+  PruefeDateien;
 
   WriteLn;
   WriteLn(Format('%d bestanden, %d fehlgeschlagen', [Bestanden, Fehlgeschlagen]));

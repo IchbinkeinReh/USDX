@@ -73,7 +73,16 @@ type
     VideoPath: UTF8String;
     BackgPath: UTF8String;
     CoverPath: UTF8String;
+    // Der Vorschau-Schnipsel fehlt noch. Solange liefert FindSongs das Lied
+    // nicht aus - wer es waehlte, hoerte zur Probe nichts. Sobald der Bauer
+    // den Schnipsel gebaut hat, gibt VorschauFertig es frei. Absichtlich so
+    // herum benannt: Ein frisch angelegter (genullter) Eintrag ist sichtbar.
+    OhneVorschau: boolean;
   end;
+
+  // Wohin PruefeLiedDateien warnt - wie VorschauLogHandler, damit diese
+  // Einheit nicht an ULog haengt.
+  TWebWarnung = procedure(const Text: UTF8String);
 
   // Welche Datei eines Liedes gemeint ist.
   // HINTEN anhaengen, nie dazwischen: Die Ordnungszahl geht in den
@@ -155,6 +164,10 @@ type
       // Bruecke die Abschrift unter ihrem Schloss kennt.
       function  VorschauAuftraege: TVorschauAuftragArray;
 
+      // Der Bauer meldet einen fertigen Schnipsel - ab jetzt taucht das
+      // Lied in der Liste auf. Laeuft im Thread des Bauers.
+      procedure VorschauFertig(const AudioPfad: UTF8String);
+
       // Uebersetzt einen Listenplatz in die Kennung, die das Spiel zum
       // Auswaehlen braucht.
       function  SelectIndexOf(Index: integer; out Sel: integer): boolean;
@@ -162,6 +175,16 @@ type
       function  SongCount: integer;
       function  Stand: integer;
   end;
+
+// Beim Start: Nur Lieder, deren Tondatei wirklich da ist, kommen ueberhaupt
+// in die Liste; wem noch der Vorschau-Schnipsel fehlt, der wird
+// ausgeblendet (OhneVorschau), bis der Bauer ihn nachliefert. Beides mit
+// einer Warnung je Lied, damit man sieht, WARUM ein Lied fehlt.
+//
+// Beim Aufrufer statt in PublishSongs, weil nur der Start echte Dateien
+// hat - PublishSongs bekommt in den Tests erfundene Pfade.
+function PruefeLiedDateien(const Songs: TWebSongArray;
+                           Warnung: TWebWarnung): TWebSongArray;
 
 implementation
 
@@ -209,6 +232,32 @@ begin
               ' [INSTR].m4a';
   if FileExists(Kandidat) then
     Result := Kandidat;
+end;
+
+function PruefeLiedDateien(const Songs: TWebSongArray;
+                           Warnung: TWebWarnung): TWebSongArray;
+var
+  I, N: integer;
+begin
+  SetLength(Result, Length(Songs));
+  N := 0;
+  for I := 0 to High(Songs) do
+  begin
+    if (Songs[I].AudioPath = '') or not FileExists(Songs[I].AudioPath) then
+    begin
+      if Assigned(Warnung) then
+        Warnung('Warnung: Tondatei fehlt, Lied wird nicht angezeigt: ' +
+                Songs[I].TxtPath);
+      Continue;
+    end;
+    Result[N] := Songs[I];
+    Result[N].OhneVorschau := not FileExists(VorschauPfad(Songs[I].AudioPath));
+    if Result[N].OhneVorschau and Assigned(Warnung) then
+      Warnung('Warnung: Vorschau fehlt, Lied bleibt ausgeblendet, bis sie ' +
+              'gebaut ist: ' + Songs[I].TxtPath);
+    Inc(N);
+  end;
+  SetLength(Result, N);
 end;
 
 procedure TWebBridge.PublishSongs(const Songs: TWebSongArray);
@@ -363,6 +412,22 @@ begin
   end;
 end;
 
+procedure TWebBridge.VorschauFertig(const AudioPfad: UTF8String);
+var
+  I: integer;
+begin
+  fLock.Acquire;
+  try
+    // Linear: Ein Schnitt dauert Sekunden, dagegen faellt das nicht ins
+    // Gewicht. Mehrere Lieder koennen sich eine Tondatei teilen.
+    for I := 0 to High(fSongs) do
+      if fSongs[I].OhneVorschau and (fSongs[I].AudioPath = AudioPfad) then
+        fSongs[I].OhneVorschau := False;
+  finally
+    fLock.Release;
+  end;
+end;
+
 function TWebBridge.SongPath(Index: integer; Art: TWebFileKind;
                              out Path: UTF8String): boolean;
 begin
@@ -452,6 +517,8 @@ begin
       SetLength(Result, Length(fSongs));
       for I := 0 to High(fSongs) do
       begin
+        // Ohne Vorschau noch nicht anbieten, siehe PruefeLiedDateien.
+        if fSongs[I].OhneVorschau then Continue;
         // Fertig vorbereitet aus dem Register, siehe PublishSongs.
         case Filter of
           fltTitle:    Heuhaufen := fSuch[I].Title;

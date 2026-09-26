@@ -50,6 +50,13 @@ ohne dass man die Ordner doppelt pflegen muss. Findet sich gar nichts, sagt
 das Programm das und beendet sich mit Code 1, statt eine leere Liste
 auszuliefern.
 
+In die Liste kommt nur, was sich auch abspielen lässt
+(`PruefeLiedDateien` in `UWebBridge`, im Spiel wie im kopflosen Betrieb):
+Fehlt die Tondatei, bleibt das Lied ganz draußen. Fehlt nur der
+Vorschau-Schnipsel, wird es ausgeblendet, bis der Bauer ihn gebaut hat
+(`VorschauFertig`), und erscheint dann ohne Neustart. Beides steht je Lied
+als Warnung im Log; ein Schnipsel, der sich nicht bauen lässt, ebenso.
+
 ### Warum ein zweiter Leser für die Kopfdaten
 
 `TSongs` ist hier nicht zu gebrauchen: Es hängt über `USong` an `URenderer`
