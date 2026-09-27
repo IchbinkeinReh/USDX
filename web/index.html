@@ -2057,6 +2057,42 @@ $('bild_flaeche').addEventListener('pointerdown', (e) => {
   }, DOPPEL_MS);
 });
 
+// ---------- Bildschirm wach halten ----------
+//
+// Solange die Buehne zu sehen ist, soll das Handy nicht dunkel werden -
+// beim Singen fasst niemand das Geraet an, im Radio erst recht nicht.
+// Angehaengt an die Sichtbarkeit der Buehne statt an jeden einzelnen Weg
+// dorthin (Singen, Gast folgt dem Gastgeber, Nochmal, Radio): So kann
+// keiner vergessen werden.
+//
+// Der Browser gibt die Sperre von selbst frei, sobald die Seite in den
+// Hintergrund geht; kommt sie zurueck, wird sie neu angefordert.
+let wachSperre = null;
+async function bildschirmWach() {
+  const noetig = !buehne.classList.contains('aus') &&
+                 document.visibilityState === 'visible';
+  if (noetig && !wachSperre && navigator.wakeLock) {
+    try {
+      const s = await navigator.wakeLock.request('screen');
+      s.addEventListener('release', () => { if (wachSperre === s) wachSperre = null; });
+      wachSperre = s;
+      // Waehrend der Anfrage kann die Buehne schon wieder zu sein - dann
+      // gleich wieder freigeben, statt den Bildschirm grundlos wach zu halten.
+      if (buehne.classList.contains('aus')) bildschirmWach();
+    } catch (e) {
+      // Verweigert (Energiesparmodus, kein sicherer Kontext) - dann eben nicht.
+      wachSperre = null;
+    }
+  } else if (!noetig && wachSperre) {
+    const s = wachSperre;
+    wachSperre = null;
+    try { await s.release(); } catch (e) { /* schon frei */ }
+  }
+}
+new MutationObserver(bildschirmWach).observe(buehne,
+  { attributes: true, attributeFilter: ['class'] });
+document.addEventListener('visibilitychange', bildschirmWach);
+
 document.addEventListener('fullscreenchange', () => {
   if (!imVollbild()) {
     try { screen.orientation && screen.orientation.unlock(); } catch (e) {}

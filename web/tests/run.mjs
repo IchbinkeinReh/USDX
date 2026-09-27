@@ -60,7 +60,8 @@ function stubKontext() {
   c.lineTo = (x, y) => ops.push(['lineTo', x + dx, y + dy]);
   c.roundRect = (x, y, w, h, r) =>
     ops.push(['roundRect', x + dx, y + dy, w, h, r]);
-  c.fillText = (t, x, y) => ops.push(['fillText', t, x + dx, y + dy]);
+  // Die Schrift kommt hinten dran - die Stellen davor pruefen andere Tests.
+  c.fillText = (t, x, y) => ops.push(['fillText', t, x + dx, y + dy, c.font]);
   c.strokeText = (t, x, y) => ops.push(['strokeText', t, x + dx, y + dy]);
   c.measureText = (t) => ({ width: t.length * 10 });
   c.createLinearGradient = () => ({ addColorStop() {} });
@@ -762,6 +763,23 @@ E`);
     check('der untere Text liegt unten',
           duett.length === 2 && duett[1][3] > 450,
           duett.length === 2 ? String(duett[1][3]) : '-');
+    // Und so gross wie beim Sololied - auch auf einem Handy im Querformat,
+    // wo eine halbe Bahn fuer sich gerechnet nur die kleinste Schrift ergab.
+    check('Duett-Text so gross wie der gemeinsame',
+          duett.length === 2 && solo.length === 1 &&
+          duett[0][4] === solo[0][4] && duett[1][4] === solo[0][4],
+          `${solo[0] && solo[0][4]} / ${duett[0] && duett[0][4]}`);
+    const handy = (duettModus) => {
+      const ctx = stubKontext();
+      const r = new Renderer({ width: 0, height: 0, getContext: () => ctx });
+      r.passeGroesseAn(844, 330, 3);
+      r.draw(zwei, 5, false, null, duettModus);
+      return ctx.ops.filter((o) => o[0] === 'fillText' && o[1] === 'hallo');
+    };
+    const hs = handy(false), hd = handy(true);
+    check('auch auf dem Handy quer',
+          hd.length === 2 && hs.length === 1 && hd[0][4] === hs[0][4],
+          `${hs[0] && hs[0][4]} / ${hd[0] && hd[0][4]}`);
   }
 
   // Duett mit einer Stimme auf "nicht werten": Ihr Text bleibt stehen, nur

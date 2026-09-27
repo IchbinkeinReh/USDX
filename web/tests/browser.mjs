@@ -525,6 +525,31 @@ document_start: {
   await warteAuf(`${sichtbar('auswahl')}`);
 }
 
+// Solange die Buehne offen ist, bleibt der Bildschirm wach (Wake Lock).
+// Ersetzt, weil ein Kopfloser Browser die echte Sperre ohnehin verweigert -
+// gezaehlt wird, ob angefordert und wieder freigegeben wird.
+await werte(`(() => {
+  window.__wach = { an: 0, frei: 0 };
+  const echt = WakeLock.prototype.request;
+  window.__echteWachSperre = echt;
+  WakeLock.prototype.request = async function () {
+    window.__wach.an++;
+    const s = new EventTarget();
+    s.release = async () => { window.__wach.frei++; s.dispatchEvent(new Event('release')); };
+    return s;
+  };
+  document.getElementById('buehne').dataset.radioLied = '';
+})()`);
+await werte(`document.getElementById('radio_start').click()`, { geste: true });
+check('auf der Buehne wird der Bildschirm wach gehalten',
+      await warteAuf(`window.__wach.an === 1`, 5000), JSON.stringify(await werte('window.__wach')));
+await warteAuf(`document.getElementById('buehne').dataset.radioLied === '1'`);
+await werte(`document.getElementById('zurueck').click()`, { geste: true });
+await warteAuf(`${sichtbar('auswahl')}`);
+check('und beim Verlassen wieder freigegeben',
+      await warteAuf(`window.__wach.frei === 1`, 5000), JSON.stringify(await werte('window.__wach')));
+await werte(`WakeLock.prototype.request = window.__echteWachSperre`);
+
 // Auf manchen Handys kommt das Vollbild-Versprechen nie zurueck. Das Radio
 // darf darauf nicht warten - frueher blieb es bei "Lied wird ausgesucht".
 await werte(`(() => {

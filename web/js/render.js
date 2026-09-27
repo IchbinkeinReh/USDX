@@ -106,6 +106,9 @@ const TEXT_VORSCHAU = '#ffffff';
 // Wie lange die Bewertung einer Zeile stehen bleibt.
 export const ZEILENLOB_SEK = 1.6;
 
+// Wie viel einer Duett-Bahn das Textband hoechstens einnehmen darf.
+const BAND_MAX_ANTEIL = 0.65;
+
 // Je Bahn eine Farbe, damit im Duett klar ist, wer wo singt.
 const FARBEN = [
   { balken: '#4a5570', treffer: '#6ee7a8', stimme: '#7fd1ff' },
@@ -199,8 +202,12 @@ export class Renderer {
 
     bahnen.forEach((bahn, i) => {
       const lage = gemeinsam ? null : (i === 0 ? 'oben' : 'unten');
+      // Im Duett dieselben Textmasse wie beim gemeinsamen Text, aus der
+      // VOLLEN Hoehe gerechnet: Aus der halben Bahn gerechnet war die
+      // Schrift auf dem Handy nur noch halb so gross wie beim Sololied.
       this.zeichneBahn(bahn, beat, i, 0, i * laneH, w, laneH,
-                       bahnen.length > 1, lage, obenVersatz);
+                       bahnen.length > 1, lage, obenVersatz,
+                       gemeinsam ? null : gemeinsamMasse);
       if (i > 0) {
         ctx.strokeStyle = '#252b38';
         ctx.lineWidth = 1;
@@ -264,8 +271,10 @@ export class Renderer {
 
   bandHoehe(h) { return this.bandMasse(h).hoehe; }
 
+  // textMasse: vorgegebene Masse fuer das Textband (siehe draw); ohne sie
+  // aus der Bahnhoehe gerechnet.
   zeichneBahn(bahn, beat, index, ox, oy, w, h, mitNamen, textLage = 'unten',
-              obenVersatz = 0) {
+              obenVersatz = 0, textMasse = null) {
     const ctx = this.ctx;
     const farbe = FARBEN[index % FARBEN.length];
     const line = bahn.line;
@@ -276,7 +285,11 @@ export class Renderer {
     // Ein eigenes Band fuer Anzeiger und zwei Textzeilen. Wo es liegt,
     // entscheidet textLage; die Noten bekommen den Rest - sonst ueberdeckten
     // sich beide.
-    const { schrift, zeilenH, helferH, hoehe: bandH } = this.bandMasse(h);
+    // Nur so gross, dass den Noten noch gut ein Drittel der Bahn bleibt -
+    // sonst lieber aus der Bahn gerechnet und kleiner.
+    const masse = textMasse && textMasse.hoehe <= h * BAND_MAX_ANTEIL
+      ? textMasse : this.bandMasse(h);
+    const { schrift, zeilenH, helferH, hoehe: bandH } = masse;
     const hatBand = textLage === 'oben' || textLage === 'unten';
     // Nur oben ruecken - dort liegt bei mehreren Lobby-Mitgliedern die
     // Mitspieler-Anzeige (eigenes HTML-Element ueber dem Canvas) sonst genau
