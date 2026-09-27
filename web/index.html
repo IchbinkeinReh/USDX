@@ -230,6 +230,29 @@
                 justify-content:center;flex-direction:column;gap:14px;
                 background:rgba(13,15,20,0.82);z-index:5}
   #losgehts{font-size:20px;padding:18px 42px;border-radius:14px}
+
+  /* Radio: Interpret und Titel beim Liedwechsel gross in der Mitte.
+     Bewusst ueber die ganze Flaeche - "#bild_flaeche > *" macht das ohnehin -,
+     aber durchsichtig und ohne Zeiger: Nur der Kasten darin ist zu sehen,
+     und Antippen (Pause, Spulen) geht weiter an die Buehne. */
+  #bild_flaeche > #radio_titel{z-index:9;display:flex;align-items:center;
+              justify-content:center;pointer-events:none;
+              opacity:0;transition:opacity .4s ease}
+  /* Mit beiden Kennungen, sonst gewaenne die Regel darueber (zwei IDs)
+     und die Einblendung bliebe unsichtbar. */
+  #bild_flaeche > #radio_titel.an{opacity:1}
+  #radio_titel .kasten{max-width:88%;text-align:center;padding:18px 28px;
+              border-radius:18px;background:rgba(8,10,15,0.72)}
+  #radio_titel .interpret{font-size:clamp(20px,4.2vw,46px);font-weight:700;
+              line-height:1.15}
+  #radio_titel .liedtitel{font-size:clamp(16px,3.2vw,34px);color:#c7cddb;
+              margin-top:6px;line-height:1.2}
+  /* Falls der Browser das naechste Lied nicht von selbst starten laesst. */
+  #bild_flaeche > #radio_weiter_flaeche{z-index:10;display:flex;
+              align-items:center;justify-content:center;
+              background:rgba(13,15,20,0.82)}
+  #radio_weiter{font-size:20px;padding:18px 42px;border-radius:14px;
+              background:#2e8b64}
   #startnotiz{color:#98a0b0;font-size:14px;text-align:center;padding:0 20px}
 </style>
 </head>
@@ -365,6 +388,11 @@
          Ergebnis, sonst ein Hinweis. Kein staendiger Fussbereich - der nahm
          Platz weg, den die Noten brauchen. -->
     <div id="ergebnis" class="aus"></div>
+    <div id="radio_titel" aria-live="polite"><div class="kasten">
+      <div class="interpret"></div><div class="liedtitel"></div></div></div>
+    <div id="radio_weiter_flaeche" class="aus">
+      <button id="radio_weiter">▶ Weiter hören</button>
+    </div>
   </div>
 </div>
 
@@ -751,7 +779,9 @@ function zeigeMitspieler(zustand) {
   // getrennt erscheinen.
   const eigene = spiel.saenger.map((s) => (s.analyser ? s.scorer.score : null));
   const liste = mitspielerAnzeige(zustand, eigene.length ? eigene : null);
-  const zeigen = spiel.laeuft && liste.length > 0;
+  // Im Radio gibt es keine Mitspieler - sonst stuende dort das eigene
+  // Geraet, durchgestrichen, weil es ja nicht singt.
+  const zeigen = spiel.laeuft && !radio.aktiv && liste.length > 0;
   $('mitspieler').classList.toggle('aus', !zeigen);
   if (!zeigen) { spiel.obenVersatz = 0; return; }
   $('mitspieler').innerHTML = liste.map((m) =>
@@ -1693,11 +1723,64 @@ async function starteRadio(ersterIndex = null) {
   // Wie beim Singen: Die Zurueck-Taste soll von der Buehne zur Liste
   // fuehren, nicht die Seite verlassen.
   syncURL({ singen: 1 }, { push: true });
-  const konnte = await vollbildAn(buehne);
-  if (handy && !konnte.quer) $('drehen').style.display = 'block';
+  // Vollbild anfordern, aber NICHT darauf warten: Auf manchen Handys
+  // kommt das Versprechen (vor allem das Festhalten im Querformat) nie
+  // zurueck - das Radio blieb dann bei "Lied wird ausgesucht" stehen.
+  // Angestossen ist es hier schon, noch innerhalb des Klicks.
+  vollbildAn(buehne).then((konnte) => {
+    if (handy && !konnte.quer && radio.aktiv) $('drehen').style.display = 'block';
+    passeAn();
+  });
   passeAn();
   await spieleRadioLied(ersterIndex);
 }
+
+// Interpret und Titel fuer RADIO_TITEL_MS gross einblenden.
+const RADIO_TITEL_MS = 3000;
+let radioTitelTimer = null;
+function zeigeRadioTitel(song) {
+  const t = $('radio_titel');
+  t.querySelector('.interpret').textContent = song.artist;
+  t.querySelector('.liedtitel').textContent = song.title;
+  t.classList.add('an');
+  clearTimeout(radioTitelTimer);
+  radioTitelTimer = setTimeout(() => t.classList.remove('an'), RADIO_TITEL_MS);
+}
+function versteckeRadioTitel() {
+  clearTimeout(radioTitelTimer);
+  $('radio_titel').classList.remove('an');
+}
+
+// Spielt das schon geladene Lied ab. Getrennt von spieleRadioLied(), weil
+// "Weiter hoeren" genau diesen Schritt noch einmal braucht - aus dem Klick
+// heraus und ohne erst wieder etwas nachzuladen, sonst verfiele die Geste.
+async function radioAbspielen(song, gilt) {
+  // Nicht zaehlen: web-gesungen.tsv haelt fest, was gesungen wurde.
+  await spiel.start(radioBesetzung(song), 0, 0, { zaehlen: false });
+  // Waehrend start() auf den Ton wartete, kann das Radio beendet worden
+  // sein - dann liefe das Lied sonst hinter der Liste los.
+  if (!gilt()) { spiel.stop(); return; }
+  radio.fehlschlaege = 0;
+  radio.nr++;
+  zeigeRadioTitel(song);
+  // Fuer den Browsertest: woran sich ablesen laesst, dass es weiterging.
+  buehne.dataset.radioLied = String(radio.nr);
+}
+
+// Laesst der Browser das Lied nicht ohne Antippen los (Autoplay-Sperre),
+// wird eben kurz gefragt - statt das Lied als kaputt zu verbuchen.
+let radioWartet = null;
+$('radio_weiter').addEventListener('click', async () => {
+  const w = radioWartet;
+  radioWartet = null;
+  $('radio_weiter_flaeche').classList.add('aus');
+  if (!w || !w.gilt()) return;
+  try {
+    await radioAbspielen(w.song, w.gilt);
+  } catch (err) {
+    if (w.gilt()) spieleRadioLied();
+  }
+});
 
 async function spieleRadioLied(index = null) {
   const lauf = ++radio.lauf;
@@ -1713,15 +1796,17 @@ async function spieleRadioLied(index = null) {
       if (!gilt()) return;
       aktuellGeladen = i;
       spiel.bereiteMedien();
-      // Nicht zaehlen: web-gesungen.tsv haelt fest, was gesungen wurde.
-      await spiel.start(radioBesetzung(song), 0, 0, { zaehlen: false });
-      // Waehrend start() auf den Ton wartete, kann das Radio beendet worden
-      // sein - dann liefe das Lied sonst hinter der Liste los.
-      if (!gilt()) { spiel.stop(); return; }
-      radio.fehlschlaege = 0;
-      radio.nr++;
-      // Fuer den Browsertest: woran sich ablesen laesst, dass es weiterging.
-      buehne.dataset.radioLied = String(radio.nr);
+      try {
+        await radioAbspielen(song, gilt);
+      } catch (err) {
+        if (err && err.name === 'NotAllowedError' && gilt()) {
+          el.hinweis.textContent = '';
+          radioWartet = { song, gilt };
+          $('radio_weiter_flaeche').classList.remove('aus');
+          return;
+        }
+        throw err;
+      }
       return;
     } catch (err) {
       if (!gilt()) return;
@@ -1738,6 +1823,9 @@ async function spieleRadioLied(index = null) {
 function radioAus() {
   radio.aktiv = false;
   radio.lauf++;
+  radioWartet = null;
+  $('radio_weiter_flaeche').classList.add('aus');
+  versteckeRadioTitel();
   $('zurueck').textContent = 'Zurück';
 }
 

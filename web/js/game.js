@@ -118,6 +118,9 @@ export function neuerDurchgang(index) {
 // Original standardmaessig auf 30% (UIni.pas: ReadVolumePercent(..., 30)).
 export const VORSCHAU_LAUTSTAERKE = 0.30;
 export const VORSCHAU_FADE_MS = 1000;
+// Wie lange start() hoechstens auf die Kopfdaten des Tons wartet, bevor es
+// trotzdem play() versucht (siehe dort).
+export const KOPFDATEN_WARTEN_MS = 8000;
 
 // Wie weit eine Blende zwischen 0 (Anfang) und 1 (Ende) fortgeschritten ist.
 //
@@ -666,8 +669,16 @@ export class Game {
     // am Laden. Ein currentTime davor gilt nur als Wunsch fuer den Start -
     // fuer das Zurueckspulen bei "Nochmal singen" reicht das, fuer eine
     // Lobby, die mitten im Lied dazukommt, nicht.
+    //
+    // Mit Zeitgrenze: Manche Handy-Browser laden den Ton erst, wenn play()
+    // kommt. Ohne Grenze wartete man dort ewig auf Kopfdaten, die nie von
+    // selbst eintreffen - im Radio blieb die Buehne so bei "Lied wird
+    // ausgesucht" stehen.
     try {
-      await this._dauerAbwarten(this.audio);
+      await Promise.race([
+        this._dauerAbwarten(this.audio),
+        new Promise((resolve) => setTimeout(resolve, KOPFDATEN_WARTEN_MS)),
+      ]);
     } catch (e) {
       // Laesst sich der Ton nicht laden, faellt das unten beim play() auf.
     }

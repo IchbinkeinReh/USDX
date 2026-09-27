@@ -401,6 +401,23 @@ check('keine Mikrofonauswahl, kein "Los geht\'s"',
       aufBuehne.start === 'none', JSON.stringify(aufBuehne));
 check('der Zurueck-Knopf heisst "Radio beenden"',
       aufBuehne.knopf === 'Radio beenden', JSON.stringify(aufBuehne));
+// Die Blende braucht 0,4 s; danach muss die Einblendung wirklich zu sehen
+// sein - die Klasse allein sagt das nicht (einmal verdeckte sie eine
+// staerkere CSS-Regel).
+await new Promise((r) => setTimeout(r, 600));
+const titelAn = await werte(`({
+  an: getComputedStyle(document.getElementById('radio_titel')).opacity === '1',
+  mitspieler: ${sichtbar('mitspieler')},
+  text: document.getElementById('radio_titel').textContent.replace(/\\s+/g, ' ').trim(),
+})`);
+check('beim Liedwechsel stehen Interpret und Titel sichtbar in der Mitte',
+      titelAn.an && titelAn.text.includes('Testlauf') && titelAn.text.includes('Probeton'),
+      JSON.stringify(titelAn));
+check('keine Mitspielerzeile im Radio', !titelAn.mitspieler, JSON.stringify(titelAn));
+await new Promise((r) => setTimeout(r, 3000));
+check('und verschwinden nach drei Sekunden wieder',
+      await werte(`getComputedStyle(document.getElementById('radio_titel')).opacity === '0' &&
+                   document.getElementById('buehne').dataset.radioLied === '1'`));
 
 // Das Probelied dauert 6 s. Danach muss ohne weiteres Zutun das naechste
 // kommen - bei nur einem Treffer eben dasselbe noch einmal.
@@ -415,6 +432,45 @@ await new Promise((r) => setTimeout(r, 7000));
 check('und danach startet nichts mehr',
       await werte(`document.getElementById('buehne').dataset.radioLied === '2' &&
                    document.getElementById('buehne').classList.contains('aus')`));
+
+// Auf manchen Handys kommt das Vollbild-Versprechen nie zurueck. Das Radio
+// darf darauf nicht warten - frueher blieb es bei "Lied wird ausgesucht".
+await werte(`(() => {
+  window.__echtesVollbild = Element.prototype.requestFullscreen;
+  Element.prototype.requestFullscreen = () => new Promise(() => {});
+  document.getElementById('buehne').dataset.radioLied = '';
+})()`);
+await werte(`document.getElementById('radio_start').click()`, { geste: true });
+check('Radio spielt auch, wenn das Vollbild nie antwortet',
+      await warteAuf(`document.getElementById('buehne').dataset.radioLied === '1'`));
+await werte(`document.getElementById('zurueck').click()`, { geste: true });
+await warteAuf(`${sichtbar('auswahl')}`);
+
+// Verweigert der Browser das Losspielen ohne Antippen, soll gefragt werden,
+// statt das Lied als kaputt zu verbuchen.
+await werte(`(() => {
+  window.__echtesPlay = HTMLMediaElement.prototype.play;
+  let einmal = true;
+  HTMLMediaElement.prototype.play = function () {
+    if (einmal) { einmal = false;
+      return Promise.reject(new DOMException('gesperrt', 'NotAllowedError')); }
+    return window.__echtesPlay.call(this);
+  };
+  document.getElementById('buehne').dataset.radioLied = '';
+})()`);
+await werte(`document.getElementById('radio_start').click()`, { geste: true });
+check('gesperrter Autostart: "Weiter hören" erscheint',
+      await warteAuf(`${sichtbar('radio_weiter_flaeche')}`));
+await werte(`document.getElementById('radio_weiter').click()`, { geste: true });
+check('und ein Tipp darauf spielt das Lied',
+      await warteAuf(`document.getElementById('buehne').dataset.radioLied === '1' &&
+                      !(${sichtbar('radio_weiter_flaeche')})`));
+await werte(`document.getElementById('zurueck').click()`, { geste: true });
+await warteAuf(`${sichtbar('auswahl')}`);
+await werte(`(() => {
+  Element.prototype.requestFullscreen = window.__echtesVollbild;
+  HTMLMediaElement.prototype.play = window.__echtesPlay;
+})()`);
 
 await werte(`document.getElementById('zur_startseite').click()`, { geste: true });
 check('der Haus-Knopf fuehrt zur Startseite',
