@@ -94,6 +94,7 @@ uses
   UWebLobby,
   UWebServer,
   UWebVorschau,
+  UWebApi,
   UWebZaehler,
   USkins,
   UThemes,
@@ -417,6 +418,9 @@ begin
       VorschauLogHandler := WebVorschauLog;
       VorschauFertigHandler := WebBridge.VorschauFertig;
       WebBauer := TVorschauBauer.Create(WebBridge.VorschauAuftraege);
+
+      // Daneben sucht der Server impressum.txt (siehe FindeImpressum).
+      WebIniPfad := Platform.GetGameUserPath.Append('config.ini').ToUTF8();
 
       // --webport schlaegt die Voreinstellung; 0 heisst "nicht angegeben".
       // Gezaehlt wird neben der config.ini des Spiels.

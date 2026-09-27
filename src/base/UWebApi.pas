@@ -37,9 +37,14 @@ const
   // noch so verdrehte URL etwas ausliefern, was nicht hier steht, und der
   // uebliche Fehler - ein ../ das durch die Pruefung rutscht - kann gar nicht
   // erst auftreten. Neue Datei im Ordner heisst: hier eintragen.
-  WEB_DATEIEN: array[0..19] of UTF8String = (
+  WEB_DATEIEN: array[0..22] of UTF8String = (
     'index.html',
     'favicon.png',
+    // Impressum, Datenschutz und Lizenzen - eine eigene Seite, damit sie ein
+    // Vorschalt-Server ohne Anmeldung freigeben kann (siehe WEB.md).
+    'rechtliches.html',
+    'js/rechtliches.js',
+    'lizenzen.json',
     // Installierbare App (PWA): Manifest und Symbole. Liegen bei einem
     // Vorschalt-Server mit Anmeldung ohne diese frei - Browser holen sie
     // teils ohne Zugangsdaten (siehe WEB.md).
@@ -111,6 +116,26 @@ function SchluesselFuerAnfrage(Sessions: TCryptoSessions;
                                out Key: TChaChaKey;
                                out Nonce: TChaChaNonce): boolean;
 
+var
+  // Wo die Einstellungen liegen. Gesetzt beim Start (Spiel wie kopfloser
+  // Betrieb); daneben wird impressum.txt gesucht.
+  WebIniPfad: UTF8String = '';
+
+const
+  IMPRESSUM_NAME = 'impressum.txt';
+  // Mehr steht in keinem Impressum; eine groessere Datei ist ein Irrtum.
+  IMPRESSUM_MAX_BYTES = 256 * 1024;
+
+// Die Textdatei mit Impressum und Datenschutzerklaerung, '' wenn es keine
+// gibt. In dieser Reihenfolge:
+//   1. --impressum <datei> auf der Befehlszeile
+//   2. impressum.txt neben der config.ini (WebIniPfad)
+//   3. impressum.txt im Zustandsordner des Dienstes ($STATE_DIRECTORY)
+//   4. ~/.ultrastardx/impressum.txt
+// Bei jeder Anfrage neu gesucht und gelesen: Wer den Text aendert oder die
+// Datei erst spaeter anlegt, muss dafuer nichts neu starten.
+function FindeImpressum: UTF8String;
+
 // Beantwortet eine Anfrage. Rueckgabe ist der HTTP-Status; ContentType und
 // Body werden gesetzt. Query enthaelt die Parameter als Name=Wert.
 function HandleWebRequest(Bridge: TWebBridge; Lobby: TLobbyRegistry;
@@ -119,6 +144,52 @@ function HandleWebRequest(Bridge: TWebBridge; Lobby: TLobbyRegistry;
                           out ContentType, Body: UTF8String): integer;
 
 implementation
+
+function FindeImpressum: UTF8String;
+var
+  I: integer;
+  Arg, Kandidat: UTF8String;
+begin
+  Result := '';
+  // Selbst gelesen wie --songpath (USongScan): UCommandLine haengt am Spiel.
+  I := 1;
+  while (I < ParamCount) do
+  begin
+    Arg := ParamStr(I);
+    while (Length(Arg) > 0) and (Arg[1] = '-') do
+      Delete(Arg, 1, 1);
+    if (LowerCase(Arg) = 'impressum') then
+    begin
+      Kandidat := ParamStr(I + 1);
+      if FileExists(Kandidat) then Result := Kandidat;
+      // Ausdruecklich angegeben: dann gilt nur diese Datei, auch wenn sie
+      // (noch) fehlt - sonst stuende unbemerkt eine andere da.
+      Exit;
+    end;
+    Inc(I);
+  end;
+
+  if (WebIniPfad <> '') then
+  begin
+    Kandidat := ExtractFilePath(WebIniPfad) + IMPRESSUM_NAME;
+    if FileExists(Kandidat) then begin Result := Kandidat; Exit; end;
+  end;
+
+  Kandidat := GetEnvironmentVariable('STATE_DIRECTORY');
+  if (Kandidat <> '') then
+  begin
+    Kandidat := IncludeTrailingPathDelimiter(Kandidat) + IMPRESSUM_NAME;
+    if FileExists(Kandidat) then begin Result := Kandidat; Exit; end;
+  end;
+
+  Kandidat := GetEnvironmentVariable('HOME');
+  if (Kandidat <> '') then
+  begin
+    Kandidat := IncludeTrailingPathDelimiter(Kandidat) + '.ultrastardx' +
+                PathDelim + IMPRESSUM_NAME;
+    if FileExists(Kandidat) then Result := Kandidat;
+  end;
+end;
 
 function MimeTyp(const Datei: UTF8String): UTF8String;
 var
@@ -130,6 +201,7 @@ begin
   else if (Endung = '.css')  then Result := 'text/css; charset=utf-8'
   else if (Endung = '.txt')  then Result := 'text/plain; charset=utf-8'
   else if (Endung = '.webmanifest') then Result := 'application/manifest+json'
+  else if (Endung = '.json') then Result := 'application/json; charset=utf-8'
   else if (Endung = '.mp3')  then Result := 'audio/mpeg'
   else if (Endung = '.ogg')  then Result := 'audio/ogg'
   else if (Endung = '.opus') then Result := 'audio/ogg'
@@ -418,6 +490,8 @@ var
   ReaktionsArt: TReaktionsArt;
   LobbyZiel: TLobbyZiel;
   Zustand: TLobbyZustand;
+  ImpressumDatei: UTF8String;
+  Strom: TFileStream;
 begin
   ContentType := 'text/plain; charset=utf-8';
   Body := '';
@@ -462,6 +536,47 @@ begin
     finally
       Antwort.Free;
     end;
+    Result := 200;
+    Exit;
+  end;
+
+  // Impressum und Datenschutz als reiner Text - gerendert wird im Browser
+  // (web/js/rechtliches.js). Ohne Sitzung: Das muss jeder lesen koennen.
+  if (Path = '/api/impressum') then
+  begin
+    ContentType := 'text/plain; charset=utf-8';
+    ImpressumDatei := FindeImpressum;
+    if (ImpressumDatei = '') then
+    begin
+      Body := 'Kein Impressum hinterlegt.';
+      Result := 404;
+      Exit;
+    end;
+    try
+      Strom := TFileStream.Create(ImpressumDatei, fmOpenRead or fmShareDenyNone);
+      try
+        if (Strom.Size > IMPRESSUM_MAX_BYTES) then
+        begin
+          Body := 'Impressum zu gross.';
+          Result := 500;
+          Exit;
+        end;
+        SetLength(Body, Strom.Size);
+        if (Strom.Size > 0) then Strom.ReadBuffer(Body[1], Strom.Size);
+      finally
+        Strom.Free;
+      end;
+    except
+      Body := 'Impressum nicht lesbar.';
+      Result := 500;
+      Exit;
+    end;
+    // Ein BOM am Anfang stuende sonst als unsichtbares Zeichen im Text.
+    // Byteweise verglichen: Ein Vergleich mit einem Zeichenketten-Literal
+    // liefe durch eine Zeichensatz-Umwandlung und traefe nie.
+    if (Length(Body) >= 3) and (Body[1] = #$EF) and (Body[2] = #$BB) and
+       (Body[3] = #$BF) then
+      Delete(Body, 1, 3);
     Result := 200;
     Exit;
   end;

@@ -135,6 +135,7 @@ begin
     Ini := FindConfigIni;
     if (Ini <> '') then
       WriteLn('Einstellungen: ', Ini);
+    WebIniPfad := Ini;
 
     CollectSongDirs(Ordner);
     if (Ordner.Count = 0) then

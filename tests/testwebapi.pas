@@ -64,6 +64,8 @@ var
   Cmd: TWebCommand;
   LobbyCode, LobbyCode2: UTF8String;
   LetzteSeq: int64;
+  ImpOrdner: UTF8String;
+  ImpDatei: TStringList;
 
 function Ruf(const Pfad: UTF8String; const Params: array of string): integer;
 var I: integer;
@@ -474,6 +476,40 @@ begin
         Aufloesen(B, '/index.html', '', Pfad, CT) = waNichts);
   Check('Api bleibt Api',
         Aufloesen(B, '/api/songs', 'web', Pfad, CT) = waNichts);
+
+  WriteLn;
+  WriteLn('Impressum');
+  // Neben einer erfundenen config.ini in einem eigenen Ordner - so stoert
+  // weder eine echte impressum.txt noch eine aus einem frueheren Lauf.
+  ImpOrdner := GetTempDir + 'usdximpressum' + IntToStr(Random(100000)) + PathDelim;
+  ForceDirectories(ImpOrdner);
+  WebIniPfad := ImpOrdner + 'config.ini';
+  if (FindeImpressum = '') then
+  begin
+    Status := Ruf('/api/impressum', []);
+    Check('ohne Datei: 404', Status = 404, IntToStr(Status));
+  end
+  else
+    WriteLn('  (uebersprungen: auf diesem Rechner liegt schon ein Impressum)');
+  ImpDatei := TStringList.Create;
+  try
+    ImpDatei.Text := #$EF#$BB#$BF'# Impressum'#10'Max Muster';
+    ImpDatei.SaveToFile(ImpOrdner + 'impressum.txt');
+  finally
+    ImpDatei.Free;
+  end;
+  Status := Ruf('/api/impressum', []);
+  Check('neben der config.ini gefunden: 200', Status = 200, IntToStr(Status));
+  Check('als Text', Pos('text/plain', CT) = 1, CT);
+  Check('Inhalt kommt an, ohne BOM', Copy(Body, 1, 11) = '# Impressum', Copy(Body, 1, 20));
+  Check('die Seite dazu wird ausgeliefert',
+        Aufloesen(B, '/rechtliches.html', 'web', Pfad, CT) = waDatei);
+  Check('die Lizenzliste als JSON',
+        (Aufloesen(B, '/lizenzen.json', 'web', Pfad, CT) = waDatei) and
+        (Pos('application/json', CT) = 1), CT);
+  DeleteFile(ImpOrdner + 'impressum.txt');
+  RemoveDir(ImpOrdner);
+  WebIniPfad := '';
 
   WriteLn;
   WriteLn('Mehrspieler-Lobbys');

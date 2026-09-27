@@ -115,7 +115,12 @@ trap aufraeumen EXIT INT TERM
 # 127.0.0.1 ist nicht beliebig: Dienstarbeiter gibt es nur im sicheren
 # Kontext, und localhost gilt als sicher. Ueber die Netzadresse desselben
 # Rechners wuerde sich gar keiner anmelden.
+# Ein eigenes Impressum im Wegwerfordner - der Test prueft das Rendern.
+printf '# Impressum\n\nMax Muster\nTeststrasse 1\n\n- Mail: info@example.de\n\n<script>boese()</script>\n' \
+    > "$ORDNER/impressum.txt"
+
 "./$SPIEL" --web-only --webport "$PORT" --webhost 127.0.0.1 \
+    --impressum "$ORDNER/impressum.txt" \
     --songpath "$LIEDER" > "$ORDNER/server.log" 2>&1 &
 SPIELPID=$!
 

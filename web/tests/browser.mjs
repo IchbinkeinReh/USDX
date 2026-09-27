@@ -614,6 +614,29 @@ check('alter Einladungslink landet in der Party',
       await warteAuf(`${sichtbar('lobby_leiste')} && !(${sichtbar('startseite')}) &&
                       /modus=party/.test(location.search)`));
 
+console.log('Impressum, Datenschutz, Lizenzen');
+await ruf('Page.navigate', { url: BASIS + '/' });
+await warteAuf(`document.documentElement.dataset.bereit === '1'`);
+check('die Startseite verlinkt die Seite',
+      await werte(`document.getElementById('zu_rechtlichem').getAttribute('href') ===
+                   '/rechtliches.html'`));
+await ruf('Page.navigate', { url: BASIS + '/rechtliches.html' });
+check('die Seite laedt Text und Lizenzen',
+      await warteAuf(`document.documentElement.dataset.bereit === '1'`));
+const recht = await werte(`({
+  h2: document.querySelector('#text h2') && document.querySelector('#text h2').textContent,
+  text: document.getElementById('text').textContent,
+  mail: !!document.querySelector('#text a[href="mailto:info@example.de"]'),
+  skript: !!document.querySelector('#text script'),
+  lizenzen: document.querySelectorAll('#lizenzen details').length,
+  gpl: document.getElementById('lizenzen').textContent.includes('GNU General Public License'),
+})`);
+check('Impressum aus der Textdatei als HTML',
+      recht.h2 === 'Impressum' && recht.text.includes('Teststrasse 1') && recht.mail,
+      JSON.stringify(recht));
+check('HTML aus der Datei wird nicht ausgefuehrt', !recht.skript, JSON.stringify(recht));
+check('darunter die Lizenzen', recht.lizenzen >= 10 && recht.gpl, JSON.stringify(recht));
+
 if (meldungen.length) {
   console.log();
   console.log('  Meldungen aus der Seite:');

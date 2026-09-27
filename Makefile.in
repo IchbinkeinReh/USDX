@@ -339,7 +339,9 @@ install-web: all
 	$(INSTALL_DATA) "$(top_srcdir)/web/index.html" "$(top_srcdir)/web/sw.js" \
 	                "$(top_srcdir)/web/favicon.png" "$(WEB_INSTALL_DIR)/web"
 	$(INSTALL_DATA) "$(top_srcdir)/web/js"/*.js "$(WEB_INSTALL_DIR)/web/js"
-	$(INSTALL_DATA) "$(top_srcdir)/web/manifest.webmanifest" "$(WEB_INSTALL_DIR)/web"
+	$(INSTALL_DATA) "$(top_srcdir)/web/manifest.webmanifest" \
+	                "$(top_srcdir)/web/rechtliches.html" \
+	                "$(top_srcdir)/web/lizenzen.json" "$(WEB_INSTALL_DIR)/web"
 	$(MKDIR) "$(WEB_INSTALL_DIR)/web/icons"
 	$(INSTALL_DATA) "$(top_srcdir)/web/icons"/*.png "$(WEB_INSTALL_DIR)/web/icons"
 	systemctl restart "$(WEB_SERVICE_NAME)"

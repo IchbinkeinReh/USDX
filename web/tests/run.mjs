@@ -28,6 +28,7 @@ import { LobbyClient,
 import { chacha20XOR, nonceForFile, hexToBytes, bytesToHex, geschuetzteDatei,
          startStelle, ART_TXT, ART_AUDIO, ART_VIDEO,
          ART_PREVIEW, ART_AUDIO_INSTRUMENTAL } from '../js/krypto.js';
+import { textZuHtml, lizenzenZuHtml } from '../js/rechtliches.js';
 import { modusAusZustand, verlaufLaenge, RadioVerlauf, radioBesetzung,
          RADIO_VERLAUF_MAX, installHinweis } from '../js/radio.js';
 
@@ -1970,6 +1971,46 @@ console.log('Hinweis zum Installieren');
   check('Android: Browsermenue', /Browsermenü/.test(installHinweis(ANDROID)));
   check('Desktop: Adressleiste, samt Firefox-Einschraenkung',
         /Adressleiste/.test(installHinweis(FIREFOX)) && /Firefox/.test(installHinweis(FIREFOX)));
+}
+
+console.log('Impressum und Lizenzen');
+{
+  check('Absaetze und Umbrueche',
+        textZuHtml('Max Muster\nStrasse 1\n\nZweiter') ===
+        '<p>Max Muster<br>Strasse 1</p>\n<p>Zweiter</p>', textZuHtml('Max Muster\nStrasse 1\n\nZweiter'));
+  check('Windows-Zeilenenden ebenso',
+        textZuHtml('a\r\nb\r\n\r\nc') === '<p>a<br>b</p>\n<p>c</p>');
+  check('# wird h2, ## h3 (die Seite hat schon eine h1)',
+        textZuHtml('# Impressum\n\n## Kontakt') === '<h2>Impressum</h2>\n<h3>Kontakt</h3>');
+  check('Aufzaehlung',
+        textZuHtml('- eins\n* zwei') === '<ul><li>eins</li><li>zwei</li></ul>');
+  check('fett', textZuHtml('**Achtung** hier') === '<p><strong>Achtung</strong> hier</p>');
+  const html = textZuHtml('<script>alert(1)</script> <b onclick="x">');
+  check('HTML in der Datei wird nie ausgefuehrt',
+        !/<script|<b /.test(html) && html.includes('&lt;script&gt;'), html);
+  check('Markdown-Link',
+        textZuHtml('[Seite](https://example.org/a?b=1&c=2)') ===
+        '<p><a href="https://example.org/a?b=1&amp;c=2" rel="noopener noreferrer">Seite</a></p>',
+        textZuHtml('[Seite](https://example.org/a?b=1&c=2)'));
+  check('javascript:-Links gibt es nicht',
+        !/href="javascript/.test(textZuHtml('[x](javascript:alert(1))')));
+  check('nackte Adresse ohne den Punkt am Satzende',
+        textZuHtml('siehe https://example.org/x.') ===
+        '<p>siehe <a href="https://example.org/x" rel="noopener noreferrer">https://example.org/x</a>.</p>',
+        textZuHtml('siehe https://example.org/x.'));
+  check('E-Mail wird zum mailto-Link',
+        textZuHtml('Mail: info@example.de') ===
+        '<p>Mail: <a href="mailto:info@example.de">info@example.de</a></p>',
+        textZuHtml('Mail: info@example.de'));
+  check('Adresse im Markdown-Link wird nicht doppelt verlinkt',
+        (textZuHtml('[https://a.de](https://a.de)').match(/<a /g) || []).length === 1);
+  check('leerer Text: nichts', textZuHtml('') === '' && textZuHtml(null) === '');
+
+  const l = lizenzenZuHtml({ lizenzen: [{ name: 'Lib <x>', zweck: 'z', lizenz: 'MIT',
+                                          adresse: 'https://lib.org', text: 'a < b' }] });
+  check('Lizenz: Name maskiert, Text aufklappbar',
+        l.includes('Lib &lt;x&gt;') && l.includes('<details') && l.includes('<pre>a &lt; b</pre>'), l);
+  check('ohne Daten: leer', lizenzenZuHtml(null) === '');
 }
 
 console.log('Dienstarbeiter');

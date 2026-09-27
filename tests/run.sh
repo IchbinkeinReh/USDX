@@ -38,6 +38,11 @@ FEHLER=0
 echo "=== Namenskollisionen ==="
 python3 tests/check_namen.py || FEHLER=1
 
+# Die Lizenzliste der Seite "Impressum & Datenschutz" wird aus den Texten im
+# Quellbaum erzeugt und eingecheckt - hier faellt auf, wenn sie veraltet ist.
+echo "=== Lizenzliste ==="
+python3 tools/lizenzen.py --pruefe || FEHLER=1
+
 for QUELLE in tests/test*.pas; do
     NAME="${QUELLE%.pas}"
     echo "=== $(basename "$NAME") ==="

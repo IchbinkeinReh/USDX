@@ -776,6 +776,26 @@ Und davor, hier mit Apache:
 	<Location "/icons/">
 		Require all granted
 	</Location>
+	# Impressum, Datenschutz und Lizenzen muss jeder lesen koennen.
+	<Location "/rechtliches.html">
+		Require all granted
+	</Location>
+	<Location "/js/rechtliches.js">
+		Require all granted
+	</Location>
+	<Location "/api/impressum">
+		Require all granted
+	</Location>
+	<Location "/lizenzen.json">
+		Require all granted
+	</Location>
+	<Location "/favicon.png">
+		Require all granted
+	</Location>
+	# Wer den Anmeldedialog abbricht, sieht diese Seite - mit dem Weg zum
+	# Impressum statt einer nackten Fehlermeldung. Als Text hier, weil jede
+	# Adresse unter / an den Dienst weitergereicht wird.
+	ErrorDocument 401 "<!doctype html><html lang=de><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Anmeldung nötig</title><body style='background:#0d0f14;color:#e8e8ea;font-family:system-ui,sans-serif;text-align:center;padding:48px 18px'><h1>Anmeldung nötig</h1><p>UltraStar ist nur mit Zugangsdaten nutzbar.</p><p><a style='color:#8fb1ff' href='/rechtliches.html'>Impressum &amp; Datenschutz</a></p></body></html>"
 </VirtualHost>
 ```
 
@@ -887,6 +907,43 @@ nichts, was nicht ohnehin offen auf GitHub liegt.
 Offline geht nichts: Die Lieder kommen vom Server, und die Oberfläche wird
 bewusst nicht zwischengespeichert – sonst liefe nach einer Aktualisierung
 eine alte Fassung weiter.
+
+### Impressum, Datenschutz und Lizenzen
+
+`/rechtliches.html` ist eine eigene Seite, verlinkt unten auf der
+Startseite. Sie braucht weder Sitzung noch Dienstarbeiter und lässt sich
+deshalb bei einem Vorschalt-Server einzeln freigeben (siehe oben) – ein
+Impressum muss ohne Anmeldung erreichbar sein. Wer den Anmeldedialog
+abbricht, bekommt über `ErrorDocument 401` einen Link dorthin.
+
+Der Text kommt aus einer Textdatei, die der Betreiber anlegt; sie gehört
+nicht ins Repository. `/api/impressum` liefert sie als reinen Text, der
+Browser rendert sie (`web/js/rechtliches.js`). Gesucht wird bei jeder
+Anfrage neu, Änderungen brauchen also keinen Neustart:
+
+1. `--impressum <datei>` auf der Befehlszeile (dann nur diese Datei)
+2. `impressum.txt` neben der `config.ini`
+3. `impressum.txt` im Zustandsordner des Dienstes (`StateDirectory=`, beim
+   Beispieldienst `/var/lib/ultrastar-web/`)
+4. `~/.ultrastardx/impressum.txt`
+
+Das Format ist bewusst klein – HTML in der Datei wird nie ausgeführt:
+
+```
+# Impressum                 → Überschrift (## und ### für Unterebenen)
+
+Max Muster                  einfacher Umbruch bleibt einer,
+Beispielweg 1               Leerzeile = neuer Absatz
+
+**Kontakt:** max@example.de → fett; E-Mail und https://… werden Links
+[Text](https://example.de)  → Link mit eigenem Text
+- Punkt                     → Aufzählung
+```
+
+Darunter stehen die Lizenzen: das Projekt selbst und jede Bibliothek, die
+der Server direkt einbindet. Die Weboberfläche selbst nutzt keine fremden
+Bibliotheken. Die Liste (`web/lizenzen.json`) erzeugt `tools/lizenzen.py`
+aus den Texten im Quellbaum; `tests/run.sh` meldet, wenn sie veraltet ist.
 
 ### Reihenfolge und Nachladen
 
