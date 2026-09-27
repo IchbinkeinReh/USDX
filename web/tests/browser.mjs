@@ -307,6 +307,49 @@ check('und liefert wieder die normale Aufnahme (~6 s, nicht 8)',
 check('zaehleAuffuehrung() meldet die Auffuehrung unter /karaoke, wenn gewaehlt',
       kar.gezaehlt.length === 1, kar);
 
+console.log('Liedanfang und -ende wie im Spiel');
+
+// Das Probelied (6 s, erste Note bei 0) bekommt #START und #END von Hand.
+// Mit #START 2 liegt die erste Note weniger als drei Sekunden danach: Es
+// geht bei 0 los, bis 2 s stumm, und bei #END (4 s) ist Schluss.
+const startEnde = await werte(`(async () => {
+  const m = await import('/js/game.js');
+  const g = new m.Game(document.createElement('canvas'), {
+    titel: document.createElement('div'), hinweis: { textContent: '' },
+    video: null, bild: null,
+  });
+  await g.ladeLied(0);
+  g.karaokeGewuenscht = false;
+  g.song.headers.START = '2';
+  g.song.headers.END = '4000';
+  await g.start([{ trackIndex: 0, deviceId: null }], 0, null, { zaehlen: false });
+  const amAnfang = { pos: g.audio.currentTime, stumm: g.audio.muted };
+  await new Promise((r) => setTimeout(r, 2600));
+  const nachStart = { pos: g.audio.currentTime, stumm: g.audio.muted };
+  for (let i = 0; i < 40 && g.laeuft; i++) await new Promise((r) => setTimeout(r, 100));
+  const amEnde = { laeuft: g.laeuft, pos: g.audio.currentTime };
+  g.stop();
+
+  // Erste Note bei 5 s, #START 1: genug Abstand - dann ab #START selbst.
+  await g.ladeLied(0);
+  g.karaokeGewuenscht = false;
+  g.song.headers.START = '1';
+  g.song.gap = 5000;
+  await g.start([{ trackIndex: 0, deviceId: null }], 0, null, { zaehlen: false });
+  const abStart = { pos: g.audio.currentTime, stumm: g.audio.muted };
+  g.stop();
+  return { amAnfang, nachStart, amEnde, abStart };
+})()`);
+check('Vorlauf vor #START beginnt stumm',
+      startEnde.amAnfang.stumm && startEnde.amAnfang.pos < 0.6, JSON.stringify(startEnde));
+check('ab #START ist der Ton da',
+      !startEnde.nachStart.stumm && startEnde.nachStart.pos > 2, JSON.stringify(startEnde));
+check('bei #END ist Schluss',
+      !startEnde.amEnde.laeuft && startEnde.amEnde.pos < 4.6, JSON.stringify(startEnde));
+check('mit genug Abstand zur ersten Note geht es ab #START los',
+      Math.abs(startEnde.abStart.pos - 1) < 0.3 && !startEnde.abStart.stumm,
+      JSON.stringify(startEnde));
+
 console.log('Vorschau');
 
 // Der Schnipsel ist eine eigene Datei mit eigenem Endpunkt. Er muss

@@ -216,6 +216,40 @@ export function previewRange(song, audioLength) {
 
 // Sekunden, bis die erste Note dieser Zeile faellig ist.
 // Negativ, wenn die Zeile schon laeuft. null, wenn es nichts zu warten gibt.
+// Wo das Singen anfaengt, in Sekunden Tonzeit - wie im Spiel
+// (TScreenSingController.CalculateStartTime): ab #START, aber mindestens
+// VORLAUF_SEKUNDEN vor der ersten Note, damit man den Einsatz nicht
+// verpasst. Liegt dieser Vorlauf vor #START, ist er dort still (siehe
+// istVorStart) - das Spiel spielt vor #START nie Ton, sondern Stille.
+//
+// Vor den Anfang der Datei kommt ein Tonelement nicht; das Spiel fuellte
+// auch das mit Stille. Hier beginnt es dann eben bei 0, mit kuerzerem
+// Vorlauf.
+export const VORLAUF_SEKUNDEN = 3;
+
+export function singStart(song) {
+  let erste = Infinity;
+  for (const spur of song.tracks) {
+    const note = spur.lines[0] && spur.lines[0].notes[0];
+    if (note) erste = Math.min(erste, song.beatToTime(note.start));
+  }
+  const start = song.start;
+  if (!Number.isFinite(erste)) return Math.max(0, start);
+  const ab = (erste - start < VORLAUF_SEKUNDEN) ? erste - VORLAUF_SEKUNDEN : start;
+  return Math.max(0, ab);
+}
+
+// Ob an dieser Stelle noch Stille gilt: alles vor #START.
+export function istVorStart(song, sekunden) {
+  return song.start > 0 && sekunden < song.start - 0.01;
+}
+
+// Wo das Singen endet: #END (steht in Millisekunden), sonst 0 = am Ende
+// der Tondatei. Wie im Spiel, das #END als LyricsState.TotalTime nimmt.
+export function singEnde(song) {
+  return song.finish > 0 ? song.finish / 1000 : 0;
+}
+
 export function secondsUntilLine(song, line, seconds) {
   if (!song || !line || !line.notes || line.notes.length === 0) return null;
   return song.beatToTime(line.notes[0].start) - seconds;

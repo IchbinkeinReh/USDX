@@ -405,6 +405,17 @@ der Browser sauber abwinken, statt an geratenen Daten zu würgen. Erst sein
 `error` verrät, dass es nicht geht; vorher lässt sich das nicht feststellen.
 Dann übernimmt das Bild. Zuverlässig laufen `.mp4`, `.webm` und `.ogv`.
 
+Wo gesungen wird, folgt ebenfalls dem Spiel (`CalculateStartTime` in
+`UScreenSingController`): Los geht es bei `#START`, aber mindestens drei
+Sekunden vor der ersten Note. Liegt dieser Vorlauf vor `#START`, ist er still
+– das Spiel spielt vor `#START` nie Ton. Im Browser läuft die Tondatei dafür
+ab dem Startpunkt mit, bleibt aber bis `#START` stumm geschaltet; so bleibt
+die Tonzeit die eine Uhr für Text, Wertung und den Abgleich in der Lobby.
+Nur Stille *vor* dem Dateianfang kann ein Tonelement nicht spielen: Fehlt
+`#START` und kommt die erste Note in den ersten drei Sekunden, beginnt es bei
+0 mit kürzerem Vorlauf. Schluss ist bei `#END` (in Millisekunden), sonst am
+Ende der Datei (`singStart`, `istVorStart`, `singEnde` in `web/js/song.js`).
+
 Der Gleichlauf folgt dem Spiel: **Videoposition = `#VIDEOGAP` + Tonzeit**.
 Maßgeblich ist also die Tonzeit, nicht das Video. Nachgezogen wird nur bei
 mehr als 0,3 s Abweichung — jedes Bild neu zu setzen ließe das Video ruckeln,

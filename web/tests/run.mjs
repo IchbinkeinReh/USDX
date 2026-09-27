@@ -2,7 +2,7 @@
 // Zeichnen und Mikrofon bleiben aussen vor - dafuer braucht es einen Browser.
 
 import { parseSong, noteProgress, secondsUntilLine, lineAt, nextLineAt,
-         singAbschnitte, previewRange,
+         singAbschnitte, previewRange, singStart, istVorStart, singEnde,
          NOTE_FREESTYLE, NOTE_GOLDEN } from '../js/song.js';
 import { detectFrequency, detectMidi, freqToMidi, sameTone, toneDistance,
          rms, maxVolume, verschiebungen,
@@ -1915,6 +1915,32 @@ console.log('Verschluesselung');
 // entschluesselt wird. Aus der ANTWORT gelesen, nicht aus der Anfrage: Der
 // Server darf weniger schicken als gefragt.
 console.log();
+console.log('Liedanfang und -ende wie im Spiel (#START, #END)');
+{
+  // BPM 60 (intern x4 = 240): ein Schlag = 0,25 s. GAP 0.
+  const lied = (kopf, ersterSchlag, zweiteSpur) => parseSong(
+    '#TITLE:T\n#ARTIST:A\n#BPM:60\n#GAP:0\n' + kopf +
+    (zweiteSpur !== undefined ? 'P1\n' : '') +
+    `: ${ersterSchlag} 4 60 a\n` +
+    (zweiteSpur !== undefined ? `P2\n: ${zweiteSpur} 4 60 b\n` : '') + 'E\n');
+  check('ohne #START und erste Note spaet: ab 0', singStart(lied('', 40)) === 0);
+  check('#START mit genug Abstand zur ersten Note: ab #START',
+        singStart(lied('#START:30\n', 160)) === 30, singStart(lied('#START:30\n', 160)));
+  check('erste Note knapp nach #START: drei Sekunden davor',
+        singStart(lied('#START:30\n', 124)) === 28, singStart(lied('#START:30\n', 124)));
+  check('vor den Dateianfang geht es nicht: 0',
+        singStart(lied('', 4)) === 0, singStart(lied('', 4)));
+  check('Duett: die fruehere der beiden Stimmen zaehlt',
+        singStart(lied('#START:30\n', 200, 124)) === 28, singStart(lied('#START:30\n', 200, 124)));
+  check('#START mit Komma', singStart(lied('#START:12,5\n', 200)) === 12.5);
+  const mitStart = lied('#START:30\n', 124);
+  check('vor #START ist es still', istVorStart(mitStart, 29.5));
+  check('ab #START nicht mehr', !istVorStart(mitStart, 30));
+  check('ohne #START nie still', !istVorStart(lied('', 40), 0));
+  check('#END steht in Millisekunden', singEnde(lied('#END:90500\n', 40)) === 90.5);
+  check('ohne #END: 0 (bis zum Ende der Datei)', singEnde(lied('', 40)) === 0);
+}
+
 console.log('Startseite und Radio');
 {
   const z = (x) => ({ q: '', lied: null, singen: false, lobby: null, modus: null, ...x });

@@ -1864,7 +1864,7 @@ function versteckeRadioTitel() {
 // heraus und ohne erst wieder etwas nachzuladen, sonst verfiele die Geste.
 async function radioAbspielen(song, gilt) {
   // Nicht zaehlen: web-gesungen.tsv haelt fest, was gesungen wurde.
-  await spiel.start(radioBesetzung(song), 0, 0, { zaehlen: false });
+  await spiel.start(radioBesetzung(song), 0, null, { zaehlen: false });
   // Waehrend start() auf den Ton wartete, kann das Radio beendet worden
   // sein - dann liefe das Lied sonst hinter der Liste los.
   if (!gilt()) { spiel.stop(); return; }

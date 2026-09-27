@@ -11,7 +11,8 @@
 // Aufbau laesst das deshalb gar nicht erst zu, statt hinterher Punkte zu
 // verteilen, die niemand nachvollziehen kann.
 
-import { parseSong, lineAt, nextLineAt, singAbschnitte } from './song.js';
+import { parseSong, lineAt, nextLineAt, singAbschnitte, singStart, istVorStart,
+         singEnde } from './song.js';
 import { detectMidi, maxVolume } from './pitch.js';
 import { Pegel } from './pegel.js';
 import { Scorer, LEICHT } from './score.js';
@@ -625,12 +626,12 @@ export class Game {
   // deviceId darf null sein; dann wird die Stimme angezeigt, aber nicht
   // gewertet. schwierigkeit steuert, wie weit daneben noch zaehlt.
   // seekSekunden setzt die Startposition - fuer eine Lobby, die einem schon
-  // laufenden Lied beitritt. 0 (Standard) laesst jeden bestehenden Aufruf
-  // unveraendert.
+  // laufenden Lied beitritt. null (Standard) heisst: wie im Spiel ab #START,
+  // mit Vorlauf vor der ersten Note (singStart in song.js).
   //
   // zaehlen=false: nicht als gesungen melden - fuer den Radio-Modus, in dem
   // nur zugehoert wird. web-gesungen.tsv soll sagen, was gesungen wurde.
-  async start(besetzung, schwierigkeit = LEICHT, seekSekunden = 0,
+  async start(besetzung, schwierigkeit = LEICHT, seekSekunden = null,
               { zaehlen = true } = {}) {
     if (!this.song) return;
 
@@ -712,7 +713,12 @@ export class Game {
     // seekSekunden) - sonst haengt bei "Nochmal singen" die Zeit vom
     // vorigen Durchlauf noch am Audioelement, etwa weil zuvor mitten im
     // Lied das Vollbild verlassen wurde.
-    this.audio.currentTime = seekSekunden;
+    const ab = seekSekunden === null ? singStart(this.song) : seekSekunden;
+    this.audio.currentTime = ab;
+    // Vor #START ist es still wie im Spiel - gleich stumm anfangen, sonst
+    // waere bis zum ersten Bild ein Stueck des abgeschnittenen Anfangs zu
+    // hoeren. Die Schleife schaltet den Ton an der Grenze wieder ein.
+    this.audio.muted = istVorStart(this.song, ab);
     // Ebenso die Geschwindigkeit zuruecksetzen: Eine Lobby kann sie zur
     // sanften Sync-Korrektur kurz von 1 abweichen lassen (siehe lobby.js) -
     // endete das Lied waehrend genau dieser Korrektur, liefe sonst das
@@ -765,6 +771,7 @@ export class Game {
   stop() {
     this.laeuft = false;
     this.audio.pause();
+    this.audio.muted = false;
     if (this.el.video) this.el.video.pause();
     for (const s of this.saenger)
       if (s.strom) s.strom.getTracks().forEach((t) => t.stop());
@@ -785,6 +792,11 @@ export class Game {
 
     // Die Abspielposition ist der Takt, siehe Kopfkommentar.
     const zeit = this.audio.currentTime;
+    // Vor #START Stille (siehe singStart): Der Ton laeuft mit, damit die
+    // Uhr stimmt - fuer den Text, die Wertung und den Abgleich in der Lobby -,
+    // ist aber bis dorthin stumm. Gilt auch nach dem Zurueckspulen.
+    const stumm = istVorStart(this.song, zeit);
+    if (this.audio.muted !== stumm) this.audio.muted = stumm;
     const beat = this.song.timeToBeat(zeit);
 
     // Waehrend einer Pause steht die Tonzeit still. Dann NICHT werten: Der
@@ -847,11 +859,14 @@ export class Game {
       zeit,
       // Solange die Dauer noch nicht bekannt ist, hilft das letzte Ende
       // aus dem Lied - sonst bliebe die Leiste am Anfang leer.
-      dauer: this.audio.duration > 0 ? this.audio.duration : this.liedEnde(),
+      // #END gilt als Liedende, wie im Spiel.
+      dauer: singEnde(this.song) ||
+             (this.audio.duration > 0 ? this.audio.duration : this.liedEnde()),
       abschnitte: this.abschnitte,
     }, this.song.isDuet, this.obenVersatz);
 
-    if (this.audio.ended) {
+    const ende = singEnde(this.song);
+    if (this.audio.ended || (ende > 0 && zeit >= ende)) {
       this.beende();
       return;
     }
