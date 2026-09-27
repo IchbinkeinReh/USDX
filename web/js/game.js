@@ -287,6 +287,31 @@ export class Game {
   // Anhalten und Fortsetzen. Der Zaehler laeuft weiter (this.laeuft bleibt
   // stehen), nur Ton und Bild stehen still - die Anzeige soll ja weiterhin
   // gezeichnet werden, bloss eben unveraendert.
+  // Wechselt mitten im Lied zwischen Original und Karaoke und macht an
+  // derselben Stelle weiter - angehalten bleibt angehalten. Nicht ueber
+  // bereiteMedien(): Das haengte auch das Video neu an und finge es von
+  // vorn an. false, wenn das Lied keine Karaoke-Spur hat.
+  async wechsleTonspur(karaoke) {
+    if (!this.song || !this.hatKaraoke) return false;
+    this.karaokeGewuenscht = karaoke;
+    const quelle = pfad(`/api/song/${this.geladenerIndex}/${this._tonWeg()}`);
+    if (this.audio.src === quelle) return true;
+    const stelle = this.audio.currentTime;
+    const lief = !this.audio.paused;
+    this.audio.src = quelle;
+    try {
+      await Promise.race([
+        this._dauerAbwarten(this.audio),
+        new Promise((resolve) => setTimeout(resolve, KOPFDATEN_WARTEN_MS)),
+      ]);
+    } catch (e) { /* dann eben ab der gewuenschten Stelle, sobald er kommt */ }
+    this.audio.currentTime = stelle;
+    if (lief) {
+      try { await this.audio.play(); } catch (e) { /* Browser verweigert */ }
+    }
+    return true;
+  }
+
   pausiere() {
     if (!this.laeuft || this.audio.paused) return;
     this.audio.pause();

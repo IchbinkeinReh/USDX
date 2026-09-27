@@ -433,6 +433,61 @@ check('und danach startet nichts mehr',
       await werte(`document.getElementById('buehne').dataset.radioLied === '2' &&
                    document.getElementById('buehne').classList.contains('aus')`));
 
+// Angehalten gibt es Knoepfe: Karaoke, vorheriges und naechstes Lied.
+document_start: {
+  await werte(`document.getElementById('buehne').dataset.radioLied = ''`);
+  await werte(`document.getElementById('radio_start').click()`, { geste: true });
+  if (!await warteAuf(`document.getElementById('buehne').dataset.radioLied === '1'`)) {
+    check('Radio fuer den Pausentest gestartet', false);
+    break document_start;
+  }
+  const tippe = `document.getElementById('bild_flaeche').dispatchEvent(
+    new PointerEvent('pointerdown', { bubbles: true, clientX: 50, clientY: 50 }))`;
+  await werte(tippe, { geste: true });
+  check('Pause im Radio zeigt die Knopfleiste',
+        await warteAuf(`${sichtbar('radio_pause')}`, 3000));
+  const leiste = await werte(`({
+    zurueck: document.getElementById('radio_zurueck').disabled,
+    karaoke: ${sichtbar('radio_karaoke')},
+    text: document.getElementById('radio_karaoke').textContent,
+  })`);
+  check('beim ersten Lied gibt es kein vorheriges', leiste.zurueck === true,
+        JSON.stringify(leiste));
+  check('das Probelied hat Karaoke, also steht der Knopf da',
+        leiste.karaoke && leiste.text === 'Karaoke-Version', JSON.stringify(leiste));
+
+  await werte(`performance.clearResourceTimings()`);
+  await werte(`document.getElementById('radio_karaoke').click()`, { geste: true });
+  check('Karaoke umgeschaltet, Knopf bietet jetzt das Original an',
+        await warteAuf(`document.getElementById('radio_karaoke').textContent ===
+                        'Original mit Gesang' &&
+                        !document.getElementById('radio_karaoke').disabled`));
+  check('und dafuer wird die Karaoke-Spur geholt',
+        await warteAuf(`performance.getEntriesByType('resource')
+                          .some((e) => e.name.includes('/api/song/0/karaoke'))`, 5000));
+  check('die Pause bleibt dabei stehen', await werte(`${sichtbar('radio_pause')}`));
+
+  await werte(`document.getElementById('radio_vor').click()`, { geste: true });
+  check('"Nächstes Lied" spielt das naechste',
+        await warteAuf(`document.getElementById('buehne').dataset.radioLied === '2' &&
+                        !(${sichtbar('radio_pause')})`));
+
+  await werte(tippe, { geste: true });
+  await warteAuf(`${sichtbar('radio_pause')}`, 3000);
+  check('jetzt gibt es ein vorheriges',
+        await werte(`!document.getElementById('radio_zurueck').disabled`));
+  check('und Karaoke gilt fuer das neue Lied weiter',
+        await werte(`document.getElementById('radio_karaoke').textContent ===
+                     'Original mit Gesang'`));
+  await werte(`document.getElementById('radio_zurueck').click()`, { geste: true });
+  check('"Vorheriges Lied" spielt es',
+        await warteAuf(`document.getElementById('buehne').dataset.radioLied === '3' &&
+                        !(${sichtbar('radio_pause')})`));
+
+  await werte(`document.getElementById('zurueck').click()`, { geste: true });
+  await warteAuf(`${sichtbar('auswahl')}`);
+}
+
 // Auf manchen Handys kommt das Vollbild-Versprechen nie zurueck. Das Radio
 // darf darauf nicht warten - frueher blieb es bei "Lied wird ausgesucht".
 await werte(`(() => {
@@ -442,7 +497,11 @@ await werte(`(() => {
 })()`);
 await werte(`document.getElementById('radio_start').click()`, { geste: true });
 check('Radio spielt auch, wenn das Vollbild nie antwortet',
-      await warteAuf(`document.getElementById('buehne').dataset.radioLied === '1'`));
+      await warteAuf(`document.getElementById('buehne').dataset.radioLied === '1'`),
+      JSON.stringify(await werte(`({ nr: document.getElementById('buehne').dataset.radioLied,
+        hinweis: document.getElementById('ergebnis').textContent,
+        buehne: ${sichtbar('buehne')}, meldung: document.getElementById('radio_meldung').textContent,
+        weiter: ${sichtbar('radio_weiter_flaeche')} })`)));
 await werte(`document.getElementById('zurueck').click()`, { geste: true });
 await warteAuf(`${sichtbar('auswahl')}`);
 

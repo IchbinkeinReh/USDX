@@ -247,6 +247,18 @@
               line-height:1.15}
   #radio_titel .liedtitel{font-size:clamp(16px,3.2vw,34px);color:#c7cddb;
               margin-top:6px;line-height:1.2}
+  /* Radio angehalten: Knoepfe unter dem Pausenzeichen. Die Flaeche selbst
+     laesst Tipps durch - daneben tippen setzt fort wie bisher. */
+  #bild_flaeche > #radio_pause{z-index:9;display:flex;flex-direction:column;
+              align-items:center;justify-content:center;pointer-events:none;
+              padding-top:150px}
+  #radio_pause .knoepfe{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;
+              padding:0 12px;pointer-events:auto}
+  #radio_pause button{font-size:16px;padding:12px 18px;background:#2a3140}
+  #radio_pause button:disabled{opacity:.45}
+  #radio_pause #radio_karaoke{background:#2e8b64}
+  #radio_pause .notiz{color:#c7cddb;font-size:13px;margin-top:10px;
+              text-shadow:0 1px 3px rgba(0,0,0,.9)}
   /* Falls der Browser das naechste Lied nicht von selbst starten laesst. */
   #bild_flaeche > #radio_weiter_flaeche{z-index:10;display:flex;
               align-items:center;justify-content:center;
@@ -390,6 +402,14 @@
     <div id="ergebnis" class="aus"></div>
     <div id="radio_titel" aria-live="polite"><div class="kasten">
       <div class="interpret"></div><div class="liedtitel"></div></div></div>
+    <div id="radio_pause" class="aus">
+      <div class="knoepfe">
+        <button id="radio_zurueck">⏮ Vorheriges Lied</button>
+        <button id="radio_karaoke">Karaoke-Version</button>
+        <button id="radio_vor">Nächstes Lied ⏭</button>
+      </div>
+      <div class="notiz">Daneben tippen: weiterhören</div>
+    </div>
     <div id="radio_weiter_flaeche" class="aus">
       <button id="radio_weiter">▶ Weiter hören</button>
     </div>
@@ -659,7 +679,8 @@ async function verarbeiteLobbyZustand(zustand) {
   // der Seite, wo sonst kurz wieder der Standardwert des Liedes staende
   // statt dem, was in der Lobby laengst vereinbart ist. Aendern kann daran
   // trotzdem nur der Ersteller, siehe die 'change'-Behandlung von #version.
-  if (spiel.hatKaraoke) spiel.karaokeGewuenscht = !!zustand.karaoke;
+  // Das Radio hat seine eigene Wahl (radio.karaoke) und keine Lobby dazu.
+  if (spiel.hatKaraoke && !radio.aktiv) spiel.karaokeGewuenscht = !!zustand.karaoke;
   zeigeVersion();
 
   // Andere Lobby? Dann faengt die Zaehlung von vorn an, und der alte Stand
@@ -1677,8 +1698,18 @@ function zeigeErgebnis(ergebnis) {
 // lauf zaehlt jeden Liedwechsel. Wer auf "Radio beenden" drueckt, waehrend
 // das naechste Lied noch laedt, erhoeht ihn - der alte Ladevorgang merkt es
 // danach und spielt nicht mehr los.
+//
+// gespielt: was in diesem Durchgang lief, fuer "Vorheriges Lied".
+// karaoke: einmal auf Karaoke umgeschaltet, gilt das fuer die folgenden
+// Lieder weiter, soweit sie eine Karaoke-Spur haben.
+// sitzung/imVollbild: ob DIESES Radio das Vollbild bekommen hat. Nur dann
+// heisst "Vollbild verlassen" auch "Radio aus" - sonst beendete das spaet
+// eintreffende Ereignis eines eben beendeten Radios gleich das neue.
 const radio = { aktiv: false, lauf: 0, nr: 0, fehlschlaege: 0, suche: '',
-                verlauf: new RadioVerlauf() };
+                verlauf: new RadioVerlauf(), gespielt: [], karaoke: false,
+                sitzung: 0, imVollbild: false };
+// Mehr braucht "Vorheriges Lied" nicht - niemand blaettert hundert zurueck.
+const RADIO_GESPIELT_MAX = 100;
 // Nach so vielen Liedern hintereinander, die sich nicht abspielen lassen,
 // hoert das Radio auf, statt endlos weiterzuprobieren.
 const RADIO_MAX_FEHLER = 3;
@@ -1713,6 +1744,8 @@ async function starteRadio(ersterIndex = null) {
   radio.nr = 0;
   radio.fehlschlaege = 0;
   radio.verlauf.leeren();
+  radio.gespielt = [];
+  radio.karaoke = false;
   $('radio_meldung').textContent = '';
   spiel.vorschauStop();
   auswahl.classList.add('aus');
@@ -1727,8 +1760,12 @@ async function starteRadio(ersterIndex = null) {
   // kommt das Versprechen (vor allem das Festhalten im Querformat) nie
   // zurueck - das Radio blieb dann bei "Lied wird ausgesucht" stehen.
   // Angestossen ist es hier schon, noch innerhalb des Klicks.
+  const sitzung = ++radio.sitzung;
+  radio.imVollbild = false;
   vollbildAn(buehne).then((konnte) => {
-    if (handy && !konnte.quer && radio.aktiv) $('drehen').style.display = 'block';
+    if (!radio.aktiv || sitzung !== radio.sitzung) return;
+    radio.imVollbild = konnte.vollbild && imVollbild();
+    if (handy && !konnte.quer) $('drehen').style.display = 'block';
     passeAn();
   });
   passeAn();
@@ -1762,6 +1799,9 @@ async function radioAbspielen(song, gilt) {
   if (!gilt()) { spiel.stop(); return; }
   radio.fehlschlaege = 0;
   radio.nr++;
+  radio.gespielt.push(spiel.geladenerIndex);
+  if (radio.gespielt.length > RADIO_GESPIELT_MAX) radio.gespielt.shift();
+  zeigeRadioPause(false);
   zeigeRadioTitel(song);
   // Fuer den Browsertest: woran sich ablesen laesst, dass es weiterging.
   buehne.dataset.radioLied = String(radio.nr);
@@ -1795,6 +1835,8 @@ async function spieleRadioLied(index = null) {
       const song = await spiel.ladeLied(i);
       if (!gilt()) return;
       aktuellGeladen = i;
+      // ladeLied() stellt auf Original zurueck; im Radio gilt die letzte Wahl.
+      spiel.karaokeGewuenscht = radio.karaoke && spiel.hatKaraoke;
       spiel.bereiteMedien();
       try {
         await radioAbspielen(song, gilt);
@@ -1826,6 +1868,7 @@ function radioAus() {
   radioWartet = null;
   $('radio_weiter_flaeche').classList.add('aus');
   versteckeRadioTitel();
+  zeigeRadioPause(false);
   $('zurueck').textContent = 'Zurück';
 }
 
@@ -1841,6 +1884,51 @@ async function beendeRadio(meldung = '') {
 }
 
 $('radio_start').addEventListener('click', () => { starteRadio(); });
+
+// Die Knopfleiste in der Pause. Karaoke nur, wenn das Lied eine Spur dafuer
+// hat; "Vorheriges" nur, wenn schon eines vorher lief.
+function zeigeRadioPause(an) {
+  $('radio_pause').classList.toggle('aus', !an);
+  if (!an) return;
+  $('radio_zurueck').disabled = radio.gespielt.length < 2;
+  $('radio_karaoke').classList.toggle('aus', !spiel.hatKaraoke);
+  $('radio_karaoke').textContent = spiel.karaokeGewuenscht
+    ? 'Original mit Gesang' : 'Karaoke-Version';
+}
+
+// Ein Tipp auf die Knoepfe darf nicht bis zur Buehne durchgehen - dort
+// hiesse er "weiterspielen" und liefe gegen den Knopf selbst.
+$('radio_pause').addEventListener('pointerdown', (e) => {
+  if (e.target.closest('button')) e.stopPropagation();
+});
+
+// Lied wechseln: das laufende sauber anhalten (stop() meldet kein Ende,
+// es kommt also nicht noch ein zweites Lied hinterher) und das Pausenbild
+// wegnehmen.
+function radioWechsel(index) {
+  if (!radio.aktiv) return;
+  spiel.stop();
+  $('pausezeichen').classList.remove('an');
+  zeigeRadioPause(false);
+  spieleRadioLied(index);
+}
+
+$('radio_vor').addEventListener('click', () => radioWechsel(null));
+
+$('radio_zurueck').addEventListener('click', () => {
+  if (radio.gespielt.length < 2) return;
+  radio.gespielt.pop();                  // das laufende
+  radioWechsel(radio.gespielt.pop());    // kommt beim Abspielen wieder dazu
+});
+
+$('radio_karaoke').addEventListener('click', async () => {
+  if (!radio.aktiv || !spiel.hatKaraoke) return;
+  radio.karaoke = !spiel.karaokeGewuenscht;
+  $('radio_karaoke').disabled = true;
+  await spiel.wechsleTonspur(radio.karaoke);
+  $('radio_karaoke').disabled = false;
+  zeigeRadioPause(radio.aktiv && spiel.pausiert);
+});
 
 // Lied zu Ende: Vollbild verlassen und die Ergebnisseite zeigen.
 spiel.onEnde = async (ergebnis) => {
@@ -1901,6 +1989,7 @@ $('bild_flaeche').addEventListener('pointerdown', (e) => {
     // Abfrage-Takt nach.
     if (willPause) spiel.pausiere(); else spiel.fortsetzen();
     $('pausezeichen').classList.toggle('an', willPause);
+    if (radio.aktiv) zeigeRadioPause(willPause);
     if (!radio.aktiv) lobbyClient.pause(willPause, spiel.audio.currentTime);
   }, DOPPEL_MS);
 });
@@ -1913,7 +2002,8 @@ document.addEventListener('fullscreenchange', () => {
     // sich ueber onEnde, dieselbe Stelle wie am Ende des Stuecks; laeuft
     // gerade nichts, tut es nichts. Im Radio heisst das: Radio aus, zurueck
     // zur Liste - beende() spielte dort sonst das naechste Lied.
-    if (radio.aktiv) beendeRadio(); else spiel.beende();
+    if (radio.aktiv) { if (radio.imVollbild) beendeRadio(); }
+    else spiel.beende();
   }
   setTimeout(passeAn, 100);
 });
