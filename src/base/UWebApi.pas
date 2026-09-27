@@ -37,7 +37,7 @@ const
   // noch so verdrehte URL etwas ausliefern, was nicht hier steht, und der
   // uebliche Fehler - ein ../ das durch die Pruefung rutscht - kann gar nicht
   // erst auftreten. Neue Datei im Ordner heisst: hier eintragen.
-  WEB_DATEIEN: array[0..13] of UTF8String = (
+  WEB_DATEIEN: array[0..14] of UTF8String = (
     'index.html',
     'favicon.png',
     // Der Dienstarbeiter MUSS an der Wurzel liegen, nicht unter js/: Sein
@@ -54,7 +54,8 @@ const
     'js/vollbild.js',
     'js/pegel.js',
     'js/bewertung.js',
-    'js/lobby.js'
+    'js/lobby.js',
+    'js/radio.js'
   );
 
 type

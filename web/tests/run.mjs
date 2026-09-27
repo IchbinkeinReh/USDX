@@ -28,6 +28,8 @@ import { LobbyClient,
 import { chacha20XOR, nonceForFile, hexToBytes, bytesToHex, geschuetzteDatei,
          startStelle, ART_TXT, ART_AUDIO, ART_VIDEO,
          ART_PREVIEW, ART_AUDIO_INSTRUMENTAL } from '../js/krypto.js';
+import { modusAusZustand, verlaufLaenge, RadioVerlauf, radioBesetzung,
+         RADIO_VERLAUF_MAX } from '../js/radio.js';
 
 // Aufzeichnender Ersatz fuer den Zeichenkontext. Zeichnen laesst sich hier
 // nicht pruefen - WAS gezeichnet wird und WIE GROSS aber schon, und genau
@@ -1894,6 +1896,48 @@ console.log('Verschluesselung');
 // entschluesselt wird. Aus der ANTWORT gelesen, nicht aus der Anfrage: Der
 // Server darf weniger schicken als gefragt.
 console.log();
+console.log('Startseite und Radio');
+{
+  const z = (x) => ({ q: '', lied: null, singen: false, lobby: null, modus: null, ...x });
+  check('ohne Angaben: Startseite', modusAusZustand(z({})) === 'start');
+  check('modus=radio', modusAusZustand(z({ modus: 'radio' })) === 'radio');
+  check('modus=party', modusAusZustand(z({ modus: 'party' })) === 'party');
+  check('alter Einladungslink fuehrt in die Party',
+        modusAusZustand(z({ lobby: '123456' })) === 'party');
+  check('geteiltes Lied ebenso', modusAusZustand(z({ lied: 0 })) === 'party');
+  check('unbekannter modus: Startseite',
+        modusAusZustand(z({ modus: 'quatsch' })) === 'start');
+  check('eine Suche allein fuehrt nicht aus der Startseite',
+        modusAusZustand(z({ q: 'abba' })) === 'start');
+
+  check('ein Treffer: nichts zu sperren', verlaufLaenge(1) === 0);
+  check('keine Treffer: nichts zu sperren', verlaufLaenge(0) === 0);
+  check('sonst die Haelfte', verlaufLaenge(10) === 5);
+  check('hoechstens RADIO_VERLAUF_MAX',
+        verlaufLaenge(29000) === RADIO_VERLAUF_MAX);
+
+  const v = new RadioVerlauf();
+  v.merke(1, 10); v.merke(2, 10);
+  check('gemerkte Lieder gelten als kuerzlich', v.kuerzlich(1) && v.kuerzlich(2));
+  check('andere nicht', !v.kuerzlich(3));
+  for (let i = 3; i <= 7; i++) v.merke(i, 10);
+  check('nur die letzten fuenf bei zehn Treffern',
+        !v.kuerzlich(1) && !v.kuerzlich(2) && v.kuerzlich(3) && v.kuerzlich(7),
+        JSON.stringify(v.liste));
+  v.merke(8, 1);
+  check('ein Treffer: das Lied darf gleich wieder laufen', !v.kuerzlich(8));
+  v.merke(9, 10); v.leeren();
+  check('leeren vergisst alles', !v.kuerzlich(9));
+
+  const solo = radioBesetzung({ isDuet: false, tracks: [{ name: 'P1' }] });
+  check('Solo: eine Stimme ohne Mikrofon',
+        solo.length === 1 && solo[0].trackIndex === 0 && solo[0].deviceId === null);
+  const duett = radioBesetzung({ isDuet: true, tracks: [{ name: 'A' }, { name: 'B' }] });
+  check('Duett: beide Stimmen, beide ohne Mikrofon',
+        duett.length === 2 && duett.every((b) => b.deviceId === null) &&
+        duett[1].trackIndex === 1 && duett[1].name === 'B');
+}
+
 console.log('Dienstarbeiter');
 {
   const antwort = (status, bereich) => ({

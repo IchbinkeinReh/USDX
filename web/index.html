@@ -11,6 +11,21 @@
        overscroll-behavior:none}
   .aus{display:none !important}
 
+  /* ---------- Startseite ---------- */
+  #startseite{max-width:720px;margin:0 auto;
+              padding:44px 18px calc(28px + env(safe-area-inset-bottom))}
+  #startseite h1{font-size:28px;margin:0 0 12px}
+  #startseite .einleitung{color:#c7cddb;font-size:16px;line-height:1.5;margin:0 0 28px}
+  .modus_wahl{display:flex;flex-direction:column;gap:14px}
+  .modus_karte{background:#171a22;border-radius:14px;padding:18px}
+  .modus_karte button{width:100%;font-size:19px;padding:16px}
+  .modus_karte p{color:#98a0b0;font-size:14px;line-height:1.45;margin:12px 2px 0}
+  #zum_radio{background:#2e8b64}
+  @media (min-width:640px){
+    .modus_wahl{flex-direction:row}
+    .modus_karte{flex:1}
+  }
+
   /* ---------- Schritt 1: Liedauswahl ---------- */
   header{display:flex;gap:10px;align-items:center;padding:10px 14px;background:#171a22}
   input,select{font-size:16px;padding:9px;border-radius:8px;border:1px solid #333a48;
@@ -33,6 +48,13 @@
               border-bottom:1px solid #1b1f29}
   #treffer_anzahl{color:#98a0b0;font-size:14px}
   #zufall{padding:7px 14px;font-size:14px;background:#2a3140;flex:0 0 auto}
+  #zur_startseite{flex:0 0 auto;padding:9px 13px;font-size:18px;line-height:1}
+  #radio_start{padding:7px 18px;font-size:14px;background:#2e8b64;flex:0 0 auto}
+  #radio_start:disabled{background:#333a48}
+  #radio_info{color:#98a0b0;font-size:13px;padding:8px 14px;background:#171a22;
+              border-bottom:1px solid #1b1f29}
+  #radio_meldung{color:#ff9b8a;font-size:13px;padding:8px 14px 0}
+  #radio_meldung:empty{display:none}
   #liste{max-height:none}
   #liste div.zeile{display:flex;gap:12px;align-items:center;
                    padding:10px 14px;border-bottom:1px solid #1b1f29;
@@ -213,8 +235,33 @@
 </head>
 <body>
 
+<!-- ============ Startseite ============ -->
+<div id="startseite">
+  <h1>Willkommen bei UltraStar</h1>
+  <p class="einleitung">Karaoke direkt im Browser – mit dem Handy oder einem
+    Headset als Mikrofon, allein oder mit Freunden. Du kannst um Punkte
+    singen oder einfach Musik laufen lassen und den Text mitlesen. Wie soll
+    es losgehen?</p>
+  <div class="modus_wahl">
+    <div class="modus_karte">
+      <button id="zur_party">Party-Modus</button>
+      <p>Lieder aussuchen, Mikrofone zuordnen und um Punkte singen. Freunde
+        kommen über die Lobby-Nummer dazu und singen auf ihren eigenen
+        Geräten mit.</p>
+    </div>
+    <div class="modus_karte">
+      <button id="zum_radio">Radio-Modus</button>
+      <p>Einfach zuhören und mitlesen: Suche eingeben, Start drücken – dann
+        laufen zufällige Lieder aus den Treffern, eins nach dem anderen, bis
+        du aufhörst. Ohne Mikrofon, ohne Wertung.</p>
+    </div>
+  </div>
+</div>
+
 <!-- ============ Schritt 1: Lied waehlen ============ -->
-<div id="auswahl">
+<!-- Party- und Radio-Modus teilen sich diese Liste. Im Radio fallen Lobby,
+     Mikrofonauswahl und Zufallsknopf weg; dafuer gibt es "Start". -->
+<div id="auswahl" class="aus">
   <div id="kopfbereich">
     <div id="lobby_leiste">
       <span id="lobby_beschriftung">Lobby-Nummer</span>
@@ -233,6 +280,7 @@
 
     <div id="suchkopf">
       <header>
+        <button id="zur_startseite" class="still" aria-label="Startseite" title="Startseite">⌂</button>
         <div class="suchfeld">
           <input id="suche" placeholder="Suchen – abba OR queen, !live, 1990-1999">
           <button id="suche_leeren" class="aus" aria-label="Suche löschen" title="Suche löschen">×</button>
@@ -241,7 +289,11 @@
       <div id="suchleiste">
         <span id="treffer_anzahl"></span>
         <button id="zufall" class="still" disabled>Zufälliges Lied</button>
+        <button id="radio_start" class="aus" disabled>▶ Start</button>
       </div>
+      <div id="radio_info" class="aus">Radio: Suche eingeben und Start
+        drücken – oder ein Lied antippen, um damit anzufangen.</div>
+      <div id="radio_meldung"></div>
     </div>
   </div>
 
@@ -346,6 +398,7 @@ import { LobbyClient, istGueltigerCode, driftKorrektur, sollPositionAus,
          ergebnisMitFernspielern, STANDARDNAME } from './js/lobby.js';
 import { starteSitzung } from './js/sitzung.js';
 import { neuerDurchgang } from './js/game.js';
+import { modusAusZustand, RadioVerlauf, radioBesetzung } from './js/radio.js';
 
 // Wie oft die eigene Wiedergabe gegen den gemeinsamen Anker geprueft wird.
 //
@@ -390,6 +443,8 @@ let aktuellGeladen = null, aktuelleSucheText = null;
 // das Zufallslied ueber die ganze Trefferliste wuerfeln kann, nicht nur
 // ueber die schon geladene Seite.
 let letzterGesamt = 0;
+// Welche Ansicht gerade gilt: 'start', 'party' oder 'radio' (siehe radio.js).
+let modus = 'start';
 
 // ---------- Lobby ----------
 //
@@ -496,7 +551,9 @@ async function verarbeiteLobbyZustand(zustand) {
     nachgeholteVorschau = null;
     $('mitspieler').classList.add('aus');
     spiel.vorschauStop();
-    if (!buehne.classList.contains('aus') || !ergebnisseite.classList.contains('aus')) {
+    // Das Radio haengt an keiner Lobby - es laeuft einfach weiter.
+    if (!radio.aktiv &&
+        (!buehne.classList.contains('aus') || !ergebnisseite.classList.contains('aus'))) {
       await verlasseBuehne();
       ergebnisseite.classList.add('aus');
       auswahl.classList.remove('aus');
@@ -594,8 +651,12 @@ async function verarbeiteLobbyZustand(zustand) {
   }
   letzteZielNr = zustand.zielNr;
 
-  // Pause gilt fuer alle, auch fuer den Gastgeber selbst.
-  if (spiel.laeuft) {
+  // Pause gilt fuer alle, auch fuer den Gastgeber selbst. Nicht im Radio:
+  // Dort haelt man nur fuer sich an, und eine alte Pausenmeldung der Lobby
+  // hielte sonst das naechste Lied gleich wieder an.
+  if (radio.aktiv) {
+    // nichts - siehe oben
+  } else if (spiel.laeuft) {
     $('pausezeichen').classList.toggle('an', !!zustand.pausiert);
     if (zustand.pausiert) spiel.pausiere();
     else spiel.fortsetzen();
@@ -845,6 +906,7 @@ function leseZustandAusURL() {
     lied: p.has('lied') ? +p.get('lied') : null,
     singen: p.get('singen') === '1',
     lobby: p.get('lobby') || null,
+    modus: p.get('modus') || null,
   };
 }
 
@@ -854,6 +916,10 @@ function syncURL(patch, { push }) {
     if (v === null || v === undefined || v === '') p.delete(k);
     else p.set(k, v);
   }
+  // Die Lobby-Nummer gehoert nur in die Adresse, solange man in der Party
+  // ist. Auf der Startseite oder im Radio machte sie aus einem Neuladen
+  // sonst einen alten Einladungslink - und der fuehrt in die Party.
+  if (p.get('modus') !== 'party') p.delete('lobby');
   const qs = p.toString();
   const url = location.pathname + (qs ? '?' + qs : '') + location.hash;
   if (push) history.pushState(null, '', url);
@@ -864,11 +930,27 @@ function syncURL(patch, { push }) {
 // Laden genauso wie nach Vor/Zurueck. Was schon passt, wird nicht angefasst,
 // damit dabei nicht unnoetig neu gesucht oder neu geladen wird.
 async function anwendenZustand(z) {
+  // Das Radio laeuft nur, solange man auf der Buehne bleibt - wer mit der
+  // Zurueck-Taste herausgeht, hoert damit auf.
+  radioAus();
   if (!buehne.classList.contains('aus') || !ergebnisseite.classList.contains('aus')) {
     await verlasseBuehne();
     ergebnisseite.classList.add('aus');
     auswahl.classList.remove('aus');
     $('singen').disabled = false;
+  }
+
+  const m = modusAusZustand(z);
+  // Alte Links ohne "modus" ausdruecklich zur Party machen, damit die
+  // Adresse zeigt, wo man ist.
+  if (m === 'party' && z.modus !== 'party') syncURL({ modus: 'party' }, { push: false });
+  await setzeModus(m);
+
+  if (m === 'start') {
+    // Die eigene Lobby entsteht trotzdem schon hier, wie bisher beim ersten
+    // Laden - sie steht nur nicht in der Adresse (siehe syncURL).
+    if (!lobbyClient.code) await lobbyClient.erstelle(lobbyName());
+    return;
   }
 
   if (aktuelleSucheText !== z.q) {
@@ -878,7 +960,10 @@ async function anwendenZustand(z) {
     await sucheLieder();
   }
 
-  if (z.lied != null) {
+  // Ein ausgewaehltes Lied gibt es nur in der Party - im Radio waehlt der
+  // Zufall, und die Mikrofonleiste bleibt zu.
+  if (m === 'radio' && z.lied != null) syncURL({ lied: null }, { push: false });
+  if (m === 'party' && z.lied != null) {
     if (aktuellGeladen !== z.lied) await waehleLied(z.lied);
     else zeigeLeiste(true);
   } else {
@@ -895,15 +980,61 @@ async function anwendenZustand(z) {
   // ansonsten (wie bei jedem ersten Laden) eine eigene Solo-Lobby entstehen
   // wuerde. Schlaegt der Beitritt fehl (Code falsch/abgelaufen), faellt das
   // still auf eine eigene Lobby zurueck - derselbe Gedanke wie bei singen=1.
-  if (z.lobby && z.lobby !== lobbyClient.code) {
+  if (m === 'party' && z.lobby && z.lobby !== lobbyClient.code) {
     const ok = await lobbyClient.trete(z.lobby, lobbyName());
     if (!ok) syncURL({ lobby: null }, { push: false });
   }
-  if (!lobbyClient.code) {
-    await lobbyClient.erstelle(lobbyName());
-    syncURL({ lobby: lobbyClient.code }, { push: false });
-  }
+  if (!lobbyClient.code) await lobbyClient.erstelle(lobbyName());
+  // Auch wenn die Lobby schon auf der Startseite entstanden ist: In der
+  // Party soll ihre Nummer in der Adresse stehen, wie bisher.
+  if (m === 'party') syncURL({ lobby: lobbyClient.code }, { push: false });
 }
+
+// ---------- Startseite und Modus ----------
+
+// Nur die Sichtbarkeit - getrennt, damit sie schon vor dem Aufbau der
+// Sitzung stimmt. Sonst blitzte beim Laden kurz die falsche Ansicht auf.
+function zeigeModusAn(m) {
+  $('startseite').classList.toggle('aus', m !== 'start');
+  auswahl.classList.toggle('aus', m === 'start');
+  const party = m === 'party', radioModus = m === 'radio';
+  $('lobby_leiste').classList.toggle('aus', !party);
+  $('lobby_fehler').classList.toggle('aus', !party);
+  if (!party) $('lobby_beitreten_feld').classList.remove('an');
+  $('zufall').classList.toggle('aus', radioModus);
+  $('radio_start').classList.toggle('aus', !radioModus);
+  $('radio_info').classList.toggle('aus', !radioModus);
+  if (!radioModus) $('radio_meldung').textContent = '';
+}
+
+async function setzeModus(m) {
+  modus = m;
+  zeigeModusAn(m);
+  if (m === 'party') return;
+  // Ausserhalb der Party gibt es kein ausgewaehltes Lied und keine
+  // Vorschau, die noch nachgeholt werden muesste.
+  spiel.vorschauStop();
+  nachgeholteVorschau = null;
+  zeigeLeiste(false);
+  aktuellGeladen = null;
+  // Als Gast in einer fremden Lobby: die verlassen. Sonst zoege der
+  // Gastgeber einen mit seiner naechsten Auswahl aus dem Radio heraus auf
+  // seine Buehne.
+  if (!binHost && lobbyClient.code) await lobbyClient.verlasse(lobbyName());
+}
+
+function wechsleModus(m) {
+  const patch = { modus: m === 'start' ? null : m, lied: null, singen: null };
+  // Zurueck auf die Startseite: Die Suche gehoert zur Liste, nicht dorthin.
+  if (m === 'start') patch.q = null;
+  syncURL(patch, { push: true });
+  anwendenZustand(leseZustandAusURL());
+}
+$('zur_party').addEventListener('click', () => wechsleModus('party'));
+$('zum_radio').addEventListener('click', () => wechsleModus('radio'));
+$('zur_startseite').addEventListener('click', () => wechsleModus('start'));
+
+zeigeModusAn(modusAusZustand(leseZustandAusURL()));
 
 addEventListener('popstate', () => { anwendenZustand(leseZustandAusURL()); });
 
@@ -935,6 +1066,7 @@ function zeigeTrefferzahl(n) {
   $('treffer_anzahl').textContent =
     n === 1 ? '1 Lied gefunden' : `${n} Lieder gefunden`;
   $('zufall').disabled = !(n > 0);
+  $('radio_start').disabled = !(n > 0);
 }
 
 async function holeSeite() {
@@ -1033,7 +1165,7 @@ $('lobby_einladen').addEventListener('click', async () => {
   try {
     await navigator.share({
       title: 'UltraStar mitsingen',
-      url: pfad('/?lobby=' + lobbyClient.code),
+      url: pfad('/?modus=party&lobby=' + lobbyClient.code),
     });
   } catch (e) { /* abgebrochen oder nicht unterstuetzt - kein Problem */ }
 });
@@ -1263,6 +1395,10 @@ $('liste').addEventListener('click', async (e) => {
   const d = e.target.closest('div[data-i]');
   if (!d) return;
   const index = +d.dataset.i;
+  // Im Radio faengt ein angetipptes Lied das Programm an; danach geht es
+  // zufaellig weiter. Ohne await davor: starteRadio() fordert das Vollbild
+  // an, und das geht nur, solange der Klick noch frisch ist.
+  if (modus === 'radio') { starteRadio(index); return; }
   await waehleLied(index);
   // An die Lobby weitergeben - nur der Ersteller kommt hier ueberhaupt an
   // die Liste heran (Gaeste sehen #durchsuchen gar nicht), ein Wachposten
@@ -1429,7 +1565,9 @@ async function zurueckZurAuswahl() {
   aktuellGeladen = null;
   syncURL({ lied: null, singen: null }, { push: true });
 }
-$('zurueck').addEventListener('click', zurueckZurAuswahl);
+$('zurueck').addEventListener('click', () => {
+  if (radio.aktiv) beendeRadio(); else zurueckZurAuswahl();
+});
 $('zurueck_zur_liste').addEventListener('click', zurueckZurAuswahl);
 
 // Noch einmal dasselbe Lied, mit derselben Besetzung.
@@ -1496,8 +1634,130 @@ function zeigeErgebnis(ergebnis) {
   ergebnisseite.classList.remove('aus');
 }
 
+// ---------- Radio ----------
+//
+// Zuhoeren statt singen: Ein Lied nach dem anderen, zufaellig aus den
+// Treffern der Suche, die beim Start im Feld stand. Gespielt wird auf der
+// Buehne - mit Text, Video und Hintergrund wie beim Singen, nur ohne
+// Mikrofon: Jede Stimme laeuft ungewertet mit (radioBesetzung).
+//
+// Keine Lobby: Das Radio laeuft auf diesem Geraet allein, die Lobby-Leiste
+// ist in dem Modus ausgeblendet.
+//
+// lauf zaehlt jeden Liedwechsel. Wer auf "Radio beenden" drueckt, waehrend
+// das naechste Lied noch laedt, erhoeht ihn - der alte Ladevorgang merkt es
+// danach und spielt nicht mehr los.
+const radio = { aktiv: false, lauf: 0, nr: 0, fehlschlaege: 0, suche: '',
+                verlauf: new RadioVerlauf() };
+// Nach so vielen Liedern hintereinander, die sich nicht abspielen lassen,
+// hoert das Radio auf, statt endlos weiterzuprobieren.
+const RADIO_MAX_FEHLER = 3;
+
+// Wuerfelt ein Lied aus ALLEN Treffern der Suche, wie #zufall. Meidet die
+// zuletzt gespielten (RadioVerlauf), gibt aber nach ein paar Versuchen auf -
+// dann darf sich eben etwas wiederholen. null, wenn es keine Treffer gibt.
+async function radioZufallsLied(suche) {
+  const q = encodeURIComponent(suche);
+  const kopf = await (await fetch(pfad(`/api/songs?max=1&offset=0&q=${q}`))).json();
+  const gesamt = Number.isFinite(kopf.total) ? kopf.total : (kopf.songs || []).length;
+  if (!(gesamt > 0)) return null;
+  let wahl = null;
+  for (let versuch = 0; versuch < 6; versuch++) {
+    const platz = Math.floor(Math.random() * gesamt);
+    const d = await (await fetch(pfad(`/api/songs?max=1&offset=${platz}&q=${q}`))).json();
+    const s = (d.songs || [])[0];
+    if (!s) continue;
+    wahl = s.index;
+    if (!radio.verlauf.kuerzlich(wahl)) break;
+  }
+  if (wahl !== null) radio.verlauf.merke(wahl, gesamt);
+  return wahl;
+}
+
+// Aus dem Klick heraus rufen: Das Vollbild wird hier angefordert, und das
+// verlangt eine frische Nutzergeste. Die folgenden Lieder starten ohne -
+// das Tonelement hat dann schon einmal gespielt, das genuegt dem Browser.
+async function starteRadio(ersterIndex = null) {
+  radio.aktiv = true;
+  radio.suche = $('suche').value;
+  radio.nr = 0;
+  radio.fehlschlaege = 0;
+  radio.verlauf.leeren();
+  $('radio_meldung').textContent = '';
+  spiel.vorschauStop();
+  auswahl.classList.add('aus');
+  buehne.classList.remove('aus');
+  $('startflaeche').style.display = 'none';
+  $('zurueck').textContent = 'Radio beenden';
+  el.hinweis.textContent = 'Lied wird ausgesucht …';
+  // Wie beim Singen: Die Zurueck-Taste soll von der Buehne zur Liste
+  // fuehren, nicht die Seite verlassen.
+  syncURL({ singen: 1 }, { push: true });
+  const konnte = await vollbildAn(buehne);
+  if (handy && !konnte.quer) $('drehen').style.display = 'block';
+  passeAn();
+  await spieleRadioLied(ersterIndex);
+}
+
+async function spieleRadioLied(index = null) {
+  const lauf = ++radio.lauf;
+  const gilt = () => radio.aktiv && lauf === radio.lauf;
+  while (gilt()) {
+    try {
+      const i = index !== null ? index : await radioZufallsLied(radio.suche);
+      index = null;
+      if (!gilt()) return;
+      if (i === null) { await beendeRadio('Die Suche findet keine Lieder.'); return; }
+      if (radio.nr > 0) el.hinweis.textContent = 'Nächstes Lied …';
+      const song = await spiel.ladeLied(i);
+      if (!gilt()) return;
+      aktuellGeladen = i;
+      spiel.bereiteMedien();
+      // Nicht zaehlen: web-gesungen.tsv haelt fest, was gesungen wurde.
+      await spiel.start(radioBesetzung(song), 0, 0, { zaehlen: false });
+      // Waehrend start() auf den Ton wartete, kann das Radio beendet worden
+      // sein - dann liefe das Lied sonst hinter der Liste los.
+      if (!gilt()) { spiel.stop(); return; }
+      radio.fehlschlaege = 0;
+      radio.nr++;
+      // Fuer den Browsertest: woran sich ablesen laesst, dass es weiterging.
+      buehne.dataset.radioLied = String(radio.nr);
+      return;
+    } catch (err) {
+      if (!gilt()) return;
+      if (++radio.fehlschlaege >= RADIO_MAX_FEHLER) {
+        await beendeRadio('Radio angehalten: ' + (err && err.message ? err.message : err));
+        return;
+      }
+    }
+  }
+}
+
+// Nur die Schalter - ohne die Oberflaeche anzufassen. Fuer die Stellen, die
+// ohnehin selbst von der Buehne gehen (anwendenZustand).
+function radioAus() {
+  radio.aktiv = false;
+  radio.lauf++;
+  $('zurueck').textContent = 'Zurück';
+}
+
+async function beendeRadio(meldung = '') {
+  if (!radio.aktiv) return;
+  radioAus();
+  await verlasseBuehne();
+  auswahl.classList.remove('aus');
+  el.hinweis.textContent = '';
+  aktuellGeladen = null;
+  $('radio_meldung').textContent = meldung;
+  syncURL({ singen: null }, { push: false });
+}
+
+$('radio_start').addEventListener('click', () => { starteRadio(); });
+
 // Lied zu Ende: Vollbild verlassen und die Ergebnisseite zeigen.
 spiel.onEnde = async (ergebnis) => {
+  // Im Radio gibt es kein Ergebnis - es geht gleich mit dem naechsten weiter.
+  if (radio.aktiv) { spieleRadioLied(); return; }
   // Der Ersteller beendet damit auch fuer alle anderen - egal ob das Lied
   // ausgelaufen ist oder abgebrochen wurde. Ziel ist das Ergebnis: Jeder
   // soll erst einmal seine eigene Punktzahl sehen.
@@ -1536,8 +1796,8 @@ $('bild_flaeche').addEventListener('pointerdown', (e) => {
     const vor = (e.clientX - r.left) > r.width / 2;
     spiel.spulen(vor ? SPULWEITE : -SPULWEITE);
     // Nach dem Spulen den Anker neu setzen, sonst zoege die Nachfuehrung
-    // alle sofort wieder auf die alte Stelle zurueck.
-    lobbyClient.starte(lobbyClient.serverJetzt() - spiel.audio.currentTime * 1000);
+    // alle sofort wieder auf die alte Stelle zurueck. Das Radio hat keinen.
+    if (!radio.aktiv) lobbyClient.starte(lobbyClient.serverJetzt() - spiel.audio.currentTime * 1000);
     letzterTipp = 0;   // nicht dreifach ausloesen
     return;
   }
@@ -1553,7 +1813,7 @@ $('bild_flaeche').addEventListener('pointerdown', (e) => {
     // Abfrage-Takt nach.
     if (willPause) spiel.pausiere(); else spiel.fortsetzen();
     $('pausezeichen').classList.toggle('an', willPause);
-    lobbyClient.pause(willPause, spiel.audio.currentTime);
+    if (!radio.aktiv) lobbyClient.pause(willPause, spiel.audio.currentTime);
   }, DOPPEL_MS);
 });
 
@@ -1563,8 +1823,9 @@ document.addEventListener('fullscreenchange', () => {
     // Wer das Vollbild verlaesst, will aufhoeren - dann soll das Ergebnis
     // kommen und nicht das Lied im Fenster weiterlaufen. beende() meldet
     // sich ueber onEnde, dieselbe Stelle wie am Ende des Stuecks; laeuft
-    // gerade nichts, tut es nichts.
-    spiel.beende();
+    // gerade nichts, tut es nichts. Im Radio heisst das: Radio aus, zurueck
+    // zur Liste - beende() spielte dort sonst das naechste Lied.
+    if (radio.aktiv) beendeRadio(); else spiel.beende();
   }
   setTimeout(passeAn, 100);
 });
@@ -1579,15 +1840,16 @@ document.addEventListener('fullscreenchange', () => {
 // Die Liederliste selbst braucht das nicht; sie ist offen. Deshalb wird sie
 // auch dann noch angezeigt, wenn es schiefgeht - man kann dann blaettern und
 // im Spiel auswaehlen, nur eben nicht im Browser singen.
+// data-bereit sagt dem Browsertest, dass die Knoepfe jetzt etwas tun - die
+// Startseite steht schon im HTML, bevor dieses Skript laeuft.
+const bereit = () => { document.documentElement.dataset.bereit = '1'; };
 starteSitzung().then(
-  () => {
-    anwendenZustand(leseZustandAusURL());
-  },
+  () => anwendenZustand(leseZustandAusURL()).then(bereit),
   (e) => {
     $('ergebnis').textContent =
       'Lieder lassen sich nicht abspielen: ' + (e && e.message ? e.message : e);
     $('ergebnis').classList.remove('aus');
-    anwendenZustand(leseZustandAusURL());
+    return anwendenZustand(leseZustandAusURL()).then(bereit);
   });
 passeAn();
 </script>

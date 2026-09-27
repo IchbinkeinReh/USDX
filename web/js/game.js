@@ -599,7 +599,11 @@ export class Game {
   // seekSekunden setzt die Startposition - fuer eine Lobby, die einem schon
   // laufenden Lied beitritt. 0 (Standard) laesst jeden bestehenden Aufruf
   // unveraendert.
-  async start(besetzung, schwierigkeit = LEICHT, seekSekunden = 0) {
+  //
+  // zaehlen=false: nicht als gesungen melden - fuer den Radio-Modus, in dem
+  // nur zugehoert wird. web-gesungen.tsv soll sagen, was gesungen wurde.
+  async start(besetzung, schwierigkeit = LEICHT, seekSekunden = 0,
+              { zaehlen = true } = {}) {
     if (!this.song) return;
 
     // Normalerweise haengt beides schon am Element - die Buehne hat es beim
@@ -609,7 +613,7 @@ export class Game {
     this.bereiteMedien();
 
     // Ab hier gilt es als gesungen.
-    this.zaehleAuffuehrung();
+    if (zaehlen) this.zaehleAuffuehrung();
 
     const belegt = new Set();
     for (const b of besetzung) {

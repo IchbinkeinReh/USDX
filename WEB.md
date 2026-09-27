@@ -1090,6 +1090,34 @@ Warum nicht die Datenbank des Spiels: `UDataBase` hängt über `USong` und
 `USongs` an der Grafikkette und lässt sich im kopflosen Betrieb nicht einmal
 übersetzen. Außerdem kennt sie nur „wie oft", nicht „wann".
 
+## Startseite: Party- und Radio-Modus
+
+Wer die Seite ohne weitere Angaben öffnet, landet auf einer Startseite mit
+kurzer Erklärung und zwei Knöpfen. Welche Ansicht gilt, steht als `modus`
+in der Adresse (`modusAusZustand` in `web/js/radio.js`):
+
+- **Party** (`?modus=party`): die Liederliste wie bisher, mit Lobby,
+  Mikrofonauswahl und Wertung. Links ohne `modus`, aber mit `lobby` oder
+  `lied` – also Einladungen und geteilte Lieder von vorher – führen weiter
+  hierher. Die Lobby-Nummer steht nur in der Party in der Adresse; auf der
+  Startseite und im Radio nimmt `syncURL` sie heraus, sonst würde aus einem
+  Neuladen ein Einladungslink.
+- **Radio** (`?modus=radio`): dieselbe Liste, aber ohne Lobby-Leiste und
+  ohne Mikrofonauswahl. „Start“ würfelt ein Lied aus allen Treffern der
+  Suche und spielt es auf der Bühne ab, mit Text, Video und Hintergrund; jede
+  Stimme läuft ungewertet mit (`radioBesetzung`), beim Duett also beide
+  Texte ohne Noten. Am Ende kommt ohne Ergebnisseite das nächste zufällige
+  Lied, bis man „Radio beenden“ drückt, das Vollbild verlässt oder zurück
+  geht. Ein angetipptes Lied fängt das Programm an. Die zuletzt gespielten
+  Lieder (die Hälfte der Treffer, höchstens 50) kommen nicht gleich wieder
+  dran. Radio-Wiedergaben zählen nicht in `web-gesungen.tsv` – gezählt wird,
+  was gesungen wurde (`Game.start` mit `zaehlen: false`).
+
+Das Radio hängt an keiner Lobby: Pause und Spulen gelten nur auf dem
+eigenen Gerät. Wer als Gast in einer fremden Lobby zur Startseite oder ins
+Radio wechselt, verlässt sie, sonst zöge ihn der Gastgeber mit seiner
+nächsten Auswahl auf seine Bühne.
+
 ## Karaoke: Original oder ohne Gesang
 
 Liegt neben einer Tondatei `<Name>.<Endung>` eine `<Name> [INSTR].m4a` —

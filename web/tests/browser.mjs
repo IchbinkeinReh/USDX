@@ -67,9 +67,12 @@ function ruf(method, params = {}) {
   });
 }
 
-async function werte(ausdruck) {
+// geste: als echte Nutzergeste ausfuehren - fuer Klicks, hinter denen die
+// Seite Vollbild oder Ton anfordert.
+async function werte(ausdruck, { geste = false } = {}) {
   const r = await ruf('Runtime.evaluate',
-    { expression: ausdruck, awaitPromise: true, returnByValue: true });
+    { expression: ausdruck, awaitPromise: true, returnByValue: true,
+      userGesture: geste });
   if (r.exceptionDetails)
     throw new Error(r.exceptionDetails.text + ' ' +
       (r.exceptionDetails.exception?.description ?? ''));
@@ -338,6 +341,101 @@ check('und laesst sich abspielen',
 // sein, egal wie lang das Lied ist.
 check('und dauert hoechstens eine halbe Minute',
       vorschau.dauer > 0 && vorschau.dauer <= 30.5, JSON.stringify(vorschau));
+
+console.log('Startseite und Radio');
+
+// Wartet in der Seite, bis BEDINGUNG (ein Ausdruck) wahr ist.
+async function warteAuf(bedingung, ms = 20000) {
+  return werte(`(async () => {
+    const ende = Date.now() + ${ms};
+    while (Date.now() < ende) {
+      try { if (${bedingung}) return true; } catch (e) {}
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    return false;
+  })()`);
+}
+const sichtbar = (id) => `!document.getElementById('${id}').classList.contains('aus')`;
+
+// Frisch laden: Die Abschnitte oben haben die Seite nur als Huelle benutzt.
+await ruf('Page.navigate', { url: BASIS + '/' });
+check('die Seite wird bereit',
+      await warteAuf(`document.documentElement.dataset.bereit === '1'`));
+check('ohne Angaben erscheint die Startseite',
+      await warteAuf(`${sichtbar('startseite')} && !(${sichtbar('auswahl')})`));
+check('mit beiden Knoepfen',
+      await werte(`!!document.getElementById('zur_party') &&
+                   !!document.getElementById('zum_radio')`));
+
+await werte(`document.getElementById('zum_radio').click()`, { geste: true });
+// Die Liste kommt erst, wenn der Vorschau-Schnipsel des Probelieds gebaut
+// ist - der Server blendet Lieder ohne ihn aus.
+const radioBereit = await warteAuf(
+  `${sichtbar('auswahl')} && !document.getElementById('radio_start').disabled`);
+check('Radio: Liste mit Start-Knopf', radioBereit);
+const radioAnsicht = await werte(`({
+  url: location.search,
+  lobby: ${sichtbar('lobby_leiste')},
+  zufall: ${sichtbar('zufall')},
+  start: ${sichtbar('radio_start')},
+})`);
+check('Radio steht in der Adresse, die Lobby nicht',
+      /modus=radio/.test(radioAnsicht.url) && !/lobby=/.test(radioAnsicht.url),
+      JSON.stringify(radioAnsicht));
+check('ohne Lobby-Leiste und ohne Zufallsknopf',
+      !radioAnsicht.lobby && !radioAnsicht.zufall && radioAnsicht.start,
+      JSON.stringify(radioAnsicht));
+
+await werte(`document.getElementById('radio_start').click()`, { geste: true });
+check('Start spielt ein Lied auf der Buehne',
+      await warteAuf(`${sichtbar('buehne')} &&
+                      document.getElementById('buehne').dataset.radioLied === '1'`));
+const aufBuehne = await werte(`({
+  vorbereitung: ${sichtbar('vorbereitung')},
+  mikrofone: document.querySelectorAll('#stimmen select').length,
+  knopf: document.getElementById('zurueck').textContent,
+  start: document.getElementById('startflaeche').style.display,
+})`);
+check('keine Mikrofonauswahl, kein "Los geht\'s"',
+      !aufBuehne.vorbereitung && aufBuehne.mikrofone === 0 &&
+      aufBuehne.start === 'none', JSON.stringify(aufBuehne));
+check('der Zurueck-Knopf heisst "Radio beenden"',
+      aufBuehne.knopf === 'Radio beenden', JSON.stringify(aufBuehne));
+
+// Das Probelied dauert 6 s. Danach muss ohne weiteres Zutun das naechste
+// kommen - bei nur einem Treffer eben dasselbe noch einmal.
+check('nach dem Ende laeuft von selbst das naechste Lied',
+      await warteAuf(`document.getElementById('buehne').dataset.radioLied === '2'`,
+                     20000));
+
+await werte(`document.getElementById('zurueck').click()`, { geste: true });
+const nachRadio = await warteAuf(`!(${sichtbar('buehne')}) && ${sichtbar('auswahl')}`);
+check('"Radio beenden" fuehrt zur Liste zurueck', nachRadio);
+await new Promise((r) => setTimeout(r, 7000));
+check('und danach startet nichts mehr',
+      await werte(`document.getElementById('buehne').dataset.radioLied === '2' &&
+                   document.getElementById('buehne').classList.contains('aus')`));
+
+await werte(`document.getElementById('zur_startseite').click()`, { geste: true });
+check('der Haus-Knopf fuehrt zur Startseite',
+      await warteAuf(`${sichtbar('startseite')} && location.search === ''`));
+
+await werte(`document.getElementById('zur_party').click()`, { geste: true });
+const party = await warteAuf(`${sichtbar('lobby_leiste')} && ${sichtbar('zufall')} &&
+                               /modus=party/.test(location.search) &&
+                               /lobby=[0-9]{6}/.test(location.search)`);
+check('Party: Lobby-Leiste, Zufallsknopf, Lobby-Nummer in der Adresse', party,
+      JSON.stringify(await werte(`({ url: location.search,
+        lobby: ${sichtbar('lobby_leiste')}, zufall: ${sichtbar('zufall')},
+        auswahl: ${sichtbar('auswahl')} })`)));
+
+// Einladungen von vor der Startseite tragen kein modus - sie muessen
+// trotzdem in der Party landen.
+await ruf('Page.navigate', { url: BASIS + '/?lobby=000000' });
+await warteAuf(`document.documentElement.dataset.bereit === '1'`);
+check('alter Einladungslink landet in der Party',
+      await warteAuf(`${sichtbar('lobby_leiste')} && !(${sichtbar('startseite')}) &&
+                      /modus=party/.test(location.search)`));
 
 if (meldungen.length) {
   console.log();
