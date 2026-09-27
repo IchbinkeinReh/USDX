@@ -795,7 +795,7 @@ Und davor, hier mit Apache:
 	# Wer den Anmeldedialog abbricht, sieht diese Seite - mit dem Weg zum
 	# Impressum statt einer nackten Fehlermeldung. Als Text hier, weil jede
 	# Adresse unter / an den Dienst weitergereicht wird.
-	ErrorDocument 401 "<!doctype html><html lang=de><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Anmeldung nötig</title><body style='background:#0d0f14;color:#e8e8ea;font-family:system-ui,sans-serif;text-align:center;padding:48px 18px'><h1>Anmeldung nötig</h1><p>UltraStar ist nur mit Zugangsdaten nutzbar.</p><p><a style='color:#8fb1ff' href='/rechtliches.html'>Impressum &amp; Datenschutz</a></p></body></html>"
+	ErrorDocument 401 "<!doctype html><html lang=de><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Anmeldung n&ouml;tig</title><body style='background:#0d0f14;color:#e8e8ea;font-family:system-ui,sans-serif;text-align:center;padding:48px 18px'><h1>Anmeldung n&ouml;tig</h1><p>UltraStar ist nur mit Zugangsdaten nutzbar.</p><p><a style='color:#8fb1ff' href='/rechtliches.html'>Impressum &amp; Datenschutz</a></p></body></html>"
 </VirtualHost>
 ```
 
