@@ -18,8 +18,12 @@
   // Das Installationsangebot des Browsers so frueh wie moeglich abfangen:
   // Es kommt nur einmal je Seitenaufruf, und das Hauptskript (ein Modul)
   // laeuft spaeter - verpasst es das Ereignis, gaebe es keinen Knopf.
+  //
+  // Bewusst OHNE preventDefault(): Das unterdrueckte Chromes eigenes
+  // Installationsbanner (auf Android unten am Rand), und Chrome meldete
+  // "Banner not shown". Aufheben und spaeter per Knopf ausloesen geht
+  // auch so.
   addEventListener('beforeinstallprompt', function (e) {
-    e.preventDefault();
     window.installAngebot = e;
     dispatchEvent(new Event('installangebot'));
   });
