@@ -769,6 +769,13 @@ Und davor, hier mit Apache:
 	<Location "/js/krypto.js">
 		Require all granted
 	</Location>
+	# Installierbare App: Manifest und Symbole (siehe unten).
+	<Location "/manifest.webmanifest">
+		Require all granted
+	</Location>
+	<Location "/icons/">
+		Require all granted
+	</Location>
 </VirtualHost>
 ```
 
@@ -860,6 +867,26 @@ funktioniert also auch über den Proxy.
 | `js/score.js` | Wertung, je Stimme eine |
 | `js/render.js` | Noten und Text auf Canvas, eine Bahn je Stimme |
 | `js/game.js` | Schleife, Ton, Video, Mikrofone, Besetzung |
+
+### Als App installieren
+
+Die Weboberfläche ist eine installierbare App (PWA): `manifest.webmanifest`
+mit Namen, Farben und Startadresse, dazu die Symbole unter `web/icons/`
+(192 und 512 Pixel, eine „maskable“-Fassung für Android mit Rand für den
+Beschnitt, 180 Pixel fürs iPhone). Den Dienstarbeiter gibt es ohnehin. Chrome
+und Edge bieten die Installation an; die Startseite zeigt dann zusätzlich
+„Als App installieren“. Auf dem iPhone geht es nur über das Teilen-Menü,
+darauf weist die Startseite dort hin. Installiert öffnet sich die Seite ohne
+Browserleiste auf der Startseite.
+
+Auch Manifest und Symbole stehen oben ohne Anmeldung: Die Seite fordert das
+Manifest zwar mit Zugangsdaten an (`crossorigin="use-credentials"`), die
+Symbole holt der Browser beim Installieren aber teils ohne. Darin steht
+nichts, was nicht ohnehin offen auf GitHub liegt.
+
+Offline geht nichts: Die Lieder kommen vom Server, und die Oberfläche wird
+bewusst nicht zwischengespeichert – sonst liefe nach einer Aktualisierung
+eine alte Fassung weiter.
 
 ### Reihenfolge und Nachladen
 

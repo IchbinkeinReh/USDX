@@ -400,6 +400,16 @@ begin
         Aufloesen(B, '/js/../../etc/passwd', 'web', Pfad, CT) = waNichts);
   Check('unbekanntes js wird nicht geliefert',
         Aufloesen(B, '/js/geheim.js', 'web', Pfad, CT) = waNichts);
+  // Installierbare App: Ohne den richtigen Typ nimmt der Browser das
+  // Manifest nicht an.
+  Check('Manifest wird ausgeliefert',
+        Aufloesen(B, '/manifest.webmanifest', 'web', Pfad, CT) = waDatei, Pfad);
+  Check('als application/manifest+json', CT = 'application/manifest+json', CT);
+  Check('App-Symbol wird ausgeliefert',
+        (Aufloesen(B, '/icons/icon-512.png', 'web', Pfad, CT) = waDatei) and
+        (CT = 'image/png'), CT);
+  Check('andere Dateien unter icons/ nicht',
+        Aufloesen(B, '/icons/geheim.png', 'web', Pfad, CT) = waNichts);
 
   WriteLn;
   WriteLn('Video und Hintergrundbild');

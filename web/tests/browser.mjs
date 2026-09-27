@@ -361,6 +361,29 @@ const sichtbar = (id) => `!document.getElementById('${id}').classList.contains('
 await ruf('Page.navigate', { url: BASIS + '/' });
 check('die Seite wird bereit',
       await warteAuf(`document.documentElement.dataset.bereit === '1'`));
+// Installierbar? Chrome prueft das selbst - Manifest, Symbole, Dienstarbeiter,
+// sicherer Kontext. Leere Fehlerliste heisst: Der Browser bietet die
+// Installation an.
+const installierbar = await ruf('Page.getInstallabilityErrors');
+check('Chrome haelt die Seite fuer installierbar',
+      Array.isArray(installierbar.installabilityErrors) &&
+      installierbar.installabilityErrors.length === 0,
+      JSON.stringify(installierbar.installabilityErrors));
+const manifest = await ruf('Page.getAppManifest');
+check('Manifest ohne Fehler geladen',
+      manifest.errors.length === 0 && /"short_name": "UltraStar"/.test(manifest.data || ''),
+      JSON.stringify(manifest.errors));
+const symbole = await werte(`Promise.all(['/icons/icon-192.png', '/icons/icon-512.png',
+    '/icons/icon-maskable-512.png', '/icons/apple-touch-icon.png'].map(async (p) => {
+  const r = await fetch(p);
+  const b = await createImageBitmap(await r.blob());
+  return p + ' ' + r.status + ' ' + b.width;
+}))`);
+check('alle App-Symbole laden in der richtigen Groesse',
+      symbole.join() === ['/icons/icon-192.png 200 192', '/icons/icon-512.png 200 512',
+        '/icons/icon-maskable-512.png 200 512', '/icons/apple-touch-icon.png 200 180'].join(),
+      JSON.stringify(symbole));
+
 check('ohne Angaben erscheint die Startseite',
       await warteAuf(`${sichtbar('startseite')} && !(${sichtbar('auswahl')})`));
 check('mit beiden Knoepfen',

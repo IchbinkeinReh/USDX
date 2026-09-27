@@ -37,9 +37,17 @@ const
   // noch so verdrehte URL etwas ausliefern, was nicht hier steht, und der
   // uebliche Fehler - ein ../ das durch die Pruefung rutscht - kann gar nicht
   // erst auftreten. Neue Datei im Ordner heisst: hier eintragen.
-  WEB_DATEIEN: array[0..14] of UTF8String = (
+  WEB_DATEIEN: array[0..19] of UTF8String = (
     'index.html',
     'favicon.png',
+    // Installierbare App (PWA): Manifest und Symbole. Liegen bei einem
+    // Vorschalt-Server mit Anmeldung ohne diese frei - Browser holen sie
+    // teils ohne Zugangsdaten (siehe WEB.md).
+    'manifest.webmanifest',
+    'icons/icon-192.png',
+    'icons/icon-512.png',
+    'icons/icon-maskable-512.png',
+    'icons/apple-touch-icon.png',
     // Der Dienstarbeiter MUSS an der Wurzel liegen, nicht unter js/: Sein
     // Geltungsbereich reicht nur so weit wie sein eigener Ordner, und von
     // /js/ aus saehe er /api/song/... gar nicht.
@@ -121,6 +129,7 @@ begin
   else if (Endung = '.js')   then Result := 'text/javascript; charset=utf-8'
   else if (Endung = '.css')  then Result := 'text/css; charset=utf-8'
   else if (Endung = '.txt')  then Result := 'text/plain; charset=utf-8'
+  else if (Endung = '.webmanifest') then Result := 'application/manifest+json'
   else if (Endung = '.mp3')  then Result := 'audio/mpeg'
   else if (Endung = '.ogg')  then Result := 'audio/ogg'
   else if (Endung = '.opus') then Result := 'audio/ogg'

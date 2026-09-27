@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>UltraStar Deluxe – Web</title>
 <link rel="icon" type="image/png" href="/favicon.png">
+<!-- Installierbare App. use-credentials: Vor dem Dienst steht eine
+     Anmeldung; ohne das holte der Browser das Manifest ohne Zugangsdaten. -->
+<link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
+<meta name="theme-color" content="#0d0f14">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="UltraStar">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <style>
   *{box-sizing:border-box}
   body{margin:0;background:#0d0f14;color:#e8e8ea;font-family:system-ui,sans-serif;
@@ -21,6 +30,9 @@
   .modus_karte button{width:100%;font-size:19px;padding:16px}
   .modus_karte p{color:#98a0b0;font-size:14px;line-height:1.45;margin:12px 2px 0}
   #zum_radio{background:#2e8b64}
+  #installieren{margin-top:22px;text-align:center}
+  #app_installieren{background:#2a3140}
+  #ios_hinweis{color:#98a0b0;font-size:14px;line-height:1.45;margin:0}
   @media (min-width:640px){
     .modus_wahl{flex-direction:row}
     .modus_karte{flex:1}
@@ -290,6 +302,12 @@
         laufen zufällige Lieder aus den Treffern, eins nach dem anderen, bis
         du aufhörst. Ohne Mikrofon, ohne Wertung.</p>
     </div>
+  </div>
+  <!-- Nur zu sehen, wenn sich die Seite gerade installieren liesse. -->
+  <div id="installieren" class="aus">
+    <button id="app_installieren" class="aus">📲 Als App installieren</button>
+    <p id="ios_hinweis" class="aus">Als App installieren: im Teilen-Menü
+      „Zum Home-Bildschirm“ wählen.</p>
   </div>
 </div>
 
@@ -1086,6 +1104,40 @@ $('zum_radio').addEventListener('click', () => wechsleModus('radio'));
 $('zur_startseite').addEventListener('click', () => wechsleModus('start'));
 
 zeigeModusAn(modusAusZustand(leseZustandAusURL()));
+
+// ---------- Als App installieren ----------
+//
+// Chrome und Edge bieten die Installation ueber ein Ereignis an, das sich
+// aufheben laesst - der Knopf auf der Startseite loest es dann aus. Safari
+// auf dem iPhone kennt das nicht; dort geht es nur ueber das Teilen-Menue,
+// also steht stattdessen ein Hinweis da. Laeuft die Seite schon als App,
+// faellt beides weg.
+const alsApp = matchMedia('(display-mode: standalone)').matches ||
+               navigator.standalone === true;
+let installAngebot = null;
+function zeigeInstallieren() {
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) && !alsApp;
+  $('app_installieren').classList.toggle('aus', !installAngebot);
+  $('ios_hinweis').classList.toggle('aus', !ios || !!installAngebot);
+  $('installieren').classList.toggle('aus', !installAngebot && !ios);
+}
+addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  installAngebot = e;
+  zeigeInstallieren();
+});
+addEventListener('appinstalled', () => {
+  installAngebot = null;
+  zeigeInstallieren();
+});
+$('app_installieren').addEventListener('click', async () => {
+  if (!installAngebot) return;
+  const angebot = installAngebot;
+  installAngebot = null;   // laesst sich nur einmal ausloesen
+  zeigeInstallieren();
+  try { await angebot.prompt(); } catch (e) { /* abgebrochen */ }
+});
+zeigeInstallieren();
 
 addEventListener('popstate', () => { anwendenZustand(leseZustandAusURL()); });
 
