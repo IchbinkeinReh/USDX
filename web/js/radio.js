@@ -46,6 +46,27 @@ export class RadioVerlauf {
   leeren() { this.liste = []; }
 }
 
+// Wie man die Seite als App installiert, wenn der Browser keinen Knopf
+// dafuer hergibt. Einen echten Knopf erlauben nur Chrome, Edge und Samsung
+// Internet (Ereignis beforeinstallprompt); Safari und Firefox muss man
+// sagen, wo es im Menue steht.
+//
+// beruehrpunkte: navigator.maxTouchPoints. Ein iPad gibt sich seit iPadOS 13
+// als Mac aus - nur am Touchscreen ist es noch zu erkennen.
+export function installHinweis(userAgent, beruehrpunkte = 0) {
+  const ua = userAgent || '';
+  if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && beruehrpunkte > 1)) {
+    return 'Als App installieren: in Safari auf das Teilen-Symbol tippen und ' +
+           '„Zum Home-Bildschirm“ wählen.';
+  }
+  if (/Android/.test(ua)) {
+    return 'Als App installieren: im Browsermenü (⋮) „App installieren“ oder ' +
+           '„Zum Startbildschirm hinzufügen“ wählen.';
+  }
+  return 'Als App installieren: in Chrome oder Edge über das Installieren-Symbol ' +
+         'rechts in der Adressleiste. Firefox kann Seiten nicht als App installieren.';
+}
+
 // Wer im Radio "singt": niemand. Jede Stimme bekommt eine Bahn ohne
 // Mikrofon, genau wie "— nicht werten —" im Party-Modus. Beim Duett also
 // beide Stimmen, damit beide Texte zu sehen sind; die Anzeige laesst dann

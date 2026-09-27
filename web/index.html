@@ -14,6 +14,16 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="UltraStar">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
+<script>
+  // Das Installationsangebot des Browsers so frueh wie moeglich abfangen:
+  // Es kommt nur einmal je Seitenaufruf, und das Hauptskript (ein Modul)
+  // laeuft spaeter - verpasst es das Ereignis, gaebe es keinen Knopf.
+  addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    window.installAngebot = e;
+    dispatchEvent(new Event('installangebot'));
+  });
+</script>
 <style>
   *{box-sizing:border-box}
   body{margin:0;background:#0d0f14;color:#e8e8ea;font-family:system-ui,sans-serif;
@@ -32,7 +42,7 @@
   #zum_radio{background:#2e8b64}
   #installieren{margin-top:22px;text-align:center}
   #app_installieren{background:#2a3140}
-  #ios_hinweis{color:#98a0b0;font-size:14px;line-height:1.45;margin:0}
+  #install_hinweis{color:#98a0b0;font-size:14px;line-height:1.45;margin:0}
   @media (min-width:640px){
     .modus_wahl{flex-direction:row}
     .modus_karte{flex:1}
@@ -306,8 +316,7 @@
   <!-- Nur zu sehen, wenn sich die Seite gerade installieren liesse. -->
   <div id="installieren" class="aus">
     <button id="app_installieren" class="aus">📲 Als App installieren</button>
-    <p id="ios_hinweis" class="aus">Als App installieren: im Teilen-Menü
-      „Zum Home-Bildschirm“ wählen.</p>
+    <p id="install_hinweis" class="aus"></p>
   </div>
 </div>
 
@@ -464,7 +473,8 @@ import { LobbyClient, istGueltigerCode, driftKorrektur, sollPositionAus,
          ergebnisMitFernspielern, STANDARDNAME } from './js/lobby.js';
 import { starteSitzung } from './js/sitzung.js';
 import { neuerDurchgang } from './js/game.js';
-import { modusAusZustand, RadioVerlauf, radioBesetzung } from './js/radio.js';
+import { modusAusZustand, RadioVerlauf, radioBesetzung,
+         installHinweis } from './js/radio.js';
 
 // Wie oft die eigene Wiedergabe gegen den gemeinsamen Anker geprueft wird.
 //
@@ -1107,35 +1117,36 @@ zeigeModusAn(modusAusZustand(leseZustandAusURL()));
 
 // ---------- Als App installieren ----------
 //
-// Chrome und Edge bieten die Installation ueber ein Ereignis an, das sich
-// aufheben laesst - der Knopf auf der Startseite loest es dann aus. Safari
-// auf dem iPhone kennt das nicht; dort geht es nur ueber das Teilen-Menue,
-// also steht stattdessen ein Hinweis da. Laeuft die Seite schon als App,
-// faellt beides weg.
+// Chrome, Edge und Samsung Internet bieten die Installation ueber ein
+// Ereignis an, das sich aufheben laesst - der Knopf auf der Startseite
+// loest es dann aus (abgefangen im Seitenkopf, siehe dort). Alle anderen,
+// vor allem Safari und Firefox, lassen das nicht zu; dort steht, wo es im
+// Menue geht. Laeuft die Seite schon als App, faellt beides weg.
 const alsApp = matchMedia('(display-mode: standalone)').matches ||
                navigator.standalone === true;
-let installAngebot = null;
 function zeigeInstallieren() {
-  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) && !alsApp;
-  $('app_installieren').classList.toggle('aus', !installAngebot);
-  $('ios_hinweis').classList.toggle('aus', !ios || !!installAngebot);
-  $('installieren').classList.toggle('aus', !installAngebot && !ios);
+  const knopf = !alsApp && !!window.installAngebot;
+  $('app_installieren').classList.toggle('aus', !knopf);
+  $('install_hinweis').textContent =
+    installHinweis(navigator.userAgent, navigator.maxTouchPoints || 0);
+  $('install_hinweis').classList.toggle('aus', alsApp || knopf);
+  $('installieren').classList.toggle('aus', alsApp);
 }
-addEventListener('beforeinstallprompt', (e) => {
-  e.preventDefault();
-  installAngebot = e;
-  zeigeInstallieren();
-});
+addEventListener('installangebot', zeigeInstallieren);
 addEventListener('appinstalled', () => {
-  installAngebot = null;
-  zeigeInstallieren();
+  window.installAngebot = null;
+  // Die Seite selbst laeuft noch im Browser - hier also nur Knopf und
+  // Hinweis weg, statt weiter zum Installieren aufzufordern.
+  $('installieren').classList.add('aus');
 });
 $('app_installieren').addEventListener('click', async () => {
-  if (!installAngebot) return;
-  const angebot = installAngebot;
-  installAngebot = null;   // laesst sich nur einmal ausloesen
-  zeigeInstallieren();
+  const angebot = window.installAngebot;
+  if (!angebot) return;
+  window.installAngebot = null;   // laesst sich nur einmal ausloesen
   try { await angebot.prompt(); } catch (e) { /* abgebrochen */ }
+  // Abgelehnt? Dann kommt das Angebot erst nach einem Neuladen wieder -
+  // bis dahin wenigstens der Weg ueber das Menue.
+  zeigeInstallieren();
 });
 zeigeInstallieren();
 

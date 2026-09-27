@@ -29,7 +29,7 @@ import { chacha20XOR, nonceForFile, hexToBytes, bytesToHex, geschuetzteDatei,
          startStelle, ART_TXT, ART_AUDIO, ART_VIDEO,
          ART_PREVIEW, ART_AUDIO_INSTRUMENTAL } from '../js/krypto.js';
 import { modusAusZustand, verlaufLaenge, RadioVerlauf, radioBesetzung,
-         RADIO_VERLAUF_MAX } from '../js/radio.js';
+         RADIO_VERLAUF_MAX, installHinweis } from '../js/radio.js';
 
 // Aufzeichnender Ersatz fuer den Zeichenkontext. Zeichnen laesst sich hier
 // nicht pruefen - WAS gezeichnet wird und WIE GROSS aber schon, und genau
@@ -1936,6 +1936,22 @@ console.log('Startseite und Radio');
   check('Duett: beide Stimmen, beide ohne Mikrofon',
         duett.length === 2 && duett.every((b) => b.deviceId === null) &&
         duett[1].trackIndex === 1 && duett[1].name === 'B');
+}
+
+console.log('Hinweis zum Installieren');
+{
+  const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 Safari/604.1';
+  const IPAD = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/17.5 Safari/605.1.15';
+  const ANDROID = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/128.0 Mobile Safari/537.36';
+  const FIREFOX = 'Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0';
+  check('iPhone: Teilen-Menue', /Teilen-Symbol/.test(installHinweis(IPHONE)));
+  check('iPad gibt sich als Mac aus, wird am Touchscreen erkannt',
+        /Teilen-Symbol/.test(installHinweis(IPAD, 5)));
+  check('ein echter Mac bekommt den Desktop-Hinweis',
+        /Adressleiste/.test(installHinweis(IPAD, 0)));
+  check('Android: Browsermenue', /Browsermenü/.test(installHinweis(ANDROID)));
+  check('Desktop: Adressleiste, samt Firefox-Einschraenkung',
+        /Adressleiste/.test(installHinweis(FIREFOX)) && /Firefox/.test(installHinweis(FIREFOX)));
 }
 
 console.log('Dienstarbeiter');

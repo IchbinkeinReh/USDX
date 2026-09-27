@@ -384,6 +384,20 @@ check('alle App-Symbole laden in der richtigen Groesse',
         '/icons/icon-maskable-512.png 200 512', '/icons/apple-touch-icon.png 200 180'].join(),
       JSON.stringify(symbole));
 
+// Knopf oder Hinweis, je nachdem, ob der Browser die Installation anbietet -
+// irgendeins von beiden muss auf der Startseite stehen, solange die Seite
+// nicht schon als App laeuft.
+const install = await werte(`({
+  bereich: ${sichtbar('installieren')},
+  knopf: ${sichtbar('app_installieren')},
+  hinweis: ${sichtbar('install_hinweis')} ? document.getElementById('install_hinweis').textContent : '',
+})`);
+check('die Startseite sagt, wie man die App installiert',
+      install.bereich && (install.knopf || /Als App installieren/.test(install.hinweis)),
+      JSON.stringify(install));
+check('nie Knopf und Hinweis zugleich', !(install.knopf && install.hinweis),
+      JSON.stringify(install));
+
 check('ohne Angaben erscheint die Startseite',
       await warteAuf(`${sichtbar('startseite')} && !(${sichtbar('auswahl')})`));
 check('mit beiden Knoepfen',
