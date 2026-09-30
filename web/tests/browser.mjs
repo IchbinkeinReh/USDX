@@ -505,6 +505,15 @@ check('nach dem Ende laeuft von selbst das naechste Lied',
       await warteAuf(`document.getElementById('buehne').dataset.radioLied === '2'`,
                      20000));
 
+// Das Vollbild zu verlassen beendet das Radio NICHT - die Musik laeuft im
+// Fenster weiter. Nachgestellt ueber das Ereignis selbst: Ob der kopflose
+// Browser wirklich im Vollbild war, spielt fuer die Behandlung keine Rolle.
+await werte(`document.dispatchEvent(new Event('fullscreenchange'))`);
+await new Promise((r) => setTimeout(r, 800));
+check('Vollbild verlassen: das Radio laeuft weiter',
+      await werte(`${sichtbar('buehne')} &&
+                   document.getElementById('zurueck').textContent === 'Radio beenden'`));
+
 await werte(`document.getElementById('zurueck').click()`, { geste: true });
 const nachRadio = await warteAuf(`!(${sichtbar('buehne')}) && ${sichtbar('auswahl')}`);
 check('"Radio beenden" fuehrt zur Liste zurueck', nachRadio);

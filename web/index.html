@@ -1773,12 +1773,11 @@ function zeigeErgebnis(ergebnis) {
 // gespielt: was in diesem Durchgang lief, fuer "Vorheriges Lied".
 // karaoke: einmal auf Karaoke umgeschaltet, gilt das fuer die folgenden
 // Lieder weiter, soweit sie eine Karaoke-Spur haben.
-// sitzung/imVollbild: ob DIESES Radio das Vollbild bekommen hat. Nur dann
-// heisst "Vollbild verlassen" auch "Radio aus" - sonst beendete das spaet
-// eintreffende Ereignis eines eben beendeten Radios gleich das neue.
+// sitzung: zaehlt jeden Radiostart, damit eine spaet zurueckkommende
+// Vollbild-Anfrage eines schon beendeten Radios nichts mehr anfasst.
 const radio = { aktiv: false, lauf: 0, nr: 0, fehlschlaege: 0, suche: '',
                 verlauf: new RadioVerlauf(), gespielt: [], karaoke: false,
-                sitzung: 0, imVollbild: false };
+                sitzung: 0 };
 // Mehr braucht "Vorheriges Lied" nicht - niemand blaettert hundert zurueck.
 const RADIO_GESPIELT_MAX = 100;
 // Nach so vielen Liedern hintereinander, die sich nicht abspielen lassen,
@@ -1832,10 +1831,8 @@ async function starteRadio(ersterIndex = null) {
   // zurueck - das Radio blieb dann bei "Lied wird ausgesucht" stehen.
   // Angestossen ist es hier schon, noch innerhalb des Klicks.
   const sitzung = ++radio.sitzung;
-  radio.imVollbild = false;
   vollbildAn(buehne).then((konnte) => {
     if (!radio.aktiv || sitzung !== radio.sitzung) return;
-    radio.imVollbild = konnte.vollbild && imVollbild();
     if (handy && !konnte.quer) $('drehen').style.display = 'block';
     passeAn();
   });
@@ -2107,10 +2104,13 @@ document.addEventListener('fullscreenchange', () => {
     // Wer das Vollbild verlaesst, will aufhoeren - dann soll das Ergebnis
     // kommen und nicht das Lied im Fenster weiterlaufen. beende() meldet
     // sich ueber onEnde, dieselbe Stelle wie am Ende des Stuecks; laeuft
-    // gerade nichts, tut es nichts. Im Radio heisst das: Radio aus, zurueck
-    // zur Liste - beende() spielte dort sonst das naechste Lied.
-    if (radio.aktiv) { if (radio.imVollbild) beendeRadio(); }
-    else spiel.beende();
+    // gerade nichts, tut es nichts.
+    //
+    // Nicht im Radio: Dort laeuft die Musik im Fenster einfach weiter -
+    // wer nebenher etwas anderes tut, soll nicht jedes Mal neu starten
+    // muessen. Aufhoeren geht ueber "Radio beenden", das ohne Vollbild
+    // wieder in der Kopfleiste steht.
+    if (!radio.aktiv) spiel.beende();
   }
   setTimeout(passeAn, 100);
 });

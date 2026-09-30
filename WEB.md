@@ -1202,8 +1202,9 @@ in der Adresse (`modusAusZustand` in `web/js/radio.js`):
   Suche und spielt es auf der Bühne ab, mit Text, Video und Hintergrund; jede
   Stimme läuft ungewertet mit (`radioBesetzung`), beim Duett also beide
   Texte ohne Noten. Am Ende kommt ohne Ergebnisseite das nächste zufällige
-  Lied, bis man „Radio beenden“ drückt, das Vollbild verlässt oder zurück
-  geht. Ein angetipptes Lied fängt das Programm an. Die zuletzt gespielten
+  Lied, bis man „Radio beenden“ drückt oder zurück
+  geht. Wer das Vollbild verlässt, hört im Fenster weiter; die Kopfleiste
+  mit „Radio beenden“ ist dann wieder zu sehen. Ein angetipptes Lied fängt das Programm an. Die zuletzt gespielten
   Lieder (die Hälfte der Treffer, höchstens 50) kommen nicht gleich wieder
   dran. Radio-Wiedergaben zählen nicht in `web-gesungen.tsv` – gezählt wird,
   was gesungen wurde (`Game.start` mit `zaehlen: false`).
