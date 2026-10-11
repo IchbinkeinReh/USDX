@@ -126,6 +126,9 @@ begin
   fPort := APort;
   fWebRoot := AWebRoot;
   fAdresse := AAdresse;
+  // Einmal beim Start: Die Dateien aendern sich erst mit dem naechsten
+  // Ausrollen, und das startet den Dienst ohnehin neu.
+  WebVersion := BerechneWebVersion(AWebRoot);
   // Die Sitzungsschluessel gehoeren dem Server und leben genau so lange wie
   // er. Ein Neustart macht alle ausgegebenen Schluessel ungueltig - das ist
   // gewollt: Sie stehen nirgends auf der Platte.

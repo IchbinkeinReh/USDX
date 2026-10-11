@@ -292,6 +292,11 @@ export class Game {
   // derselben Stelle weiter - angehalten bleibt angehalten. Nicht ueber
   // bereiteMedien(): Das haengte auch das Video neu an und finge es von
   // vorn an. false, wenn das Lied keine Karaoke-Spur hat.
+  //
+  // Zaehlt NICHT noch einmal: Die neue Adresse traegt keinen Durchgang
+  // (?lauf=), und nur Abrufe mit Durchgang zaehlen (zaehleAuffuehrung).
+  // Selbst mit Durchgang zaehlte der Server dasselbe Singen nur einmal -
+  // er merkt sich Durchgang und Lied, egal ob Original oder Karaoke.
   async wechsleTonspur(karaoke) {
     if (!this.song || !this.hatKaraoke) return false;
     this.karaokeGewuenscht = karaoke;

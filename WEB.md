@@ -1209,6 +1209,23 @@ in der Adresse (`modusAusZustand` in `web/js/radio.js`):
   dran. Radio-Wiedergaben zählen nicht in `web-gesungen.tsv` – gezählt wird,
   was gesungen wurde (`Game.start` mit `zaehlen: false`).
 
+Angehalten – im Radio wie beim Singen – zeigt die Bühne alles über das
+Lied: Titelbild, Interpret und Titel, jede Kopfzeile der Notendatei (die
+technischen wie BPM, GAP oder Dateinamen aufklappbar, unbekannte unter
+ihrem eigenen Namen) und den Liedtext, beim Duett je Stimme
+(`web/js/liedinfo.js`). Weiter geht es mit „Weiter“; das darf, wer auch
+anhalten darf. Im Radio stehen dort außerdem Vorheriges/Nächstes Lied und
+der Wechsel auf die Karaoke-Spur. Dieser Wechsel zählt nicht noch einmal:
+Die neue Adresse trägt keinen Durchgang (`?lauf=`), und der Server zählt
+denselben Durchgang je Lied ohnehin nur einmal.
+
+Nach einem Ausrollen bietet jede offene Seite das Neuladen an: Der Server
+bildet beim Start einen Fingerabdruck über den Inhalt aller ausgelieferten
+Dateien (`BerechneWebVersion`) und meldet ihn in `/api/status`; die Seite
+fragt jede Minute und beim Zurückkehren in den Vordergrund nach. Ein
+Neustart ohne neue Fassung löst nichts aus, und auf der Bühne wartet der
+Hinweis, bis man sie verlässt.
+
 Das Radio hängt an keiner Lobby: Pause und Spulen gelten nur auf dem
 eigenen Gerät. Wer als Gast in einer fremden Lobby zur Startseite oder ins
 Radio wechselt, verlässt sie, sonst zöge ihn der Gastgeber mit seiner

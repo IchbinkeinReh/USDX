@@ -478,6 +478,19 @@ begin
         Aufloesen(B, '/api/songs', 'web', Pfad, CT) = waNichts);
 
   WriteLn;
+  WriteLn('Fassung der Oberflaeche');
+  Check('Fingerabdruck ueber web/: 12 Hexziffern',
+        Length(BerechneWebVersion('web')) = 12, BerechneWebVersion('web'));
+  Check('derselbe Inhalt, derselbe Fingerabdruck',
+        BerechneWebVersion('web') = BerechneWebVersion('web' + PathDelim));
+  Check('ohne Ordner kein Fingerabdruck', BerechneWebVersion('') = '');
+  WebVersion := 'abc123def456';
+  Status := Ruf('/api/status', []);
+  Check('/api/status meldet die Fassung',
+        (Status = 200) and (Pos('"version" : "abc123def456"', Body) > 0), Body);
+  WebVersion := '';
+
+  WriteLn;
   WriteLn('Impressum');
   // Neben einer erfundenen config.ini in einem eigenen Ordner - so stoert
   // weder eine echte impressum.txt noch eine aus einem frueheren Lauf.

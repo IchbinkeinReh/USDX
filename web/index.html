@@ -34,6 +34,17 @@
        overscroll-behavior:none}
   .aus{display:none !important}
 
+  /* Hinweis auf eine neue Fassung - oben ueber allem, aber nie auf der
+     Buehne (siehe zeigeVersionsHinweis). */
+  #neue_version{position:fixed;left:0;right:0;top:0;z-index:40;display:flex;
+              flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:center;
+              padding:10px 14px calc(10px);padding-top:calc(10px + env(safe-area-inset-top));
+              background:#24407f;color:#fff;font-size:15px;
+              box-shadow:0 6px 20px rgba(0,0,0,.45)}
+  #neue_version button{padding:7px 14px;font-size:14px}
+  #neu_laden{background:#fff;color:#24407f}
+  #version_spaeter{background:transparent;color:#dfe6ff}
+
   /* ---------- Startseite ---------- */
   #startseite{max-width:720px;margin:0 auto;
               padding:44px 18px calc(28px + env(safe-area-inset-bottom))}
@@ -277,16 +288,31 @@
               margin-top:6px;line-height:1.2}
   /* Radio angehalten: Knoepfe unter dem Pausenzeichen. Die Flaeche selbst
      laesst Tipps durch - daneben tippen setzt fort wie bisher. */
-  #bild_flaeche > #radio_pause{z-index:9;display:flex;flex-direction:column;
-              align-items:center;justify-content:center;pointer-events:none;
-              padding-top:150px}
-  #radio_pause .knoepfe{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;
-              padding:0 12px;pointer-events:auto}
-  #radio_pause button{font-size:16px;padding:12px 18px;background:#2a3140}
-  #radio_pause button:disabled{opacity:.45}
-  #radio_pause #radio_karaoke{background:#2e8b64}
-  #radio_pause .notiz{color:#c7cddb;font-size:13px;margin-top:10px;
-              text-shadow:0 1px 3px rgba(0,0,0,.9)}
+  /* Angehalten: alles ueber das Lied, ueber der ganzen Buehne und zum
+     Scrollen. Ein Tipp darin hebt die Pause NICHT auf (sonst liesse sich
+     nicht scrollen) - dafuer gibt es "Weiter". */
+  #bild_flaeche > #pause_info{z-index:9;overflow:auto;background:rgba(8,10,15,0.92);
+              -webkit-overflow-scrolling:touch}
+  #pause_info .spalte{max-width:760px;margin:0 auto;padding:18px 18px 40px}
+  #pause_info .kopf{display:flex;gap:14px;align-items:center;margin-bottom:14px}
+  #pause_cover{width:72px;height:72px;flex:0 0 72px;border-radius:10px;
+              object-fit:cover;background:#232936}
+  #pause_info .interpret{font-size:22px;font-weight:700;line-height:1.2}
+  #pause_info .liedtitel{font-size:18px;color:#c7cddb;line-height:1.25}
+  #pause_info .knoepfe{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 12px}
+  #pause_info .knoepfe button{font-size:16px;padding:11px 16px;background:#2a3140}
+  #pause_info #pause_weiter{background:#3d6ae0}
+  #pause_info #radio_karaoke{background:#2e8b64}
+  #pause_info button:disabled{opacity:.45}
+  #pause_gast{color:#c7cddb;font-size:14px;margin:0 0 12px}
+  #pause_info dl{display:grid;grid-template-columns:max-content 1fr;
+              gap:4px 14px;margin:8px 0 14px;font-size:15px}
+  #pause_info dt{color:#98a0b0}
+  #pause_info dd{margin:0;overflow-wrap:anywhere}
+  #pause_technik summary{cursor:pointer;color:#98a0b0;font-size:14px}
+  #pause_info h3{font-size:17px;margin:18px 0 6px}
+  #pause_liedtext{font-size:16px;line-height:1.6;color:#d4d8e2}
+  #pause_liedtext h4{font-size:15px;color:#ffb27f;margin:12px 0 4px}
   /* Falls der Browser das naechste Lied nicht von selbst starten laesst. */
   #bild_flaeche > #radio_weiter_flaeche{z-index:10;display:flex;
               align-items:center;justify-content:center;
@@ -437,13 +463,25 @@
     <div id="ergebnis" class="aus"></div>
     <div id="radio_titel" aria-live="polite"><div class="kasten">
       <div class="interpret"></div><div class="liedtitel"></div></div></div>
-    <div id="radio_pause" class="aus">
-      <div class="knoepfe">
-        <button id="radio_zurueck">⏮ Vorheriges Lied</button>
-        <button id="radio_karaoke">Karaoke-Version</button>
-        <button id="radio_vor">Nächstes Lied ⏭</button>
+    <div id="pause_info" class="aus">
+      <div class="spalte">
+        <div class="kopf">
+          <img id="pause_cover" alt="">
+          <div><div id="pause_interpret" class="interpret"></div>
+            <div id="pause_titel" class="liedtitel"></div></div>
+        </div>
+        <div class="knoepfe"><button id="pause_weiter">▶ Weiter</button></div>
+        <div id="pause_gast" class="aus">Der Gastgeber hat angehalten.</div>
+        <div id="radio_pause" class="knoepfe aus">
+          <button id="radio_zurueck">⏮ Vorheriges Lied</button>
+          <button id="radio_karaoke">Karaoke-Version</button>
+          <button id="radio_vor">Nächstes Lied ⏭</button>
+        </div>
+        <dl id="pause_angaben"></dl>
+        <details id="pause_technik"><summary>Technische Angaben</summary><dl></dl></details>
+        <h3>Liedtext</h3>
+        <div id="pause_liedtext"></div>
       </div>
-      <div class="notiz">Daneben tippen: weiterhören</div>
     </div>
     <div id="radio_weiter_flaeche" class="aus">
       <button id="radio_weiter">▶ Weiter hören</button>
@@ -469,6 +507,12 @@
   </div>
 </div>
 
+<div id="neue_version" class="aus" role="status">
+  <span>Es gibt eine neue Version von UltraStar.</span>
+  <button id="neu_laden">Neu laden</button>
+  <button id="version_spaeter">Später</button>
+</div>
+
 <!-- Reaktionen fliegen ueber allem, auch ueber der Buehne. -->
 <div id="reaktionsflug"></div>
 
@@ -481,6 +525,7 @@ import { LobbyClient, istGueltigerCode, driftKorrektur, sollPositionAus,
          ergebnisMitFernspielern, STANDARDNAME } from './js/lobby.js';
 import { starteSitzung } from './js/sitzung.js';
 import { neuerDurchgang } from './js/game.js';
+import { liedAngaben, liedtext } from './js/liedinfo.js';
 import { modusAusZustand, RadioVerlauf, radioBesetzung,
          installHinweis } from './js/radio.js';
 
@@ -1964,11 +2009,46 @@ function zeigeRadioPause(an) {
     ? 'Original mit Gesang' : 'Karaoke-Version';
 }
 
-// Ein Tipp auf die Knoepfe darf nicht bis zur Buehne durchgehen - dort
-// hiesse er "weiterspielen" und liefe gegen den Knopf selbst.
-$('radio_pause').addEventListener('pointerdown', (e) => {
-  if (e.target.closest('button')) e.stopPropagation();
-});
+// ---------- Angehalten: alles ueber das Lied ----------
+//
+// Haengt am Pausenzeichen statt an jeder Stelle, die anhaelt: Der Gastgeber
+// haelt per Tipp an, Gaeste per Lobby-Zustand - beide Male wird es gesetzt.
+function zeigePauseInfo(an) {
+  $('pause_info').classList.toggle('aus', !an);
+  zeigeRadioPause(an && radio.aktiv);
+  if (!an || !spiel.song) return;
+  const song = spiel.song;
+  $('pause_interpret').textContent = song.artist;
+  $('pause_titel').textContent = song.title;
+  const cover = $('pause_cover');
+  cover.style.display = 'none';
+  if (song.cover && spiel.geladenerIndex !== null) {
+    cover.onload = () => { cover.style.display = 'block'; };
+    cover.onerror = () => { cover.style.display = 'none'; };
+    cover.src = pfad(`/api/song/${spiel.geladenerIndex}/cover`);
+  }
+  // Weiterspielen darf, wer auch anhalten darf.
+  $('pause_weiter').classList.toggle('aus', !binHost);
+  $('pause_gast').classList.toggle('aus', binHost);
+  const liste = (eintraege) => eintraege.map((e) =>
+    `<dt>${esc(e.name)}</dt><dd>${esc(e.wert)}</dd>`).join('');
+  const angaben = liedAngaben(song);
+  $('pause_angaben').innerHTML = liste(angaben.ueber);
+  $('pause_technik').querySelector('dl').innerHTML = liste(angaben.technik);
+  $('pause_technik').classList.toggle('aus', angaben.technik.length === 0);
+  const text = liedtext(song);
+  $('pause_liedtext').innerHTML = text.length ? text.map((s) =>
+    (s.name ? `<h4>${esc(s.name)}</h4>` : '') +
+    s.zeilen.map((z) => esc(z)).join('<br>')).join('') : '<span>—</span>';
+  $('pause_info').scrollTop = 0;
+}
+new MutationObserver(() => zeigePauseInfo($('pausezeichen').classList.contains('an')))
+  .observe($('pausezeichen'), { attributes: true, attributeFilter: ['class'] });
+
+// Kein Tipp in der Ansicht geht bis zur Buehne durch - dort hiesse er
+// "weiterspielen", und Scrollen waere unmoeglich.
+$('pause_info').addEventListener('pointerdown', (e) => e.stopPropagation());
+$('pause_weiter').addEventListener('click', () => setzePause(false));
 
 // Lied wechseln: das laufende sauber anhalten (stop() meldet kein Ende,
 // es kommt also nicht noch ein zweites Lied hinterher) und das Pausenbild
@@ -2050,17 +2130,20 @@ $('bild_flaeche').addEventListener('pointerdown', (e) => {
   clearTimeout(tippTimer);
   tippTimer = setTimeout(() => {
     tippTimer = null;
-    if (!spiel.laeuft) return;
-    const willPause = !spiel.pausiert;
-    // Sofort selbst umschalten, nicht erst auf die Antwort warten - sonst
-    // fuehlt sich das Antippen traege an. Die anderen ziehen beim naechsten
-    // Abfrage-Takt nach.
-    if (willPause) spiel.pausiere(); else spiel.fortsetzen();
-    $('pausezeichen').classList.toggle('an', willPause);
-    if (radio.aktiv) zeigeRadioPause(willPause);
-    if (!radio.aktiv) lobbyClient.pause(willPause, spiel.audio.currentTime);
+    setzePause(!spiel.pausiert);
   }, DOPPEL_MS);
 });
+
+// Anhalten oder weiterspielen - vom Tipp auf die Buehne und vom Knopf
+// "Weiter" in der Pausen-Ansicht. Sofort selbst umschalten, nicht erst auf
+// die Antwort warten - sonst fuehlt es sich traege an. Die anderen in der
+// Lobby ziehen beim naechsten Abfrage-Takt nach; das Radio hat keine.
+function setzePause(willPause) {
+  if (!spiel.laeuft || !binHost) return;
+  if (willPause) spiel.pausiere(); else spiel.fortsetzen();
+  $('pausezeichen').classList.toggle('an', willPause);
+  if (!radio.aktiv) lobbyClient.pause(willPause, spiel.audio.currentTime);
+}
 
 // ---------- Bildschirm wach halten ----------
 //
@@ -2097,6 +2180,48 @@ async function bildschirmWach() {
 new MutationObserver(bildschirmWach).observe(buehne,
   { attributes: true, attributeFilter: ['class'] });
 document.addEventListener('visibilitychange', bildschirmWach);
+
+// ---------- Neue Fassung ----------
+//
+// Nach einem Ausrollen laeuft in offenen Tabs noch die alte Seite weiter -
+// und weil die Oberflaeche nicht zwischengespeichert wird, merkt man das
+// erst beim naechsten Neuladen. Deshalb fragt die Seite nach: /api/status
+// meldet einen Fingerabdruck der ausgelieferten Dateien (BerechneWebVersion
+// im Server). Weicht er von dem beim Laden ab, wird das Neuladen angeboten.
+//
+// Nicht auf der Buehne: Mitten im Lied soll nichts aufpoppen - der Hinweis
+// erscheint, sobald man sie verlaesst.
+const VERSION_PRUEFEN_MS = 60000;
+let ladeVersion = null, neueVersion = null, verschobenFuer = null;
+async function pruefeVersion() {
+  try {
+    const d = await (await fetch(pfad('/api/status'), { cache: 'no-store' })).json();
+    if (!d || !d.version) return;
+    if (ladeVersion === null) ladeVersion = d.version;
+    else if (d.version !== ladeVersion) neueVersion = d.version;
+  } catch (e) { /* Server gerade weg, etwa beim Neustart - spaeter nochmal */ }
+  zeigeVersionsHinweis();
+}
+function zeigeVersionsHinweis() {
+  const zeigen = neueVersion !== null && neueVersion !== verschobenFuer &&
+                 buehne.classList.contains('aus');
+  $('neue_version').classList.toggle('aus', !zeigen);
+}
+$('neu_laden').addEventListener('click', () => location.reload());
+// "Spaeter" gilt fuer genau diese Fassung - kommt noch eine, fragt es wieder.
+$('version_spaeter').addEventListener('click', () => {
+  verschobenFuer = neueVersion;
+  zeigeVersionsHinweis();
+});
+new MutationObserver(zeigeVersionsHinweis).observe(buehne,
+  { attributes: true, attributeFilter: ['class'] });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') pruefeVersion();
+});
+setInterval(pruefeVersion, VERSION_PRUEFEN_MS);
+// Gleich beim Laden: So passt die gemerkte Fassung zu der Seite, die
+// tatsaechlich geladen wurde.
+pruefeVersion();
 
 document.addEventListener('fullscreenchange', () => {
   if (!imVollbild()) {

@@ -37,7 +37,7 @@ const
   // noch so verdrehte URL etwas ausliefern, was nicht hier steht, und der
   // uebliche Fehler - ein ../ das durch die Pruefung rutscht - kann gar nicht
   // erst auftreten. Neue Datei im Ordner heisst: hier eintragen.
-  WEB_DATEIEN: array[0..22] of UTF8String = (
+  WEB_DATEIEN: array[0..23] of UTF8String = (
     'index.html',
     'favicon.png',
     // Impressum, Datenschutz und Lizenzen - eine eigene Seite, damit sie ein
@@ -68,7 +68,8 @@ const
     'js/pegel.js',
     'js/bewertung.js',
     'js/lobby.js',
-    'js/radio.js'
+    'js/radio.js',
+    'js/liedinfo.js'
   );
 
 type
@@ -120,6 +121,16 @@ var
   // Wo die Einstellungen liegen. Gesetzt beim Start (Spiel wie kopfloser
   // Betrieb); daneben wird impressum.txt gesucht.
   WebIniPfad: UTF8String = '';
+  // Fingerabdruck der ausgelieferten Oberflaeche (BerechneWebVersion),
+  // gesetzt beim Start des Servers. /api/status meldet ihn; aendert er sich,
+  // bietet die Seite das Neuladen an.
+  WebVersion: UTF8String = '';
+
+// Fingerabdruck ueber den INHALT aller Dateien aus WEB_DATEIEN im Ordner
+// WebRoot - 12 Hexziffern, '' ohne Ordner. Ueber den Inhalt, nicht die
+// Startzeit: Ein Neustart ohne neue Fassung (etwa fuer neue Lieder) soll
+// niemanden zum Neuladen auffordern.
+function BerechneWebVersion(const WebRoot: UTF8String): UTF8String;
 
 const
   IMPRESSUM_NAME = 'impressum.txt';
@@ -144,6 +155,28 @@ function HandleWebRequest(Bridge: TWebBridge; Lobby: TLobbyRegistry;
                           out ContentType, Body: UTF8String): integer;
 
 implementation
+
+uses
+  md5;
+
+function BerechneWebVersion(const WebRoot: UTF8String): UTF8String;
+var
+  I: integer;
+  Pfad, Teile: UTF8String;
+begin
+  Result := '';
+  if (WebRoot = '') then Exit;
+  Teile := '';
+  for I := Low(WEB_DATEIEN) to High(WEB_DATEIEN) do
+  begin
+    Pfad := IncludeTrailingPathDelimiter(WebRoot) +
+            StringReplace(WEB_DATEIEN[I], '/', PathDelim, [rfReplaceAll]);
+    if FileExists(Pfad) then
+      Teile := Teile + WEB_DATEIEN[I] + '=' + MD5Print(MD5File(Pfad)) + ';';
+  end;
+  if (Teile = '') then Exit;
+  Result := Copy(MD5Print(MD5String(Teile)), 1, 12);
+end;
 
 function FindeImpressum: UTF8String;
 var
@@ -587,6 +620,7 @@ begin
     try
       Antwort.Add('songs', Bridge.SongCount);
       Antwort.Add('stand', Bridge.Stand);
+      Antwort.Add('version', WebVersion);
       Body := Antwort.AsJSON;
     finally
       Antwort.Free;

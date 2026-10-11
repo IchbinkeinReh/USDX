@@ -29,6 +29,7 @@ import { chacha20XOR, nonceForFile, hexToBytes, bytesToHex, geschuetzteDatei,
          startStelle, ART_TXT, ART_AUDIO, ART_VIDEO,
          ART_PREVIEW, ART_AUDIO_INSTRUMENTAL } from '../js/krypto.js';
 import { textZuHtml, lizenzenZuHtml } from '../js/rechtliches.js';
+import { liedAngaben, liedtext } from '../js/liedinfo.js';
 import { modusAusZustand, verlaufLaenge, RadioVerlauf, radioBesetzung,
          RADIO_VERLAUF_MAX, installHinweis } from '../js/radio.js';
 
@@ -1997,6 +1998,34 @@ console.log('Hinweis zum Installieren');
   check('Android: Browsermenue', /Browsermenü/.test(installHinweis(ANDROID)));
   check('Desktop: Adressleiste, samt Firefox-Einschraenkung',
         /Adressleiste/.test(installHinweis(FIREFOX)) && /Firefox/.test(installHinweis(FIREFOX)));
+}
+
+console.log('Angaben zum Lied (Pause)');
+{
+  const s = parseSong('#TITLE:Probe\n#ARTIST:Testlauf\n#GENRE:Pop\n#YEAR:1999\n' +
+    '#BPM:120\n#GAP:0\n#MP3:ton.mp3\n#MEINFELD:x\n#ALBUM:\n' +
+    ': 0 4 60 Pro~\n: 4 4 60 be\n: 8 4 60 ton \n- 16\n: 20 4 60 Zwei\n: 24 4 60 te\nE\n');
+  const a = liedAngaben(s);
+  check('zuerst Interpret und Titel, dann Genre, Jahr',
+        a.ueber.map((e) => e.name).join() === 'Interpret,Titel,Genre,Jahr',
+        a.ueber.map((e) => e.name).join());
+  check('technische Felder getrennt, mit deutschem Namen',
+        a.technik.some((e) => e.name === 'Tondatei' && e.wert === 'ton.mp3') &&
+        a.technik.some((e) => e.name === 'BPM'));
+  check('unbekannte Felder unter eigenem Namen',
+        a.technik.some((e) => e.name === '#MEINFELD' && e.wert === 'x'));
+  check('leere Felder fallen weg', !a.ueber.concat(a.technik).some((e) => e.schluessel === 'ALBUM'));
+  const t = liedtext(s);
+  check('Liedtext: ~ verschwindet, Zeilen bleiben',
+        t.length === 1 && t[0].name === null && t[0].zeilen.join('|') === 'Probeton|Zweite',
+        JSON.stringify(t));
+  const d = parseSong('#TITLE:D\n#ARTIST:A\n#BPM:120\n#GAP:0\n#P1:Anna\n#P2:Ben\n' +
+    'P1\n: 0 4 60 hal\n: 4 4 60 lo\nP2\n: 0 4 60 du\nE\n');
+  const dt = liedtext(d);
+  check('Duett: je Stimme mit Namen',
+        dt.length === 2 && dt[0].name === 'Anna' && dt[1].zeilen[0] === 'du', JSON.stringify(dt));
+  check('Duett-Namen stehen bei den Angaben',
+        liedAngaben(d).ueber.some((e) => e.name === 'Stimme 2' && e.wert === 'Ben'));
 }
 
 console.log('Impressum und Lizenzen');

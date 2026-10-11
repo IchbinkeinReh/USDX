@@ -307,6 +307,37 @@ check('und liefert wieder die normale Aufnahme (~6 s, nicht 8)',
 check('zaehleAuffuehrung() meldet die Auffuehrung unter /karaoke, wenn gewaehlt',
       kar.gezaehlt.length === 1, kar);
 
+console.log('Karaoke mitten im Lied zaehlt nicht noch einmal');
+const umschalten = await werte(`(async () => {
+  const m = await import('/js/game.js');
+  const g = new m.Game(document.createElement('canvas'), {
+    titel: document.createElement('div'), hinweis: { textContent: '' },
+    video: null, bild: null,
+  });
+  await g.ladeLied(0);
+  g.karaokeGewuenscht = false;
+  m.neuerDurchgang(0);
+  performance.clearResourceTimings();
+  await g.start([{ trackIndex: 0, deviceId: null }], 0, null);
+  await g.wechsleTonspur(true);
+  const quelle = g.audio.src;
+  // Das Tonelement traegt seinen Abruf erst ein, wenn er fertig ist.
+  const holen = () => performance.getEntriesByType('resource').map((e) => e.name)
+    .filter((n) => n.includes('/api/song/0/audio') || n.includes('/api/song/0/karaoke'));
+  for (let i = 0; i < 40 && !holen().some((n) => n.includes('/karaoke')); i++)
+    await new Promise((r) => setTimeout(r, 250));
+  const namen = holen();
+  g.stop();
+  return { quelle, namen };
+})()`);
+const mitLauf = umschalten.namen.filter((n) => n.includes('lauf='));
+check('genau ein zaehlender Abruf, und zwar fuer die Originalspur',
+      mitLauf.length === 1 && mitLauf[0].includes('/audio'), JSON.stringify(umschalten));
+check('die Karaoke-Spur laeuft, aber ohne Durchgang',
+      umschalten.quelle.includes('/karaoke') && !umschalten.quelle.includes('lauf=') &&
+      !umschalten.namen.some((n) => n.includes('/karaoke') && n.includes('lauf=')),
+      JSON.stringify(umschalten));
+
 console.log('Liedanfang und -ende wie im Spiel');
 
 // Das Probelied (6 s, erste Note bei 0) bekommt #START und #END von Hand.
@@ -441,6 +472,23 @@ check('die Startseite sagt, wie man die App installiert',
 check('nie Knopf und Hinweis zugleich', !(install.knopf && install.hinweis),
       JSON.stringify(install));
 
+// Neue Fassung: Meldet der Server einen anderen Fingerabdruck als beim
+// Laden, bietet die Seite das Neuladen an.
+check('anfangs kein Hinweis auf eine neue Version',
+      await werte(`!(${sichtbar('neue_version')})`));
+await werte(`(() => {
+  window.__echtesFetch = window.fetch;
+  window.fetch = (url, ...rest) => String(url).includes('/api/status')
+    ? Promise.resolve(new Response(JSON.stringify({ version: 'neu-123456' })))
+    : window.__echtesFetch(url, ...rest);
+  document.dispatchEvent(new Event('visibilitychange'));
+})()`);
+check('neue Version: Hinweis mit Neu-laden-Knopf',
+      await warteAuf(`${sichtbar('neue_version')}`, 3000));
+await werte(`document.getElementById('version_spaeter').click()`);
+check('"Später" blendet ihn aus', await werte(`!(${sichtbar('neue_version')})`));
+await werte(`window.fetch = window.__echtesFetch`);
+
 check('ohne Angaben erscheint die Startseite',
       await warteAuf(`${sichtbar('startseite')} && !(${sichtbar('auswahl')})`));
 check('mit beiden Knoepfen',
@@ -535,6 +583,21 @@ document_start: {
   await werte(tippe, { geste: true });
   check('Pause im Radio zeigt die Knopfleiste',
         await warteAuf(`${sichtbar('radio_pause')}`, 3000));
+  const info = await werte(`({
+    sichtbar: ${sichtbar('pause_info')},
+    kopf: document.getElementById('pause_interpret').textContent + ' / ' +
+          document.getElementById('pause_titel').textContent,
+    angaben: document.getElementById('pause_angaben').textContent,
+    technik: document.querySelector('#pause_technik dl').textContent,
+    text: document.getElementById('pause_liedtext').textContent,
+    weiter: ${sichtbar('pause_weiter')},
+  })`);
+  check('angehalten: alle Angaben zum Lied',
+        info.sichtbar && info.kopf === 'Testlauf / Probeton' &&
+        info.angaben.includes('Interpret') && info.technik.includes('BPM') &&
+        info.technik.includes('ton.mp3'), JSON.stringify(info));
+  check('samt Liedtext', info.text.includes('Probeton'), JSON.stringify(info));
+  check('und einem Weiter-Knopf', info.weiter, JSON.stringify(info));
   const leiste = await werte(`({
     zurueck: document.getElementById('radio_zurueck').disabled,
     karaoke: ${sichtbar('radio_karaoke')},
@@ -572,6 +635,13 @@ document_start: {
   check('"Vorheriges Lied" spielt es',
         await warteAuf(`document.getElementById('buehne').dataset.radioLied === '3' &&
                         !(${sichtbar('radio_pause')})`));
+
+  await werte(tippe, { geste: true });
+  await warteAuf(`${sichtbar('pause_info')}`, 3000);
+  await werte(`document.getElementById('pause_weiter').click()`, { geste: true });
+  check('"Weiter" spielt weiter und schliesst die Ansicht',
+        await warteAuf(`!(${sichtbar('pause_info')}) &&
+                        !document.getElementById('pausezeichen').classList.contains('an')`, 3000));
 
   await werte(`document.getElementById('zurueck').click()`, { geste: true });
   await warteAuf(`${sichtbar('auswahl')}`);
